@@ -58,7 +58,7 @@ namespace BRepUtils {
 	// --- 数学辅助函数 ---
     // 
     // 辅助：计算投影
-    Tensor ProjectVector(Tensor vec, Tensor target_plane_normal) {
+    inline Tensor ProjectVector(Tensor vec, Tensor target_plane_normal) {
         // vec: [3], normal: [3]
         // v_proj = v - (v . n) * n
         float dp = dot(vec, target_plane_normal).item<float>();
@@ -70,7 +70,7 @@ namespace BRepUtils {
     }
 
     // 辅助：找任意正交向量
-    Tensor AnyOrthogonalTensor(Tensor vec) {
+    inline Tensor AnyOrthogonalTensor(Tensor vec) {
         Tensor res = ProjectVector(tensor({ 1.0, 0.0, 0.0 }, vec.options()), vec);
         if (res.defined()) return res;
         res = ProjectVector(tensor({ 0.0, 1.0, 0.0 }, vec.options()), vec);
@@ -79,7 +79,7 @@ namespace BRepUtils {
     }
 
     // 辅助：严格的线性插值，保证首尾精确命中边界
-    double GetParamStrict(int index, int total, double min_val, double max_val) {
+    inline double GetParamStrict(int index, int total, double min_val, double max_val) {
         if (index == 0) return min_val;
         if (index == total - 1) return max_val;
         return min_val + (max_val - min_val) * (double)index / (double)(total - 1);
@@ -87,17 +87,17 @@ namespace BRepUtils {
 	// --- 几何辅助函数 ---
 
     // --- 辅助：计算几何属性 ---
-    double GetFaceArea(const TopoDS_Shape& face) {
+    inline double GetFaceArea(const TopoDS_Shape& face) {
         GProp_GProps props;
         BRepGProp::SurfaceProperties(face, props);
         return props.Mass();
     }
-    double GetEdgeLength(const TopoDS_Shape& edge) {
+    inline double GetEdgeLength(const TopoDS_Shape& edge) {
         GProp_GProps props;
         BRepGProp::LinearProperties(edge, props);
         return props.Mass();
     }
-    TopoDS_Shape ScaleShape(const TopoDS_Shape& s) {
+    inline TopoDS_Shape ScaleShape(const TopoDS_Shape& s) {
         Bnd_Box box;
         BRepBndLib::Add(s, box);
         if (box.IsVoid()) return s;
@@ -114,7 +114,7 @@ namespace BRepUtils {
     }
 
     // 计算曲面上某点的法线
-    gp_Vec GetNormalAtPoint(const TopoDS_Face& face, const gp_Pnt& p) {
+    inline gp_Vec GetNormalAtPoint(const TopoDS_Face& face, const gp_Pnt& p) {
         BRepAdaptor_Surface surf(face);
         // 将 3D 点投影回 UV 空间 (这对计算精确法线很重要)
         // 这里简化处理：假设点在面上，使用 GeomAPI_ProjectPointOnSurf
@@ -134,7 +134,7 @@ namespace BRepUtils {
         return gp_Vec(0, 0, 0); // 失
     }
 
-    gp_Vec GetNormalAtFace(const TopoDS_Face& face, const gp_Pnt& p) {
+    inline gp_Vec GetNormalAtFace(const TopoDS_Face& face, const gp_Pnt& p) {
         Handle(Geom_Surface) surf = BRep_Tool::Surface(face);
         GeomAPI_ProjectPointOnSurf proj(p, surf);
         if (proj.NbPoints() < 1) return gp_Vec(0, 0, 1);
@@ -149,7 +149,8 @@ namespace BRepUtils {
         return gp_Vec(0, 0, 1);
     }
 
-    int CalcConvexity(const TopoDS_Edge& edge, int f1_idx, int f2_idx, const TopTools_IndexedMapOfShape& unique_faces) {
+    // 添加 inline 关键字
+    inline int CalcConvexity(const TopoDS_Edge& edge, int f1_idx, int f2_idx, const TopTools_IndexedMapOfShape& unique_faces) {
         if (f1_idx == f2_idx) return 2;
         TopoDS_Face f1 = TopoDS::Face(unique_faces.FindKey(f1_idx + 1));
         TopoDS_Face f2 = TopoDS::Face(unique_faces.FindKey(f2_idx + 1));

@@ -1,0 +1,7 @@
+brepnet/
+.vs/
+x64/
+*.user
+*.db
+*.ipch
+test_data/

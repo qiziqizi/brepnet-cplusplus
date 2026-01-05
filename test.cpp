@@ -1,21 +1,20 @@
 #define _CRT_SECURE_NO_WARNINGS // <--- 必须加在最第一行！
-
+#define ENABLE_TEST  // <--- 加上这一行以启用测试主函数
 #include <iostream>
 #include <iomanip>
 #include <string>
 #include <vector>
 #include <filesystem>
-
-namespace fs = std::filesystem;
-
-#include "BRepNet.h"
-#include "BRepPipeline.h"
-//#include "BRepTest.h"
-
 #include <chrono>   // 用于计时
 #include <windows.h> // Windows 系统 API
 #include <psapi.h>   // 用于查询进程内存状态
 #pragma comment(lib, "psapi.lib") // 链接库
+namespace fs = std::filesystem;
+#include "BRepNet.h"
+#include "BRepPipeline.h"
+#include "InferenceEngine.h"
+//#include "BRepTest.h"
+
 
 // 辅助：检查文件是否存在
 void check_file(const std::string& path) {
@@ -44,9 +43,14 @@ int main() {
         double mem_start = get_current_memory_mb();
         std::cout << "[Perf] 初始内存: " << mem_start << " MB" << std::endl;
 
-        std::string verify_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\verification_data_0101.npz";
-        std::string weights_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\brepnet_weights_0101.npz";
-        std::string step_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\136322_81d84c1b_1.stp";
+		// 测试文件路径修改为相对路径
+        fs::path base_dir = "test_data";
+        std::string verify_path = (base_dir / "verification_data_0101.npz").string();
+        std::string weights_path = (base_dir / "brepnet_weights_0101.npz").string();
+        std::string step_path = (base_dir / "136322_81d84c1b_1.stp").string();
+        //std::string verify_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\verification_data_0101.npz";
+        //std::string weights_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\brepnet_weights_0101.npz";
+        //std::string step_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\136322_81d84c1b_1.stp";
         
         //  批量待测试的文件列表
         //std::vector<std::string> test_files = {
@@ -212,59 +216,25 @@ int main() {
         std::cout << "[Perf] 数据预处理耗时: " << load_ms.count() << " ms" << std::endl;
         std::cout << "[Perf] 数据预处理后内存: " << get_current_memory_mb() << " MB" << std::endl;
 
-        // ==========================================
-        // 阶段二：模型初始化 (BRepNet Init)
-        // ==========================================
+        // ==============================================================================================================================
+        // 第二阶段 & 第三阶段：模型初始化与推理
+        // ==============================================================================================================================
         
-        // 第二段 模型初始化
-         auto start_init = std::chrono::high_resolution_clock::now();
-
-        // 初始化推理
-        // BRepNetImpl net(902, 84, 13, 8);
-        BRepNetImpl net(320, 120, 5, 8);
-        net.load_mlp_weights(weights_path);
-        net.load_uvnet_weights(weights_path);
-        net.eval();
-
-        // 第二段模型加载结束
+        auto start_init = std::chrono::high_resolution_clock::now();
+        // 1. 初始化引擎 (参数: 320, 120, 5, 8)
+        InferenceEngine engine(320, 120, 5, 8);
+        // 2. 加载权重
+        engine.load_weights(weights_path);
         auto end_init = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> init_ms = end_init - start_init;
         std::cout << "[Perf] 模型初始化耗时: " << init_ms.count() << " ms" << std::endl;
         std::cout << "[Perf] 模型加载后内存: " << get_current_memory_mb() << " MB" << std::endl;
-
-        // 测试打印
-        /*if (npz_data.count("debug_L0_Input_Xf")) {
-            Tensor py_in = load_t("debug_L0_Input_Xf");
-            // Python 没有 Padding，取第 0 行
-            std::cout << "\n[Py 对比] L0 Input Xf:  " << py_in.slice(0, 0, 1).slice(1, 0, 5) << std::endl;
-        }
-        if (npz_data.count("debug_L0_Psi")) {
-            Tensor py_psi = load_t("debug_L0_Psi");
-            std::cout << "[Py 对比] L0 Psi Head:  " << py_psi.slice(0, 0, 1).slice(1, 0, 5) << std::endl;
-            std::cout << "[Py 对比] L0 Psi Edge: " << py_psi.slice(0, 0, 1).slice(1, 128, 133) << std::endl;
-            std::cout << "[Py 对比] L0 Psi Tail:  " << py_psi.slice(0, 0, 1).slice(1, py_psi.size(1) - 5, py_psi.size(1)) << std::endl;
-        }*/
-
-        // ==========================================
-        // 阶段三：推理计算 (Inference)
-        // ==========================================
         
-        // 第三段模型推理 
-         auto start_infer = std::chrono::high_resolution_clock::now();
-         torch::NoGradGuard no_grad; // 【关键】关闭梯度计算，省大量内存和时间！
-
-        // 运行推理
-        torch::Tensor logits = net.forward(
-            pipeline.Xf, pipeline.Xe, pipeline.Xc,
-            pipeline.Kf, pipeline.Ke, pipeline.Kc,
-            pipeline.Ce, pipeline.Cf, pipeline.Csf,
-            pipeline.FaceGridsLocal, pipeline.EdgeGridsLocal, pipeline.CoedgeGridsLocal
-        );
-
-        //第三段模型推理结束
+        auto start_infer = std::chrono::high_resolution_clock::now();
+        // 3. 运行推理 (直接把处理好的 pipeline 扔进去)
+        torch::Tensor logits = engine.predict(pipeline);
         auto end_infer = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> infer_ms = end_infer - start_infer;
-
         std::cout << "=== 推理成功! ===" << std::endl;
         std::cout << "[Perf] 推理计算耗时: " << infer_ms.count() << " ms" << std::endl;
         std::cout << "[Perf] 推理峰值内存 (近似): " << get_current_memory_mb() << " MB" << std::endl;
@@ -280,7 +250,7 @@ int main() {
             torch::Tensor c_valid = logits.slice(0, 1, 1 + rows);
             torch::Tensor p_valid = expected.slice(0, 0, rows);
 
-            std::cout << "\nC++ Logits (row 1):\n" << c_valid.slice(0, 0, 1) << std::endl;
+            std::cout << "\nC++ Logits (row 1):\n" << c_valid.slice(0, 0, 1) << std::endl; 
             std::cout << "Py  Logits (row 0):\n" << p_valid.slice(0, 0, 1) << std::endl;
 
             float err = (c_valid - p_valid).abs().sum().item<float>();
