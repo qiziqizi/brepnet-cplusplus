@@ -1,12 +1,9 @@
 #pragma once
-
 #include <vector>
 #include <map>
 #include <string>
 #include <algorithm>
 #include <cmath>
-
-// LibTorch
 #include <torch/torch.h>
 #include "cnpy.h"
 

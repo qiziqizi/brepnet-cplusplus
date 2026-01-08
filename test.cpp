@@ -13,6 +13,7 @@ namespace fs = std::filesystem;
 #include "BRepNet.h"
 #include "BRepPipeline.h"
 #include "InferenceEngine.h"
+#include "SimpleLogger.h" 
 //#include "BRepTest.h"
 
 
@@ -38,6 +39,9 @@ double get_current_memory_mb() {
 
 #ifdef ENABLE_TEST
 int main() {
+
+    // 只要这行存在，所有的 cout/cerr 都会被记录，程序退出时自动保存
+    Tools::AutoLogger _logger;
     try {
         auto start_total = std::chrono::high_resolution_clock::now();
         double mem_start = get_current_memory_mb();
@@ -48,6 +52,11 @@ int main() {
         std::string verify_path = (base_dir / "verification_data_0101.npz").string();
         std::string weights_path = (base_dir / "brepnet_weights_0101.npz").string();
         std::string step_path = (base_dir / "136322_81d84c1b_1.stp").string();
+        // 使用 Tools::GetAbsPath 打印绝对路径，方便日志回溯
+        std::cout << "[Config] Verify File : " << Tools::GetAbsPath(verify_path) << std::endl;
+        std::cout << "[Config] Weights File: " << Tools::GetAbsPath(weights_path) << std::endl;
+        std::cout << "[Config] STEP File   : " << Tools::GetAbsPath(step_path) << std::endl;
+
         //std::string verify_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\verification_data_0101.npz";
         //std::string weights_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\brepnet_weights_0101.npz";
         //std::string step_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\136322_81d84c1b_1.stp";
