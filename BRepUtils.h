@@ -8,7 +8,8 @@
 #include <cmath>
 
 // LibTorch
-#include <torch/torch.h>
+//#include <torch/torch.h>
+#include "BRepTorch.h"
 #include "cnpy.h"
 
 // OpenCascade 头文件
@@ -52,7 +53,8 @@
 #include <GCPnts_UniformAbscissa.hxx>
 #include <GeomLProp_SLProps.hxx>
 
-using namespace torch;
+//using namespace torch;
+using namespace breptorch;
 
 namespace BRepUtils {
 	// --- 数学辅助函数 ---
@@ -61,10 +63,10 @@ namespace BRepUtils {
     Tensor ProjectVector(Tensor vec, Tensor target_plane_normal) {
         // vec: [3], normal: [3]
         // v_proj = v - (v . n) * n
-        float dp = dot(vec, target_plane_normal).item<float>();
+        float dp = dot(vec, target_plane_normal);
         Tensor delta = dp * target_plane_normal;
         Tensor res = vec - delta;
-        float len = norm(res).item<float>();
+        float len = norm(res);
         if (len < 1e-7) return Tensor(); // 失败
         return res / len; // 归一化
     }
