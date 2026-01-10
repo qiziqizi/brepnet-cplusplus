@@ -10,7 +10,9 @@ namespace fs = std::filesystem;
 
 #include "BRepNet.h"
 #include "BRepPipeline.h"
-//#include "BRepTest.h"
+
+using namespace breptorch;
+
 
 #include <chrono>   // 用于计时
 #include <windows.h> // Windows 系统 API
@@ -85,22 +87,22 @@ int main() {
             if (!npz_data.count(key)) throw std::runtime_error("Missing: " + key);
             cnpy::NpyArray arr = npz_data[key];
             std::vector<int64_t> s(arr.shape.begin(), arr.shape.end());
-            return torch::from_blob(arr.data<float>(), s, torch::kFloat32).clone();
+            return breptorch::from_blob(arr.data<float>(), s, breptorch::kFloat32).clone();
             };
         auto load_long = [&](std::string key) {
             if (!npz_data.count(key)) throw std::runtime_error("Missing: " + key);
             cnpy::NpyArray arr = npz_data[key];
             std::vector<int64_t> s(arr.shape.begin(), arr.shape.end());
-            if (arr.word_size == 8) return torch::from_blob(arr.data<long long>(), s, torch::kLong).clone();
-            else return torch::from_blob(arr.data<int>(), s, torch::kInt).to(torch::kLong).clone();
+            if (arr.word_size == 8) return breptorch::from_blob(arr.data<long long>(), s, breptorch::kLong).clone();
+            else return breptorch::from_blob(arr.data<int>(), s, breptorch::kInt).to(breptorch::kLong).clone();
             };
 
         // 验证局部坐标系变换 (LCS Math Check)
         /*if (npz_data.count("gt_face_local") && pipeline.FaceGridsLocal.defined()) {
             std::cout << "\n---------------- [LCS 几何变换测试] ----------------" << std::endl;
 
-            torch::Tensor py_local = load_t("gt_face_local"); // [N, 2, 9, 10, 10]
-            torch::Tensor cpp_local = pipeline.FaceGridsLocal;
+            breptorch::Tensor py_local = load_t("gt_face_local"); // [N, 2, 9, 10, 10]
+            breptorch::Tensor cpp_local = pipeline.FaceGridsLocal;
 
             // 维度对齐检查 (C++可能有Padding)
             // 如果 cpp_local 是 [31, ...], py 是 [30, ...]
@@ -151,20 +153,14 @@ int main() {
         // 2. 定义转换函数 (绝对不要用 min/max 猜测！)
         //  C++11 开始，引入了 Lambda 表达式（匿名函数），写在 main 里，可以避免污染全局命名空间
         // 最终应该变成 BRepPipeline 类的私有成员函数
-        auto shift_indices = [](torch::Tensor& t, int64_t limit) {
+        auto shift_indices = [](Tensor& t, int64_t limit) {
             if (!t.defined()) return;
-            auto flat = t.flatten();
-            int64_t* data = flat.data_ptr<int64_t>();
-            for (int64_t i = 0; i < flat.numel(); ++i) {
-                int64_t v = data[i];
-                // 如果索引在有效范围内 (0 ~ N-1)，则 +1 (变成 1 ~ N)
-                if (v >= 0 && v < limit) {
-                    data[i] = v + 1;
-                }
-                // 否则 (通常是 padding index = limit)，归 0
-                else {
-                    data[i] = 0;
-                }
+            // operate on raw datal_ directly (mock Tensor stores index arrays as kLong)
+            int64_t n = t.numel();
+            for (int64_t i = 0; i < n; ++i) {
+                int64_t v = t.storage_->datal_[(size_t)i];
+                if (v >= 0 && v < limit) t.storage_->datal_[(size_t)i] = v + 1;
+                else t.storage_->datal_[(size_t)i] = 0;
             }
             };
 
@@ -180,9 +176,9 @@ int main() {
         // 索引已经 +1 腾出位置了，现在真正插入这一行
 
         // 特征补0
-        auto pad_front = [](torch::Tensor& x) {
-            auto pad = torch::zeros({ 1, x.size(1) }, x.options());
-            x = torch::cat({ pad, x }, 0);
+        auto pad_front = [](breptorch::Tensor& x) {
+            auto pad = breptorch::zeros({ 1, x.size(1) }, x.options());
+            x = breptorch::cat({ pad, x }, 0);
             };
         pad_front(pipeline.Xf);
         pad_front(pipeline.Xe);
@@ -194,10 +190,12 @@ int main() {
         pad_front(pipeline.Kc);
 
         // 网格补齐，Grid必须和特征矩阵行数一致 (因为特征矩阵刚补了一行 0)
-        auto align_grid = [](torch::Tensor& g, int64_t target_rows) {
+        auto align_grid = [](breptorch::Tensor& g, int64_t target_rows) {
             if (g.defined() && g.size(0) == target_rows - 1) {
-                std::vector<int64_t> s = g.sizes().vec(); s[0] = 1;
-                g = torch::cat({ torch::zeros(s, g.options()), g }, 0);
+                //std::vector<int64_t> s = g.sizes().vec(); s[0] = 1;
+                std::vector<int64_t> s = g.vec(); s[0] = 1;
+                g = breptorch::cat({ breptorch::zeros(s, g.options()), g }, 0);
+                //g = breptorch::cat({ breptorch::zeros(s), g }, 0);
             }
             };
 
@@ -221,9 +219,18 @@ int main() {
 
         // 初始化推理
         // BRepNetImpl net(902, 84, 13, 8);
+        std::cout << "[Debug] Creating BRepNetImpl..." << std::endl;
         BRepNetImpl net(320, 120, 5, 8);
+        std::cout << "[Debug] BRepNetImpl created." << std::endl;
+        
+        std::cout << "[Debug] Loading MLP weights..." << std::endl;
         net.load_mlp_weights(weights_path);
+        std::cout << "[Debug] MLP weights loaded." << std::endl;
+
+        std::cout << "[Debug] Loading UVNet weights..." << std::endl;
         net.load_uvnet_weights(weights_path);
+        std::cout << "[Debug] UVNet weights loaded." << std::endl;
+
         net.eval();
 
         // 第二段模型加载结束
@@ -251,10 +258,10 @@ int main() {
         
         // 第三段模型推理 
          auto start_infer = std::chrono::high_resolution_clock::now();
-         torch::NoGradGuard no_grad; // 【关键】关闭梯度计算，省大量内存和时间！
+         breptorch::NoGradGuard no_grad; // 【关键】关闭梯度计算，省大量内存和时间！
 
         // 运行推理
-        torch::Tensor logits = net.forward(
+        breptorch::Tensor logits = net.forward(
             pipeline.Xf, pipeline.Xe, pipeline.Xc,
             pipeline.Kf, pipeline.Ke, pipeline.Kc,
             pipeline.Ce, pipeline.Cf, pipeline.Csf,
@@ -271,14 +278,14 @@ int main() {
 
         // 对比结果
         if (npz_data.count("expected_output")) {
-            torch::Tensor expected = load_t("expected_output");
+            breptorch::Tensor expected = load_t("expected_output");
 
             // 对齐切片 (跳过 C++ 的第 0 行)
             // Python 的 logits 通常不含 Padding (N行)
             // C++ 的 logits 含 Padding (N+1行)
             int64_t rows = std::min(logits.size(0) - 1, expected.size(0));
-            torch::Tensor c_valid = logits.slice(0, 1, 1 + rows);
-            torch::Tensor p_valid = expected.slice(0, 0, rows);
+            breptorch::Tensor c_valid = logits.slice(0, 1, 1 + rows);
+            breptorch::Tensor p_valid = expected.slice(0, 0, rows);
 
             std::cout << "\nC++ Logits (row 1):\n" << c_valid.slice(0, 0, 1) << std::endl;
             std::cout << "Py  Logits (row 0):\n" << p_valid.slice(0, 0, 1) << std::endl;
