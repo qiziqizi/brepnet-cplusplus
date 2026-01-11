@@ -32,7 +32,7 @@
 #include <GCPnts_UniformAbscissa.hxx>
 #include <GeomLProp_SLProps.hxx>
 
-using namespace torch;
+using namespace breptorch;
 
 namespace BRepUtils {
     // --- 数学辅助函数 ---
@@ -41,10 +41,10 @@ namespace BRepUtils {
     Tensor ProjectVector(Tensor vec, Tensor target_plane_normal) {
         // vec: [3], normal: [3]
         // v_proj = v - (v . n) * n
-        float dp = dot(vec, target_plane_normal).item<float>();
-        Tensor delta = dp * target_plane_normal;
+        float dp = dot(vec, target_plane_normal).template item<float>();
+        Tensor delta = target_plane_normal * dp;
         Tensor res = vec - delta;
-        float len = norm(res).item<float>();
+        float len = norm(res).template item<float>();
         if (len < 1e-7) return Tensor(); // 失败
         return res / len; // 归一化
     }

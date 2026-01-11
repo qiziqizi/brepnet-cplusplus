@@ -1,12 +1,17 @@
 #pragma once
-#include <torch/torch.h>
+//#include <torch/torch.h>
+#include "BRepTorch.h"
 #include <vector>
 #include <string>
 #include <iostream>
+#include <tuple>
+#include <memory>
 #include "cnpy.h" 
 #include "UVNet.h" 
 
-using namespace torch;
+using Tensor = breptorch::Tensor;
+using namespace breptorch;
+using namespace breptorch::nn;
 
 // --- 辅助数学函数 ---
 
@@ -40,11 +45,21 @@ inline Tensor build_matrix_Psi(Tensor Xf, Tensor Xe, Tensor Xc,
     // Xf 不需要 index select!
     Tensor Pt = Xf;
 
-    Tensor Pe = torch::flatten(Pet, 1);
-    Tensor Pc = torch::flatten(Pct, 1);
+    Tensor Pe = breptorch::flatten(Pet, 1);
+    Tensor Pc = breptorch::flatten(Pct, 1);
 
+    // --- 诊断：检查 Psi 组成部分 ---
+    static bool psi_diag_printed = false;
+    if (!psi_diag_printed) {
+        std::cout << "\n[Diagnostic] build_matrix_Psi Components:" << std::endl;
+        std::cout << "  Pt (Face) Shape: " << Pt.sizes() << " Min: " << Pt.min().item<float>() << " Max: " << Pt.max().item<float>() << std::endl;
+        std::cout << "  Pe (Edge) Shape: " << Pe.sizes() << " Min: " << Pe.min().item<float>() << " Max: " << Pe.max().item<float>() << std::endl;
+        std::cout << "  Pc (Coedge) Shape: " << Pc.sizes() << " Min: " << Pc.min().item<float>() << " Max: " << Pc.max().item<float>() << std::endl;
+        psi_diag_printed = true;
+    }
+    // -----------------------------
 
-    return torch::cat({ Pt, Pe, Pc }, 1);
+    return breptorch::cat({ Pt, Pe, Pc }, 1);
 }
 
 // 2. 边特征的最大池化 (带自动 Padding 修正)
@@ -53,8 +68,8 @@ inline Tensor find_max_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
 
     if (Ze.size(0) <= max_req) {
         int64_t diff = max_req - Ze.size(0) + 1;
-        auto pad = torch::full({ diff, Ze.size(1) }, -1e9, Ze.options());
-        Ze = torch::cat({ Ze, pad }, 0);
+        auto pad = breptorch::full({ diff, Ze.size(1) }, -1e9, Ze.options());
+        Ze = breptorch::cat({ Ze, pad }, 0);
     }
 
     // check_indices("Pooling Edge (Ze/Ce)", Ze, Ce);
@@ -63,10 +78,10 @@ inline Tensor find_max_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
     //if (Ze.size(0) > 0) Ze.index_put_({ 0 }, -1e9);
     if (Ze.size(0) > 0) Ze.index_put_({ 0 }, 0);
     Tensor Zet = Ze.index({ Ce });
-    Tensor He_raw = std::get<0>(torch::max(Zet, 1));
+    Tensor He_raw = std::get<0>(breptorch::max(Zet, 1));
 
-    Tensor padding = torch::zeros({ 1, He_raw.size(1) }, Ze.options());
-    return torch::cat({ padding, He_raw }, 0);
+    Tensor padding = breptorch::zeros({ 1, He_raw.size(1) }, Ze.options());
+    return breptorch::cat({ padding, He_raw }, 0);
 }
  //3. 面特征的最大池化 (带自动 Padding 修正)
 inline Tensor find_max_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const std::vector<Tensor>& Csf) {
@@ -83,9 +98,9 @@ inline Tensor find_max_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const
         // std::cout << "  [Pooling] 补全 Zf: " << Zf.size(0) << " -> Req: " << max_req << std::endl;
         int64_t diff = max_req - Zf.size(0) + 1;
         // 用负无穷补，不影响 Max Pooling
-        //auto pad = torch::full({ diff, num_filters }, -1e9, Zf.options()); 
-        auto pad = torch::full({ diff, num_filters }, 0, Zf.options());
-        Zf = torch::cat({ Zf, pad }, 0);
+        //auto pad = breptorch::full({ diff, num_filters }, -1e9, Zf.options()); 
+        auto pad = breptorch::full({ diff, num_filters }, 0, Zf.options());
+        Zf = breptorch::cat({ Zf, pad }, 0);
     }
 
     // 3. 这里的 index_put 是为了让第 0 行 (Padding) 不参与 Max Pooling
@@ -98,7 +113,7 @@ inline Tensor find_max_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const
     // check_indices("Pooling Face Small (Zf/Cf)", Zf, Cf);
 
     Tensor Zft = Zf.index({ Cf });
-    Tensor Hf_small = std::get<0>(torch::max(Zft, 1));
+    Tensor Hf_small = std::get<0>(breptorch::max(Zft, 1));
 
     Tensor Hf_final;
     if (Csf.empty()) {
@@ -109,15 +124,15 @@ inline Tensor find_max_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const
         Hf_list.push_back(Hf_small);
         for (size_t i = 0; i < Csf.size(); ++i) {
             Tensor Zsingle = Zf.index({ Csf[i] });
-            Tensor Hbig = std::get<0>(torch::max(Zsingle, 0));
+            Tensor Hbig = std::get<0>(breptorch::max(Zsingle, 0));
             Hf_list.push_back(Hbig.reshape({ 1, num_filters }));
         }
-        Hf_final = torch::cat(Hf_list, 0);
+        Hf_final = breptorch::cat(Hf_list, 0);
     }
 
     // 这一步输出给下一层用的 Padding 必须是 0
-    Tensor padding_out = torch::zeros({ 1, Hf_final.size(1) }, Zf.options());
-    return torch::cat({ padding_out, Hf_final }, 0);
+    Tensor padding_out = breptorch::zeros({ 1, Hf_final.size(1) }, Zf.options());
+    return breptorch::cat({ padding_out, Hf_final }, 0);
 }
 
 // 新增：平均池化 (Mean Pooling)，但未调用
@@ -130,11 +145,11 @@ inline Tensor get_average_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
     Tensor Zet = Ze.index({ Ce });
 
     // 3. 取平均
-    Tensor He = torch::mean(Zet, 1); // dim=1
+    Tensor He = breptorch::mean(Zet, 1); // dim=1
 
     // 4. 补回 Padding (保持格式一致)
-    Tensor padding = torch::zeros({ 1, He.size(1) }, Ze.options());
-    return torch::cat({ padding, He }, 0);
+    Tensor padding = breptorch::zeros({ 1, He.size(1) }, Ze.options());
+    return breptorch::cat({ padding, He }, 0);
 }
 // Face 平均池化
 inline Tensor get_average_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const std::vector<Tensor>& Csf) {
@@ -148,7 +163,7 @@ inline Tensor get_average_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, co
     Tensor Zft = Zf.index({ Cf });
 
     // 取平均
-    Tensor Hf_small = torch::mean(Zft, 1);
+    Tensor Hf_small = breptorch::mean(Zft, 1);
 
     // 3. 大面处理
     Tensor Hf_final;
@@ -161,40 +176,45 @@ inline Tensor get_average_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, co
         for (const auto& indices : Csf) {
             Tensor Zsingle = Zf.index({ indices });
             // 大面直接对所有边取平均
-            Tensor Hbig = torch::mean(Zsingle, 0);
+            Tensor Hbig = breptorch::mean(Zsingle, 0);
             Hf_list.push_back(Hbig.reshape({ 1, num_filters }));
         }
-        Hf_final = torch::cat(Hf_list, 0);
+        Hf_final = breptorch::cat(Hf_list, 0);
     }
 
+
     // 4. 补回 Padding
-    Tensor padding_out = torch::zeros({ 1, Hf_final.size(1) }, Zf.options());
-    return torch::cat({ padding_out, Hf_final }, 0);
+    Tensor padding_out = breptorch::zeros({ 1, Hf_final.size(1) }, Zf.options());
+    return breptorch::cat({ padding_out, Hf_final }, 0);
 }
  
 /*--- 网络模块定义 ---*/
- //1. 基础 MLP 模块
-struct BRepNetMLPImpl : torch::nn::Module {
-    torch::nn::Sequential mlp;
+
+namespace breptorch {
+namespace nn {
+
+//1. 基础 MLP 模块
+struct BRepNetMLPImpl : Module {
+    SequentialPtr mlp;
 
     BRepNetMLPImpl(int in_size, int hidden, int out_size, bool is_final)
-        : mlp(register_module("mlp", torch::nn::Sequential())) {
+        : mlp(register_module("mlp", Sequential())) {
 
         // MLP 第一层 (Layer 0 of MLP)
         // 任何层的第一级都有 Bias 和 ReLU
-        mlp->push_back("linear_0", torch::nn::Linear(torch::nn::LinearOptions(in_size, hidden).bias(true)));
-        mlp->push_back("relu_0", torch::nn::ReLU());
+        mlp->push_back("linear_0", Linear(LinearOptions(in_size, hidden).bias(true)));
+        mlp->push_back("relu_0", ReLU());
 
         // MLP 第二层 (Layer 1 of MLP)
         if (is_final) { 
             // [Output Layer] 根据Python: use_bias=False, use_relu=False
-            mlp->push_back("linear_1", torch::nn::Linear(torch::nn::LinearOptions(hidden, out_size).bias(false)));
+            mlp->push_back("linear_1", Linear(LinearOptions(hidden, out_size).bias(false)));
             // mlp->push_back("relu_1", torch::nn::ReLU());
         }
         else {
             // [(Layer 0)] 根据Python: use_bias=True, 且有 ReLU()
-            mlp->push_back("linear_1", torch::nn::Linear(torch::nn::LinearOptions(hidden, out_size).bias(true)));
-            mlp->push_back("relu_1", torch::nn::ReLU());
+            mlp->push_back("linear_1", Linear(LinearOptions(hidden, out_size).bias(true)));
+            mlp->push_back("relu_1", ReLU());
         }
     }
 
@@ -203,11 +223,11 @@ struct BRepNetMLPImpl : torch::nn::Module {
        
     }
 };
-TORCH_MODULE(BRepNetMLP);
+TORCH_MODULE(BRepNetMLP)
 
 
 // 2. 通用层 (BRepNetLayer)
-struct BRepNetLayerImpl : torch::nn::Module {
+struct BRepNetLayerImpl : Module {
     BRepNetMLP mlp{ nullptr };
     int out_size;
     bool use_average_pooling = false;
@@ -220,6 +240,7 @@ struct BRepNetLayerImpl : torch::nn::Module {
 
     std::tuple<Tensor, Tensor, Tensor> forward(Tensor Xf, Tensor Xe, Tensor Xc, Tensor Kf, Tensor Ke, Tensor Kc, Tensor Ce, Tensor Cf, const std::vector<Tensor>& Csf) {
         Tensor Psi = build_matrix_Psi(Xf, Xe, Xc, Kf, Ke, Kc);
+
 
         // 1. 诊断输入 Xf (Layer 0 Input)
         /*static bool printed_L0_in = false;
@@ -238,7 +259,8 @@ struct BRepNetLayerImpl : torch::nn::Module {
 
             // 1. 获取 Linear 层
             // mlp 是一个 Sequential，第 0 个是 Linear，第 1 个是 ReLU
-            auto linear = mlp->mlp->children()[0]->as<torch::nn::Linear>();
+            auto linear = mlp->mlp->children()[0]; // dynamic cast not used in mock
+
 
             if (linear) {
                 // 2. 运行 Linear
@@ -307,10 +329,10 @@ struct BRepNetLayerImpl : torch::nn::Module {
         return std::make_tuple(Hf, He, Zc);
     }
 };
-TORCH_MODULE(BRepNetLayer);
+TORCH_MODULE(BRepNetLayer)
 
 // 3. 输出层 
-struct BRepNetFaceOutputLayerImpl : torch::nn::Module {
+struct BRepNetFaceOutputLayerImpl : Module {
     BRepNetMLP mlp{ nullptr };
 
     BRepNetFaceOutputLayerImpl(int in_s, int out_s) {
@@ -325,20 +347,12 @@ struct BRepNetFaceOutputLayerImpl : torch::nn::Module {
         Tensor Pet = Xe.index({ Ke }); // [N, 5, 64]
         Tensor Pct = Xc.index({ Kc });
 
-        Tensor Pt = torch::flatten(Pft, 1); // [N, 128]
-        Tensor Pe = torch::flatten(Pet, 1); // [N, 320]
-        Tensor Pc = torch::flatten(Pct, 1); 
+        Tensor Pt = breptorch::flatten(Pft, 1); // [N, 128]
+        Tensor Pe = breptorch::flatten(Pet, 1); // [N, 320]
+        Tensor Pc = breptorch::flatten(Pct, 1); 
         // 5. 拼接 (包含 Coedge!)
-        Tensor Psi = torch::cat({ Pt, Pe, Pc}, 1);
+        Tensor Psi = breptorch::cat({ Pt, Pe, Pc}, 1);
 
-        // 【调试插入】打印 Output LayerPsi
-        /*std::cout << "\n---------------- [C++ Output Layer Diagnosis] ----------------" << std::endl;
-        std::cout << "Cpp Final Psi Shape: " << Psi.sizes() << std::endl;
-        // 打印前 5 行 (跳过第0行 Padding，取 1~6)，前 5 列
-        std::cout << "Cpp Final Psi [Head]:\n" << Psi.slice(0, 1, 6).slice(1, 0, 5) << std::endl;
-        // 打印 Edge 部分 (128 ~ 133)
-        std::cout << "Cpp Final Psi [Edge Part]:\n" << Psi.slice(0, 1, 6).slice(1, 128, 133) << std::endl;        // 5. MLP 推理
-        */
         Tensor Z = mlp->forward(Psi);
 
         // 【调试插入】打印 Z
@@ -354,14 +368,14 @@ struct BRepNetFaceOutputLayerImpl : torch::nn::Module {
         return embeds;
     }
 };
-TORCH_MODULE(BRepNetFaceOutputLayer);
+TORCH_MODULE(BRepNetFaceOutputLayer)
 
 // 4. 主网络 (BRepNet) 
-struct BRepNetImpl : torch::nn::Module {
+struct BRepNetImpl : Module {
     // GNN 核心层
-    torch::nn::Sequential layers{ nullptr };
+    SequentialPtr layers{ nullptr };
     BRepNetFaceOutputLayer output_layer{ nullptr };
-    torch::nn::Linear classification_layer{ nullptr };
+    LinearPtr classification_layer{ nullptr };
 
     // UV-Net 编码器模块
     UVNetSurfaceEncoder surf_enc{ nullptr }; // 用于面 (Face)
@@ -373,18 +387,18 @@ struct BRepNetImpl : torch::nn::Module {
     BRepNetImpl(int input_dim, int hidden_dim, int kernel_size_sum, int num_classes) {
         // 1. Hidden Layers (Layers.0)
         // 注意：input_dim 必须等于 (手工特征 + Grid特征) 的总和
-        layers = register_module("layers", torch::nn::Sequential());
+        layers = register_module("layers", Sequential());
         layers->push_back("0", BRepNetLayer(input_dim, hidden_dim));
 
         // 2. Output Layer
         output_layer = register_module("output_layer", BRepNetFaceOutputLayer(kernel_size_sum * hidden_dim, hidden_dim));
 
         // 3. Classification
-        classification_layer = register_module("classification_layer", torch::nn::Linear(hidden_dim, num_classes));
+        classification_layer = register_module("classification_layer", Linear(LinearOptions(hidden_dim, num_classes)));
 
         // 4. 初始化 UV-Net 模块
-        surf_enc = register_module("surface_encoder", UVNetSurfaceEncoder());
-        curve_enc = register_module("curve_encoder", UVNetCurveEncoder());
+        surf_enc = register_module("surface_encoder", UVNetSurfaceEncoder(new UVNetSurfaceEncoderImpl()));
+        curve_enc = register_module("curve_encoder", UVNetCurveEncoder(new UVNetCurveEncoderImpl()));
     }
 
     // 辅助函数：智能对齐并提取特征
@@ -404,8 +418,8 @@ struct BRepNetImpl : torch::nn::Module {
             // 获取 Grid 的维度: [1, C, H, W] or [1, C, L]
             std::vector<int64_t> pad_shape = grid.sizes().vec();
             pad_shape[0] = 1;
-            auto padding = torch::zeros(pad_shape, grid.options());
-            input_grid = torch::cat({ padding, grid }, 0);
+            auto padding = breptorch::zeros(pad_shape, grid.options());
+            input_grid = breptorch::cat({ padding, grid }, 0);
         }
         else if (grid_rows != target_rows) {
             std::cerr << "[Error] " << name << " 维度严重不匹配! Target: " << target_rows << ", Grid: " << grid_rows << std::endl;
@@ -417,7 +431,7 @@ struct BRepNetImpl : torch::nn::Module {
         Tensor grid_emb = encoder->forward(input_grid);
 
         // 3. 拼接: [N, 手工Dim] + [N, 64] -> [N, 手工Dim+64]
-        return torch::cat({ target_feat, grid_emb }, 1);
+        return breptorch::cat({ target_feat, grid_emb }, 1);
     }
 
     // Forward 函数
@@ -474,6 +488,20 @@ struct BRepNetImpl : torch::nn::Module {
                 Xc = uv_feat_c;
             }
         }
+        /*
+        // ====================================================
+        //  【诊断插入】检查特征是否存活
+        // ====================================================
+        std::cout << "\n---------------- [Feature Diagnosis] ----------------" << std::endl;
+        std::cout << "Xf Max: " << Xf.max().item<float>() << " (Should > 0)" << std::endl;
+        std::cout << "Xe Max: " << Xe.max().item<float>() << " (Should > 0)" << std::endl;
+        std::cout << "Xc Max: " << Xc.max().item<float>() << " (Should > 0)" << std::endl;
+
+        // 检查是否全 0
+        if (std::abs(Xe.max().item<float>()) < 1e-6) std::cerr << "?? 警告: Xe (Edge) 特征全为 0！" << std::endl;
+        if (std::abs(Xc.max().item<float>()) < 1e-6) std::cerr << "?? 警告: Xc (Coedge) 特征全为 0！" << std::endl;
+        std::cout << "-----------------------------------------------------\n" << std::endl;*/
+
 
         // ----------------------------------------------------------------
         // 2. GNN 推理 (由于 build_matrix_Psi 改了，这里直接传)
@@ -503,9 +531,11 @@ struct BRepNetImpl : torch::nn::Module {
 
     // 【关键】加载 UV-Net 权重 (自动分流)
     void load_uvnet_weights(const std::string& npz_path) {
+        std::cout << "[Debug] load_uvnet_weights start" << std::endl;
         cnpy::npz_t npz = cnpy::npz_load(npz_path);
-        std::map<std::string, torch::Tensor> surf_dict;
-        std::map<std::string, torch::Tensor> curve_dict;
+        std::cout << "[Debug] npz loaded" << std::endl;
+        std::map<std::string, Tensor> surf_dict;
+        std::map<std::string, Tensor> curve_dict;
 
         bool found_any = false;
 
@@ -514,23 +544,40 @@ struct BRepNetImpl : torch::nn::Module {
 
             // 筛选 Surface Encoder 权重
             if (name.find("surface_encoder") != std::string::npos) {
+                // std::cout << "[Debug] Loading surface_encoder weight: " << name << std::endl;
                 cnpy::NpyArray arr = item.second;
                 std::vector<int64_t> shape; for (auto s : arr.shape) shape.push_back(s);
-                surf_dict[name] = torch::from_blob(arr.data<float>(), shape, torch::kFloat32).clone();
+                // Check word size
+                if (arr.word_size != 4) {
+                    std::cerr << "[Warning] Skipping " << name << " due to word_size " << arr.word_size << std::endl;
+                    continue;
+                }
+                surf_dict[name] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
                 found_any = true;
             }
             // 筛选 Curve Encoder 权重
             else if (name.find("curve_encoder") != std::string::npos) {
+                // std::cout << "[Debug] Loading curve_encoder weight: " << name << std::endl;
                 cnpy::NpyArray arr = item.second;
                 std::vector<int64_t> shape; for (auto s : arr.shape) shape.push_back(s);
-                curve_dict[name] = torch::from_blob(arr.data<float>(), shape, torch::kFloat32).clone();
+                if (arr.word_size != 4) {
+                    std::cerr << "[Warning] Skipping " << name << " due to word_size " << arr.word_size << std::endl;
+                    continue;
+                }
+                curve_dict[name] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
                 found_any = true;
             }
         }
 
         if (found_any) {
-            surf_enc->load_weights(surf_dict);
-            curve_enc->load_weights(curve_dict);
+            std::cout << "[Debug] Loading weights into surf_enc..." << std::endl;
+            if (surf_enc) surf_enc->load_weights(surf_dict);
+            else std::cerr << "[Error] surf_enc is null!" << std::endl;
+            
+            std::cout << "[Debug] Loading weights into curve_enc..." << std::endl;
+            if (curve_enc) curve_enc->load_weights(curve_dict);
+            else std::cerr << "[Error] curve_enc is null!" << std::endl;
+
             use_uvnet = true;
             std::cout << " UV-Net Weights Loaded (Surface & Curve)!" << std::endl;
         }
@@ -542,10 +589,10 @@ struct BRepNetImpl : torch::nn::Module {
     // 加载 MLP 权重 (保持不变)
     void load_mlp_weights(const std::string& path) {
         cnpy::npz_t npz = cnpy::npz_load(path);
-        torch::NoGradGuard no_grad;
+        breptorch::NoGradGuard no_grad;
 
         for (auto& p : this->named_parameters()) {
-            std::string name = p.key();
+            std::string name = p.first;
             // 跳过 UV-Net 的参数，因为它们通过 load_uvnet_weights 单独加载
             if (name.find("surface_encoder") != std::string::npos || name.find("curve_encoder") != std::string::npos) {
                 continue;
@@ -553,15 +600,15 @@ struct BRepNetImpl : torch::nn::Module {
 
             if (npz.count(name)) {
                 cnpy::NpyArray arr = npz[name];
-                auto t = torch::from_blob(arr.data<float>(), p.value().sizes(), torch::kFloat32).clone();
-                p.value().copy_(t);
+                auto t = breptorch::from_blob(arr.data<float>(), p.second->sizes(), breptorch::kFloat32).clone();
+                p.second->copy_(t);
                 //test_step.cpp暂时取消
                 //std::cout << "Loaded MLP Weight: " << name << std::endl;
             }
         }
         // 2. 【关键新增】加载 Buffers(Running Mean / Var)
         for (auto& p : this->named_buffers()) {
-            std::string name = p.key();
+            std::string name = p.first;
             // 跳过 UV-Net
             if (name.find("surface_encoder") != std::string::npos || name.find("curve_encoder") != std::string::npos) {
                 continue;
@@ -569,8 +616,8 @@ struct BRepNetImpl : torch::nn::Module {
 
             if (npz.count(name)) {
                 cnpy::NpyArray arr = npz[name];
-                auto t = torch::from_blob(arr.data<float>(), p.value().sizes(), torch::kFloat32).clone();
-                p.value().copy_(t);
+                auto t = breptorch::from_blob(arr.data<float>(), p.second->sizes(), breptorch::kFloat32).clone();
+                p.second->copy_(t);
                 std::cout << "Loaded Buffer: " << name << std::endl;
             }
             else {
@@ -582,4 +629,7 @@ struct BRepNetImpl : torch::nn::Module {
 
     }
 };
-TORCH_MODULE(BRepNet);
+TORCH_MODULE(BRepNet)
+
+} // namespace nn
+} // namespace breptorch

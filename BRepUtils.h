@@ -4,7 +4,8 @@
 #include <string>
 #include <algorithm>
 #include <cmath>
-#include <torch/torch.h>
+//#include <torch/torch.h>
+#include "BRepTorch.h"
 #include "cnpy.h"
 
 // OpenCascade 基础数据类型头文件
@@ -17,14 +18,17 @@
 #include <gp_Pnt.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 
+//using namespace torch;
+using namespace breptorch;
+
 namespace BRepUtils {
     // --- 数学工具函数 ---
 
     // 向量在平面上的投影
-    torch::Tensor ProjectVector(torch::Tensor vec, torch::Tensor target_plane_normal);
+    Tensor ProjectVector(Tensor vec, Tensor target_plane_normal);
 
     // 计算任意正交向量
-    torch::Tensor AnyOrthogonalTensor(torch::Tensor vec);
+    Tensor AnyOrthogonalTensor(Tensor vec);
 
     // 获取参数（保证首尾精确）
     double GetParamStrict(int index, int total, double min_val, double max_val);
