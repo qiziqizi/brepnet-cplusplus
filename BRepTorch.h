@@ -66,6 +66,13 @@ namespace breptorch {
             storage_ = std::make_shared<Storage>(n, dt);
         }
 
+        // 添加此构造函数，优先匹配 initializer_list
+        Tensor(std::initializer_list<int64_t> sizes, DType dt = kFloat32)
+            : Tensor(std::vector<int64_t>(sizes.begin(), sizes.end()), dt)
+        {
+            // 委托构造：将 initializer_list 转换为 vector，再调用已有构造函数
+        }
+
         // Static factories
         static Tensor zeros(const std::vector<int64_t>& sizes, DType dt = kFloat32) { return Tensor(sizes, dt); }
         static Tensor zeros(std::initializer_list<int64_t> sizes, DType dt = kFloat32) { return zeros(std::vector<int64_t>(sizes), dt); }
@@ -424,6 +431,7 @@ namespace breptorch {
             }
             return out;
         }
+
         Tensor operator/(float v) const { 
             Tensor out = clone();
             if (dtype_ == kFloat32) {
@@ -797,53 +805,83 @@ namespace breptorch {
     inline Tensor cat(const std::vector<Tensor>& l, int d) {
         if (l.empty()) return Tensor();
         if (l.size() == 1) return l[0].clone();
-        
+
         DType dt = l[0].dtype_;
-        for(const auto& t : l) {
+        for (const auto& t : l) {
             if (t.dtype_ != dt) throw std::runtime_error("cat: all tensors must have same dtype");
         }
 
         std::vector<int64_t> out_sizes = l[0].sizes_;
         int64_t cat_dim_size = 0;
-        for(const auto& t : l) cat_dim_size += t.size(d);
+        for (const auto& t : l) cat_dim_size += t.size(d);
         out_sizes[d] = cat_dim_size;
-        
+
+        std::cout << "[cat] Output shape: [";
+        for (size_t i = 0; i < out_sizes.size(); ++i) {
+            std::cout << out_sizes[i];
+            if (i < out_sizes.size() - 1) std::cout << ",";
+        }
+        std::cout << "]\n";
+
         Tensor out(out_sizes, dt);
-        
+
         if (d == 0) {
             size_t offset = 0;
-            for(const auto& t : l) {
+            for (const auto& t : l) {
                 size_t bytes = t.numel() * (t.dtype_ == kFloat32 ? sizeof(float) : sizeof(int64_t));
-                if (t.dtype_ == kFloat32) std::memcpy(out.storage_->dataf_.data() + offset, t.storage_->dataf_.data(), bytes);
-                else std::memcpy(out.storage_->datal_.data() + offset, t.storage_->datal_.data(), bytes);
-                offset += t.numel(); // offset is in elements
+                if (t.dtype_ == kFloat32) {
+                    std::memcpy(out.storage_->dataf_.data() + offset,
+                        t.storage_->dataf_.data(), bytes);
+                }
+                else {
+                    std::memcpy(out.storage_->datal_.data() + offset,
+                        t.storage_->datal_.data(), bytes);
+                }
+                offset += t.numel();
             }
+
+            if (dt == kFloat32 && out.storage_->dataf_.size() > 0) {
+                std::cout << "[cat] After copy (dim=0), first 3 values: ["
+                    << out.storage_->dataf_[0] << ", "
+                    << (out.storage_->dataf_.size() > 1 ? out.storage_->dataf_[1] : 0) << ", "
+                    << (out.storage_->dataf_.size() > 2 ? out.storage_->dataf_[2] : 0) << "]\n";
+            }
+
             return out;
         }
-        
+
         int64_t outer_elements = 1;
-        for(int i=0; i<d; ++i) outer_elements *= out_sizes[i];
-        
+        for (int i = 0; i < d; ++i) outer_elements *= out_sizes[i];
+
         int64_t inner_elements = 1;
-        for(size_t i=d+1; i<out_sizes.size(); ++i) inner_elements *= out_sizes[i];
-        
+        for (size_t i = d + 1; i < out_sizes.size(); ++i) inner_elements *= out_sizes[i];
+
         size_t element_size = (out.dtype_ == kFloat32 ? sizeof(float) : sizeof(int64_t));
         char* out_ptr = (char*)(out.dtype_ == kFloat32 ? (void*)out.storage_->dataf_.data() : (void*)out.storage_->datal_.data());
-        
-        for(int64_t i=0; i<outer_elements; ++i) {
-            for(const auto& t : l) {
+
+        for (int64_t i = 0; i < outer_elements; ++i) {
+            for (const auto& t : l) {
                 int64_t dim_d_size = t.size(d);
                 size_t copy_bytes = dim_d_size * inner_elements * element_size;
-                
+
                 const char* src_ptr = (const char*)(t.dtype_ == kFloat32 ? (const void*)t.storage_->dataf_.data() : (const void*)t.storage_->datal_.data());
                 src_ptr += i * dim_d_size * inner_elements * element_size;
-                
+
                 std::memcpy(out_ptr, src_ptr, copy_bytes);
                 out_ptr += copy_bytes;
             }
         }
+
+        if (dt == kFloat32 && out.storage_->dataf_.size() > 0) {
+            std::cout << "[cat] After copy (dim=" << d << "), first 3 values: ["
+                << out.storage_->dataf_[0] << ", "
+                << (out.storage_->dataf_.size() > 1 ? out.storage_->dataf_[1] : 0) << ", "
+                << (out.storage_->dataf_.size() > 2 ? out.storage_->dataf_[2] : 0) << "]\n";
+        }
+
         return out;
     }
+
 
     inline Tensor stack(const std::vector<Tensor>& l, int dim = 0) {
         if (l.empty()) return Tensor();
@@ -1088,7 +1126,7 @@ namespace breptorch {
         }
         return out;
     }
-
+    
     inline Tensor linear(Tensor input, Tensor weight, Tensor bias = Tensor()) {
         // input: [N, *, in_features]
         // weight: [out_features, in_features]

@@ -51,11 +51,26 @@ namespace BRepUtils {
 
     // 辅助：找任意正交向量
     Tensor AnyOrthogonalTensor(Tensor vec) {
-        Tensor res = ProjectVector(tensor({ 1.0, 0.0, 0.0 }, vec.options()), vec);
-        if (res.defined()) return res;
-        res = ProjectVector(tensor({ 0.0, 1.0, 0.0 }, vec.options()), vec);
-        if (res.defined()) return res;
-        return ProjectVector(tensor({ 0.0, 0.0, 1.0 }, vec.options()), vec);
+        //Tensor res = ProjectVector(tensor({ 1.0, 0.0, 0.0 }, vec.options()), vec);
+        //if (res.defined()) return res;
+        //res = ProjectVector(tensor({ 0.0, 1.0, 0.0 }, vec.options()), vec);
+        //if (res.defined()) return res;
+        //return ProjectVector(tensor({ 0.0, 0.0, 1.0 }, vec.options()), vec);
+
+        // 尝试三个标准基向量
+        Tensor candidates[3] = {
+            tensor({1.0f, 0.0f, 0.0f}),
+            tensor({0.0f, 1.0f, 0.0f}),
+            tensor({0.0f, 0.0f, 1.0f})
+        };
+
+        for (int i = 0; i < 3; ++i) {
+            Tensor res = ProjectVector(candidates[i], vec);
+            if (res.defined()) {
+                return res;
+            }
+        }
+
     }
 
     // 辅助：严格的线性插值，保证首尾精确命中边界
@@ -108,6 +123,10 @@ namespace BRepUtils {
             if (props.IsNormalDefined()) {
                 gp_Vec n = props.Normal();
                 if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+                if (n.Magnitude() > 1e-7) {
+                    n.Normalize();
+                }
+
                 return n;
             }
         }
@@ -124,6 +143,10 @@ namespace BRepUtils {
         if (props.IsNormalDefined()) {
             gp_Vec n = props.Normal();
             if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
+            // ? 确保归一化
+            if (n.Magnitude() > 1e-7) {
+                n.Normalize();
+            }
             return n;
         }
         return gp_Vec(0, 0, 1);

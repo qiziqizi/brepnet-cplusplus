@@ -54,6 +54,8 @@
 #include <GCPnts_UniformAbscissa.hxx>
 #include <GeomLProp_SLProps.hxx>
 
+#include <BRepGProp_Face.hxx>
+
 //namespace breptorch = ::torch; using Tensor = bpt::Tensor;
 using namespace breptorch;
 
@@ -536,7 +538,7 @@ private:
     // 对应 python 中 extract_face_point_grid
     // =========================================================================
 
-    Tensor generate_global_face_grid(const TopoDS_Face& face) {
+    /*Tensor generate_global_face_grid(const TopoDS_Face& face) {
         int num_u = 10;
         int num_v = 10;
 
@@ -627,6 +629,119 @@ private:
             grid = breptorch::flip(grid, { 1 }); // 翻转 U 轴 (即第 1 维, 0是Channel)
         }
 
+        return grid;
+    }*/
+    // BRepPipeline.h: generate_global_face_grid()
+    Tensor generate_global_face_grid(const TopoDS_Face& face) {
+        int num_u = 10;
+        int num_v = 10;
+
+        // Shape: [9, 10, 10]
+        Tensor grid = breptorch::zeros({ 9, num_u, num_v }, breptorch::kFloat32);
+
+        // ? 修复:计算正确的步长
+        // 对于 [C, H, W] 布局:
+        //   - Channel stride = H * W
+        //   - Row stride = W
+        //   - Col stride = 1
+        int64_t stride_c = num_u * num_v;  // 每个通道的大小
+        int64_t stride_h = num_v;          // 每行的跨度
+
+        // 获取参数
+        Standard_Real umin, umax, vmin, vmax;
+        BRepTools::UVBounds(face, umin, umax, vmin, vmax);
+        BRepAdaptor_Surface surf(face);
+        BRepTopAdaptor_FClass2d classifier(face, 0.0);
+
+        float* data = grid.data_ptr<float>();
+
+        for (int i = 0; i < num_u; ++i) {        // 遍历 U 方向 (高度)
+            for (int j = 0; j < num_v; ++j) {    // 遍历 V 方向 (宽度)
+                double u = BRepUtils::GetParamStrict(i, num_u, umin, umax);
+                double v = BRepUtils::GetParamStrict(j, num_v, vmin, vmax);
+
+                // 计算几何信息
+                gp_Pnt p;
+                gp_Vec d1u, d1v;
+                surf.D1(u, v, p, d1u, d1v);
+
+                gp_Vec n = d1u ^ d1v;
+                if (n.Magnitude() > Precision::Confusion()) {
+                    n.Normalize();
+                }
+                else {
+                    n = gp_Vec(0, 0, 0);
+                }
+
+                if (face.Orientation() == TopAbs_REVERSED) {
+                    n.Reverse();
+                }
+
+                // 计算 Mask
+                gp_Pnt2d p2d(u, v);
+                TopAbs_State state = classifier.Perform(p2d);
+                float mask_val = (state == TopAbs_IN) ? 1.0f : 0.0f;
+
+                bool is_on_border = (i == 0 || i == num_u - 1 || j == 0 || j == num_v - 1);
+                if (is_on_border) {
+                    mask_val = 0.0f;
+                }
+
+                // ? 修复:正确的索引计算
+                // 对于位置 [c, i, j],线性索引 = c * stride_c + i * stride_h + j
+                int64_t idx = i * stride_h + j;
+
+                // 填充数据 (通道 0-2: XYZ)
+                data[0 * stride_c + idx] = (float)p.X();
+                data[1 * stride_c + idx] = (float)p.Y();
+                data[2 * stride_c + idx] = (float)p.Z();
+
+                // 通道 3-5: 法向量
+                data[3 * stride_c + idx] = (float)n.X();
+                data[4 * stride_c + idx] = (float)n.Y();
+                data[5 * stride_c + idx] = (float)n.Z();
+
+                // 通道 6: Mask
+                data[6 * stride_c + idx] = mask_val;
+
+                // 通道 7-8: UV 参数
+                data[7 * stride_c + idx] = (float)u;
+                data[8 * stride_c + idx] = (float)v;
+            }
+        }
+
+        // Flip 处理
+        if (face.Orientation() == TopAbs_REVERSED) {
+            grid = breptorch::flip(grid, { 1 });
+        }
+        static bool verify_once = false;
+        if (!verify_once) {
+            std::cout << "\n[Verify] Grid Generation:\n";
+            std::cout << "  Grid shape: [" << grid.size(0) << ", "
+                << grid.size(1) << ", " << grid.size(2) << "]\n";
+
+            // 检查非零值数量
+            int non_zero = 0;
+            float* data = grid.data_ptr<float>();
+            for (int i = 0; i < grid.numel(); ++i) {
+                if (std::abs(data[i]) > 1e-6) non_zero++;
+            }
+            std::cout << "  Non-zero elements: " << non_zero
+                << " / " << grid.numel() << std::endl;
+
+            // 打印第一个点
+            std::cout << "  Point [0, 5, 5]: ("
+                << grid.at({ 0, 5, 5 }) << ", "
+                << grid.at({ 1, 5, 5 }) << ", "
+                << grid.at({ 2, 5, 5 }) << ")\n";
+
+            std::cout << "  Normal [0, 5, 5]: ("
+                << grid.at({ 3, 5, 5 }) << ", "
+                << grid.at({ 4, 5, 5 }) << ", "
+                << grid.at({ 5, 5, 5 }) << ")\n";
+
+            verify_once = true;
+        }
         return grid;
     }
 
@@ -748,79 +863,199 @@ private:
     }
 
     // 修改 compute_coedge_lcs (使用精确中点)
+    //Tensor compute_coedge_lcs(int coedge_idx) {
+    //    const CoedgeInfo& c_info = coedges[coedge_idx];
+    //    TopoDS_Edge edge = TopoDS::Edge(unique_edges.FindKey(c_info.edge_idx + 1));
+    //    TopoDS_Face face = TopoDS::Face(unique_faces.FindKey(c_info.face_idx + 1));
+
+    //    // 1. 使用曲线适配器找精确中点
+    //    BRepAdaptor_Curve curve(edge);
+
+    //    // 处理等弧长参数 (Uniform Abscissa)
+    //    // 我们需要找到曲线总长的 0.5 位置
+    //    GCPnts_UniformAbscissa sampler;
+    //    double mid_u = 0.0;
+
+    //    // 尝试初始化采样器 (3个点: 起点, 中点, 终点)
+    //    try {
+    //        sampler.Initialize(curve, 3, -1); // 3 points -> index 1 is middle
+    //        if (sampler.IsDone() && sampler.NbPoints() >= 2) {
+    //            // index 1 (从1开始计数，所以是参数2)
+    //            mid_u = sampler.Parameter(2);
+    //        }
+    //        else {
+    //            // 回退到参数中点
+    //            mid_u = (curve.FirstParameter() + curve.LastParameter()) * 0.5;
+    //        }
+    //    }
+    //    catch (...) {
+    //        mid_u = (curve.FirstParameter() + curve.LastParameter()) * 0.5;
+    //    }
+
+    //    // 2. 计算原点 P 和 切线 T
+    //    gp_Pnt p;
+    //    gp_Vec t_vec;
+    //    curve.D1(mid_u, p, t_vec);
+
+    //    // 归一化切线
+    //    if (t_vec.Magnitude() > 1e-7) t_vec.Normalize();
+
+    //    // 处理反向
+    //    if (!c_info.orientation) t_vec.Reverse();
+
+    //    // 3. 计算左面法线 N (W轴)
+    //    gp_Vec n_vec = BRepUtils::GetNormalAtPoint(face, p);
+
+    //    // 转换成 Tensor
+    //    Tensor origin = breptorch::tensor({ (float)p.X(), (float)p.Y(), (float)p.Z() });
+    //    Tensor tangent = breptorch::tensor({ (float)t_vec.X(), (float)t_vec.Y(), (float)t_vec.Z() });
+    //    Tensor left_n = breptorch::tensor({ (float)n_vec.X(), (float)n_vec.Y(), (float)n_vec.Z() });
+
+    //    // --- 以下逻辑保持不变 ---
+
+    //    // W 轴
+    //    // norm 返回的是 Tensor类型，不是float
+    //    float left_n_norm = breptorch::norm(left_n).template item<float>();
+    //    Tensor w_vec = left_n / (left_n_norm + 1e-7f);
+
+    //    // V 轴 (Project Tangent to Normal Plane)
+    //    Tensor v_vec = BRepUtils::ProjectVector(tangent, w_vec);
+    //    if (!v_vec.defined()) {
+    //        v_vec = BRepUtils::AnyOrthogonalTensor(w_vec);
+    //    }
+    //    else {
+    //        float v_norm = breptorch::norm(v_vec).template item<float>();
+    //        v_vec = v_vec /( v_norm + 1e-7f);
+    //    }
+
+    //    // U 轴 (Cross)
+    //    Tensor u_vec = breptorch::cross(v_vec, w_vec);
+    //    
+    //    // 4. 组装矩阵
+    //    Tensor mat = breptorch::eye(4);
+    //    mat.slice(0, 0, 3).slice(1, 0, 1).copy_(u_vec.view({ 3, 1 }));
+    //    mat.slice(0, 0, 3).slice(1, 1, 2).copy_(v_vec.view({ 3, 1 }));
+    //    mat.slice(0, 0, 3).slice(1, 2, 3).copy_(w_vec.view({ 3, 1 }));
+    //    mat.slice(0, 0, 3).slice(1, 3, 4).copy_(origin.view({ 3, 1 }));
+    //    return mat;
+    //}
+
+    
     Tensor compute_coedge_lcs(int coedge_idx) {
         const CoedgeInfo& c_info = coedges[coedge_idx];
         TopoDS_Edge edge = TopoDS::Edge(unique_edges.FindKey(c_info.edge_idx + 1));
         TopoDS_Face face = TopoDS::Face(unique_faces.FindKey(c_info.face_idx + 1));
 
-        // 1. 使用曲线适配器找精确中点
-        BRepAdaptor_Curve curve(edge);
-
-        // 处理等弧长参数 (Uniform Abscissa)
-        // 我们需要找到曲线总长的 0.5 位置
-        GCPnts_UniformAbscissa sampler;
-        double mid_u = 0.0;
-
-        // 尝试初始化采样器 (3个点: 起点, 中点, 终点)
-        try {
-            sampler.Initialize(curve, 3, -1); // 3 points -> index 1 is middle
-            if (sampler.IsDone() && sampler.NbPoints() >= 2) {
-                // index 1 (从1开始计数，所以是参数2)
-                mid_u = sampler.Parameter(2);
-            }
-            else {
-                // 回退到参数中点
-                mid_u = (curve.FirstParameter() + curve.LastParameter()) * 0.5;
-            }
-        }
-        catch (...) {
-            mid_u = (curve.FirstParameter() + curve.LastParameter()) * 0.5;
-        }
-
-        // 2. 计算原点 P 和 切线 T
+        // 1. 获取边中点、切线、法线
+        double u0, u1;
+        Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, u0, u1);
+        double u_mid = (u0 + u1) / 2.0;
         gp_Pnt p;
-        gp_Vec t_vec;
-        curve.D1(mid_u, p, t_vec);
+        gp_Vec tangent;
+        curve->D1(u_mid, p, tangent);
 
-        // 归一化切线
-        if (t_vec.Magnitude() > 1e-7) t_vec.Normalize();
+        gp_Vec normal;
+        BRepGProp_Face face_prop(face);
+        gp_Pnt p_face;
+        gp_Vec du, dv;
+        Standard_Real uu, vv;
+        GeomAPI_ProjectPointOnSurf proj(p, BRep_Tool::Surface(face));
+        proj.LowerDistanceParameters(uu, vv);
+        face_prop.Normal(uu, vv, p_face, normal);
 
-        // 处理反向
-        if (!c_info.orientation) t_vec.Reverse();
+        //// ? 调试：打印原始几何信息
+        //if (coedge_idx < 3) {
+        //    std::cout << "\n[Debug LCS] Coedge " << coedge_idx << ":\n";
+        //    std::cout << "  p: [" << p.X() << ", " << p.Y() << ", " << p.Z() << "]\n";
+        //    std::cout << "  tangent: [" << tangent.X() << ", " << tangent.Y() << ", " << tangent.Z() << "]\n";
+        //    std::cout << "  normal: [" << normal.X() << ", " << normal.Y() << ", " << normal.Z() << "]\n";
+        //}
 
-        // 3. 计算左面法线 N (W轴)
-        gp_Vec n_vec = BRepUtils::GetNormalAtPoint(face, p);
-
-        // 转换成 Tensor
-        Tensor origin = breptorch::tensor({ (float)p.X(), (float)p.Y(), (float)p.Z() });
-        Tensor tangent = breptorch::tensor({ (float)t_vec.X(), (float)t_vec.Y(), (float)t_vec.Z() });
-        Tensor left_n = breptorch::tensor({ (float)n_vec.X(), (float)n_vec.Y(), (float)n_vec.Z() });
-
-        // --- 以下逻辑保持不变 ---
-
-        // W 轴
-        Tensor w_vec = left_n / (breptorch::norm(left_n) + 1e-7);
-
-        // V 轴 (Project Tangent to Normal Plane)
-        Tensor v_vec = BRepUtils::ProjectVector(tangent, w_vec);
-        if (!v_vec.defined()) {
-            v_vec = BRepUtils::AnyOrthogonalTensor(w_vec);
-        }
-        else {
-            v_vec = v_vec / (breptorch::norm(v_vec) + 1e-7);
+        // 判断是否反向
+        gp_Vec t_vec = tangent;
+        gp_Vec n_vec = normal;
+        if (!c_info.orientation) {
+            t_vec.Reverse();
         }
 
-        // U 轴 (Cross)
-        Tensor u_vec = breptorch::cross(v_vec, w_vec);
+        // 转换成数组进行手动计算
+        float p_arr[3] = { (float)p.X(), (float)p.Y(), (float)p.Z() };
+        float t_arr[3] = { (float)t_vec.X(), (float)t_vec.Y(), (float)t_vec.Z() };
+        float n_arr[3] = { (float)n_vec.X(), (float)n_vec.Y(), (float)n_vec.Z() };
 
-        // 4. 组装矩阵
+        // 1. W 轴 (法向量归一化)
+        float w_norm = sqrt(n_arr[0] * n_arr[0] + n_arr[1] * n_arr[1] + n_arr[2] * n_arr[2]) + 1e-7f;
+        float w_vec[3] = {
+            n_arr[0] / w_norm,
+            n_arr[1] / w_norm,
+            n_arr[2] / w_norm
+        };
+
+        // 2. V 轴 (切向量投影到垂直于 W 的平面)
+        float dot_tw = t_arr[0] * w_vec[0] + t_arr[1] * w_vec[1] + t_arr[2] * w_vec[2];
+        float v_vec[3] = {
+            t_arr[0] - dot_tw * w_vec[0],
+            t_arr[1] - dot_tw * w_vec[1],
+            t_arr[2] - dot_tw * w_vec[2]
+        };
+
+        // V 轴归一化
+        float v_norm = sqrt(v_vec[0] * v_vec[0] + v_vec[1] * v_vec[1] + v_vec[2] * v_vec[2]);
+
+        // 如果 V 轴长度太小，说明切线几乎平行于法线，需要找一个正交向量
+        if (v_norm < 1e-6f) {
+            // 选择一个不平行于 W 的向量
+            float temp[3] = { 1.0f, 0.0f, 0.0f };
+            if (fabs(w_vec[0]) > 0.9f) {
+                temp[0] = 0.0f;
+                temp[1] = 1.0f;
+                temp[2] = 0.0f;
+            }
+
+            // 投影到垂直于 W 的平面
+            float dot_temp_w = temp[0] * w_vec[0] + temp[1] * w_vec[1] + temp[2] * w_vec[2];
+            v_vec[0] = temp[0] - dot_temp_w * w_vec[0];
+            v_vec[1] = temp[1] - dot_temp_w * w_vec[1];
+            v_vec[2] = temp[2] - dot_temp_w * w_vec[2];
+
+            v_norm = sqrt(v_vec[0] * v_vec[0] + v_vec[1] * v_vec[1] + v_vec[2] * v_vec[2]);
+        }
+
+        v_vec[0] /= (v_norm + 1e-7f);
+        v_vec[1] /= (v_norm + 1e-7f);
+        v_vec[2] /= (v_norm + 1e-7f);
+
+        // 3. U 轴 (V × W)
+        float u_vec[3] = {
+            v_vec[1] * w_vec[2] - v_vec[2] * w_vec[1],
+            v_vec[2] * w_vec[0] - v_vec[0] * w_vec[2],
+            v_vec[0] * w_vec[1] - v_vec[1] * w_vec[0]
+        };
+
+        // ? 调试：打印 UVW
+        if (coedge_idx < 3) {
+            std::cout << "  u_vec: [" << u_vec[0] << ", " << u_vec[1] << ", " << u_vec[2] << "]\n";
+            std::cout << "  v_vec: [" << v_vec[0] << ", " << v_vec[1] << ", " << v_vec[2] << "]\n";
+            std::cout << "  w_vec: [" << w_vec[0] << ", " << w_vec[1] << ", " << w_vec[2] << "]\n";
+        }
+
+        // 4. 组装矩阵 (手动填充)
         Tensor mat = breptorch::eye(4);
-        mat.slice(0, 0, 3).slice(1, 0, 1).copy_(u_vec.view({ 3, 1 }));
-        mat.slice(0, 0, 3).slice(1, 1, 2).copy_(v_vec.view({ 3, 1 }));
-        mat.slice(0, 0, 3).slice(1, 2, 3).copy_(w_vec.view({ 3, 1 }));
-        mat.slice(0, 0, 3).slice(1, 3, 4).copy_(origin.view({ 3, 1 }));
+        float* mat_ptr = mat.data_ptr<float>();
+
+        // 填充旋转部分 (前3x3) - 列优先
+        mat_ptr[0 * 4 + 0] = u_vec[0];  mat_ptr[0 * 4 + 1] = v_vec[0];  mat_ptr[0 * 4 + 2] = w_vec[0];
+        mat_ptr[1 * 4 + 0] = u_vec[1];  mat_ptr[1 * 4 + 1] = v_vec[1];  mat_ptr[1 * 4 + 2] = w_vec[1];
+        mat_ptr[2 * 4 + 0] = u_vec[2];  mat_ptr[2 * 4 + 1] = v_vec[2];  mat_ptr[2 * 4 + 2] = w_vec[2];
+
+        // 填充平移部分 (第4列)
+        mat_ptr[0 * 4 + 3] = p_arr[0];
+        mat_ptr[1 * 4 + 3] = p_arr[1];
+        mat_ptr[2 * 4 + 3] = p_arr[2];
+
         return mat;
     }
+
     // 对应 Python 的 transform_face_point_grid_to_local
     // 将 Grid (全局) 变换到 Local
     // grid: [Channels, H, W] 或 [Channels, L]
@@ -919,9 +1154,35 @@ private:
 
         for (int i = 0; i < num_c; ++i) {
             Tensor mat = compute_coedge_lcs(i);
+            //// ? 调试：打印前3个的完整矩阵
+            //if (i < 3) {
+            //    std::cout << "\n[Debug] Coedge " << i << ":\n";
+            //    std::cout << "  Forward mat (det=" << breptorch::det(mat) << "):\n";
+            //    float* m = const_cast<Tensor&>(mat).data_ptr<float>();
+            //    for (int r = 0; r < 4; r++) {
+            //        printf("    [%8.4f, %8.4f, %8.4f, %8.4f]\n",
+            //            m[r * 4], m[r * 4 + 1], m[r * 4 + 2], m[r * 4 + 3]);
+            //    }
+            //}
+
             if (std::abs(breptorch::det(mat)) < 1e-6) {
                 mat = breptorch::eye(4);
             }
+
+            Tensor mat_inv = breptorch::inverse(mat);
+
+            //// ? 调试：打印逆矩阵
+            //if (i < 3) {
+            //    std::cout << "  Inverse mat:\n";
+            //    float* m_inv = const_cast<Tensor&>(mat_inv).data_ptr<float>();
+            //    for (int r = 0; r < 4; r++) {
+            //        printf("    [%8.4f, %8.4f, %8.4f, %8.4f]\n",
+            //            m_inv[r * 4], m_inv[r * 4 + 1], m_inv[r * 4 + 2], m_inv[r * 4 + 3]);
+            //    }
+            //}
+            //if (std::abs(breptorch::det(mat)) < 1e-6) {
+            //    mat = breptorch::eye(4);
+            //}
             lcs_invs.push_back(breptorch::inverse(mat));
         }
     }
@@ -943,10 +1204,47 @@ private:
     }
 
     // 生成Face局部网格
-    void generate_face_local_grids(const std::vector<Tensor>& lcs_invs) {
+    void generate_face_local_grids(std::vector<Tensor>& lcs_invs) {
+        /*//检查 lcs_invs 是否正确
+        std::cout << "\n[Debug] LCS invs check:\n";
+        std::cout << "  Number of lcs_invs: " << lcs_invs.size() << "\n";
+
+        for (int i = 0; i < std::min(3, (int)lcs_invs.size()); ++i) {
+            std::cout << "  lcs_invs[" << i << "] shape: [";
+            for (int d = 0; d < lcs_invs[i].dim(); d++) {
+                std::cout << lcs_invs[i].size(d);
+                if (d < lcs_invs[i].dim() - 1) std::cout << ", ";
+            }
+            std::cout << "]\n";
+
+            float* mat = lcs_invs[i].data_ptr<float>();
+            std::cout << "  Matrix:\n";
+            for (int row = 0; row < 4; row++) {
+                std::cout << "    [";
+                for (int col = 0; col < 4; col++) {
+                    std::cout << mat[row * 4 + col];
+                    if (col < 3) std::cout << ", ";
+                }
+                std::cout << "]\n";
+            }
+        }
+        */
         int num_c = coedges.size();
         std::vector<Tensor> f_list;
         f_list.reserve(num_c);
+
+        // ? 添加:在处理第一个 coedge 前检查全局 Grid
+        static bool debug_once = false;
+        if (!debug_once && FaceGridsGlobal.defined()) {
+            std::cout << "\n[Debug] FaceGridsGlobal Check:\n";
+            std::cout << "  Shape: " << FaceGridsGlobal.sizes() << std::endl;
+            std::cout << "  Min: " << FaceGridsGlobal.min().item<float>() << std::endl;
+            std::cout << "  Max: " << FaceGridsGlobal.max().item<float>() << std::endl;
+
+            // 检查第一个 Face 的第一个通道的第一个点
+            std::cout << "  [0,0,0,0] = " << FaceGridsGlobal.at({ 0,0,0,0 }) << std::endl;
+            std::cout << "  [0,3,0,0] = " << FaceGridsGlobal.at({ 0,3,0,0 }) << " (Normal X)\n";
+        }
 
         for (int i = 0; i < num_c; ++i) {
             Tensor pair = breptorch::zeros({ 2, 9, 10, 10 }, breptorch::kFloat32);
@@ -954,7 +1252,24 @@ private:
             // Left Face
             int f_idx = coedges[i].face_idx;
             if (FaceGridsGlobal.defined() && f_idx < FaceGridsGlobal.size(0)) {
-                Tensor t = transform_grid_to_local(get_slice(FaceGridsGlobal, f_idx), lcs_invs[i], true);
+                //Tensor t = transform_grid_to_local(get_slice(FaceGridsGlobal, f_idx), lcs_invs[i], true);
+                
+                Tensor t_global = get_slice(FaceGridsGlobal, f_idx);
+                // ? 添加:变换前后对比
+                if (!debug_once && i == 0) {
+                    std::cout << "\n[Debug] Before LCS Transform (Coedge 0, Left Face):\n";
+                    std::cout << "  Global [0,0,0] = " << t_global.at({ 0,0,0 }) << std::endl;
+                    std::cout << "  Global [3,0,0] = " << t_global.at({ 3,0,0 }) << " (Normal)\n";
+                }
+                Tensor t = transform_grid_to_local(t_global, lcs_invs[i], true);
+                if (!debug_once && i == 0) {
+                    std::cout << "[Debug] After LCS Transform:\n";
+                    std::cout << "  Local [0,0,0] = " << t.at({ 0,0,0 }) << std::endl;
+                    std::cout << "  Local [3,0,0] = " << t.at({ 3,0,0 }) << " (Normal)\n";
+                    debug_once = true;
+                }
+                //结束
+
                 set_slice(pair, 0, t);
             }
 
@@ -1029,9 +1344,15 @@ private:
         generate_edge_local_grids();
 
         // 4. 输出统计信息
-        std::cout << " Local Features Generated." << std::endl;
-        if (FaceGridsLocal.defined()) std::cout << "   Face: " << FaceGridsLocal.sizes() << std::endl;
-        if (CoedgeGridsLocal.defined()) std::cout << "   Coedge: " << CoedgeGridsLocal.sizes() << std::endl;
-        if (EdgeGridsLocal.defined()) std::cout << "   Edge: " << EdgeGridsLocal.sizes() << std::endl;
+        //std::cout << " Local Features Generated." << std::endl;
+        //if (FaceGridsLocal.defined()) std::cout << "   Face: " << FaceGridsLocal.sizes() << std::endl;
+        //if (CoedgeGridsLocal.defined()) std::cout << "   Coedge: " << CoedgeGridsLocal.sizes() << std::endl;
+        //if (EdgeGridsLocal.defined()) std::cout << "   Edge: " << EdgeGridsLocal.sizes() << std::endl;
+        //std::cout << "\n[Debug] FaceGridsGlobal Summary:\n";
+        //for (int f = 0; f < std::min(3, (int)FaceGridsGlobal.size(0)); f++) {
+        //    std::cout << "  Face[" << f << "] point[0,5,5]=" << FaceGridsGlobal.at({ f, 0, 5, 5 })
+        //        << " normal[3,5,5]=" << FaceGridsGlobal.at({ f, 3, 5, 5 }) << "\n";
+        //}
+
     }
 };
