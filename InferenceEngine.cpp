@@ -1,5 +1,6 @@
 #include "InferenceEngine.h"
 #include <iostream>
+namespace torch = breptorch;
 
 InferenceEngine::InferenceEngine(int f_in, int e_in, int c_in, int emb_dim) {
     // 实例化网络，使用 make_shared

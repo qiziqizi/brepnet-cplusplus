@@ -10,6 +10,10 @@
 #include <psapi.h>   // 用于查询进程内存状态
 #pragma comment(lib, "psapi.lib") // 链接库
 namespace fs = std::filesystem;
+
+#include "BRepTorch.h"
+namespace torch = breptorch;
+
 #include "BRepNet.h"
 #include "BRepPipeline.h"
 #include "InferenceEngine.h"
@@ -209,7 +213,8 @@ int main() {
         // 网格补齐，Grid必须和特征矩阵行数一致 (因为特征矩阵刚补了一行 0)
         auto align_grid = [](torch::Tensor& g, int64_t target_rows) {
             if (g.defined() && g.size(0) == target_rows - 1) {
-                std::vector<int64_t> s = g.sizes().vec(); s[0] = 1;
+                std::vector<int64_t> s = g.sizes(); 
+                s[0] = 1;
                 g = torch::cat({ torch::zeros(s, g.options()), g }, 0);
             }
             };

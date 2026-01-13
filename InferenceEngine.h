@@ -1,8 +1,8 @@
 #pragma once
 #include <string>
-#include <torch/torch.h>
 #include "BRepNet.h"       
 #include "BRepPipeline.h"  // 需要用到 pipeline里的数据
+namespace torch = breptorch;
 
 class InferenceEngine {
 public:
