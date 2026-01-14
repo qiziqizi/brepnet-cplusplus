@@ -370,99 +370,27 @@ private:
         return curr;
     }
 
-    // 生成 Xf，Xe, Xc (Raw)
     void extract_features() {
         int num_f = unique_faces.Extent();
         int num_e = unique_edges.Extent();
         int num_c = coedges.size();
-
-        // 1. 构建 Edge -> Faces 映射
-        std::vector<std::vector<int>> edge_owner_faces(num_e);
-        for (int i = 0; i < num_f; ++i) {
-            const TopoDS_Face& f = TopoDS::Face(unique_faces.FindKey(i + 1));
-            TopExp_Explorer ex(f, TopAbs_EDGE);
-            for (; ex.More(); ex.Next()) {
-                int e_idx = unique_edges.FindIndex(ex.Current());
-                // 【安全检查】OpenCascade 索引从1开始，0表示没找到
-                if (e_idx > 0 && e_idx <= num_e) {
-                    edge_owner_faces[e_idx - 1].push_back(i);
-                }
-            }
-        }
-
-        // std::cout << "  [Feat] 正在提取 Face 特征..." << std::endl;
-        // 2. 提取 Face 特征
+        // 1. 初始化 Face 特征矩阵 (Xf)
+        // 导师指示：不需要全局几何特征，这里仅作占位，全设为 0 或 1
+        // 维度保持 7 是为了兼容现有的权重文件结构
         Xf = breptorch::zeros({ num_f, 7 });
-        auto Xf_a = Xf.accessor<float, 2>();
-        for (int i = 0; i < num_f; ++i) {
-            try {
-                int row = i;
-                const TopoDS_Face& f = TopoDS::Face(unique_faces.FindKey(i + 1));
-                BRepAdaptor_Surface s(f);
-                GeomAbs_SurfaceType t = s.GetType();
 
-                if (t == GeomAbs_Plane) Xf_a[row][0] = 1;
-                else if (t == GeomAbs_Cylinder) Xf_a[row][1] = 1;
-                else if (t == GeomAbs_Cone) Xf_a[row][2] = 1;
-                else if (t == GeomAbs_Sphere) Xf_a[row][3] = 1;
-                else if (t == GeomAbs_Torus) Xf_a[row][4] = 1;
-
-                Xf_a[row][5] = (float)BRepUtils::GetFaceArea(f);
-
-                if (t == GeomAbs_BSplineSurface || t == GeomAbs_BezierSurface) Xf_a[row][6] = 1;
-            }
-            catch (...) {
-                std::cerr << "  Face " << i << " 特征提取失败，跳过。" << std::endl;
-            }
-        }
-
-        // 3. 提取 Edge 特征
+        // 2. 初始化 Edge 特征矩阵 (Xe)
+        // 维度保持 10 以兼容权重
         Xe = breptorch::zeros({ num_e, 10 });
-        auto Xe_a = Xe.accessor<float, 2>();
-        for (int i = 0; i < num_e; ++i) {
-            try {
-                int row = i;
-                const TopoDS_Edge& e = TopoDS::Edge(unique_edges.FindKey(i + 1));
-
-                // 默认初始化: 平滑，非闭合
-                Xe_a[row][0] = 0; Xe_a[row][1] = 0; Xe_a[row][2] = 1;
-
-                // 计算凸凹性 (CalcConvexity 是高危函数)
-                if (edge_owner_faces[i].size() == 2) {
-                    // 【安全包裹】
-                    try {
-                        int cvx = BRepUtils::CalcConvexity(e, edge_owner_faces[i][0], edge_owner_faces[i][1], this->unique_faces);
-                        if (cvx == 0) { Xe_a[row][0] = 1; Xe_a[row][2] = 0; } // Concave
-                        else if (cvx == 1) { Xe_a[row][1] = 1; Xe_a[row][2] = 0; } // Convex
-                    }
-                    catch (...) {
-                        // 如果几何计算崩溃，保持默认(Smooth)
-                    }
-                }
-
-                Xe_a[row][3] = (float)BRepUtils::GetEdgeLength(e);
-
-                BRepAdaptor_Curve c(e);
-                GeomAbs_CurveType t = c.GetType();
-                if (t == GeomAbs_Circle) Xe_a[row][4] = 1;
-                else if (t == GeomAbs_Ellipse) Xe_a[row][6] = 1;
-                else if (t == GeomAbs_Line) Xe_a[row][9] = 1;
-                else Xe_a[row][7] = 1; // Spline/Other
-
-                if (BRep_Tool::IsClosed(e)) Xe_a[row][5] = 1;
-
-            }
-            catch (...) {
-                std::cerr << "  Edge " << i << " 特征提取失败，跳过。" << std::endl;
-            }
-        }
-
-        // 4. 提取 Coedge 特征
+        // 3. 初始化 Coedge 特征矩阵 (Xc)
         Xc = breptorch::zeros({ num_c, 1 });
         auto Xc_a = Xc.accessor<float, 2>();
         for (int i = 0; i < num_c; ++i) {
+            // 仅仅保留这一项方向信息，因为它属于拓扑结构的一部分
             if (!coedges[i].orientation) Xc_a[i][0] = 1;
         }
+
+        std::cout << "[Info] Simplified Feature Extraction (No Global Geom Stats)." << std::endl;
     }
 
     void generate_tensors() {
