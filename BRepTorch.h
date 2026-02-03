@@ -833,8 +833,6 @@ namespace breptorch {
                 }
                 offset += t.numel();
             }
-
-            if (dt == kFloat32 && out.storage_->dataf_.size() > 0) {
             return out;
         }
 

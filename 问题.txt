@@ -1,43 +1,331 @@
-BRepNet.h出现了很多乱码，是不是中文注释都变成乱码了？
-libtorch是不需要的，我已经写了一个BRepTorch.h了,libtorch是不允许使用的.、
-编译出现的错误如下：
+完全移除任何有关libtorch有关的内容，这个是禁止的。
+
 严重性	代码	说明	项目	文件	行	抑制状态	详细信息
-错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	887		
-错误	C2601	“stack”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	868		
-错误	C2601	“zeros”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	884		
-错误	C2601	“zeros”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	885		
-错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	886		
-错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	888		
-错误	C2601	“full”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	889		
-错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	890		
 错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	891		
-错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	892		
+警告	C4819	该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失	brepnet	D:\brepnet-cplusplus\BRepTorch.h	685		
+警告	C4819	该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失	brepnet	D:\brepnet-cplusplus\BRepNet.h	1		
+警告	C4819	该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失	brepnet	D:\brepnet-cplusplus\BRepTorch.h	685		
+警告	C4819	该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失	brepnet	D:\brepnet-cplusplus\test.cpp	1		
+警告	C4005	“_CRT_SECURE_NO_WARNINGS”: 宏重定义	brepnet	D:\brepnet-cplusplus\test.cpp	1		
+警告	C4819	该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失	brepnet	D:\brepnet-cplusplus\BRepTorch.h	685		
+警告	C4819	该文件包含不能在当前代码页(936)中表示的字符。请将该文件保存为 Unicode 格式以防止数据丢失	brepnet	D:\brepnet-cplusplus\BRepNet.h	1		
+错误	C2601	“stack”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	867		
+错误	C2601	“zeros”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	883		
+错误	C2601	“zeros”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	884		
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	885		
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	886		
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	887		
+错误	C2601	“full”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	888		
+错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	889		
+错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	890		
+错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	892		
 错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	893		
 错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	894		
-错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	895		
-错误	C2601	“ones_like”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	896		
-错误	C2601	“eye”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	897		
-错误	C2601	“leaky_relu”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	900		
-错误	C2601	“adaptive_avg_pool2d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	910		
-错误	C2601	“adaptive_avg_pool1d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	935		
-错误	C2601	“conv2d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	957		
-错误	C2601	“conv1d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1022		
-错误	C2601	“batch_norm”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1073		
-错误	C2601	“linear”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1112		
-错误	C2870	“nn”: 命名空间定义必须出现在文件范围内或紧接着出现在另一命名空间定义内	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1158		
-错误	C3861	“tensor”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	894		
-错误	C2039	"linear": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1245		
-错误	C3861	“linear”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1245		
-错误	C2039	"batch_norm": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1306		
-错误	C3861	“batch_norm”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1306		
-错误	C2039	"conv2d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1328		
-错误	C2660	“breptorch::nn::functional::conv2d”: 函数不接受 5 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1328		
-错误	C2039	"conv1d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1332		
-错误	C2660	“breptorch::nn::functional::conv1d”: 函数不接受 5 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1332		
-错误	C2039	"linear": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1336		
-错误	C2039	"batch_norm": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1339		
-错误	C2660	“breptorch::nn::functional::batch_norm”: 函数不接受 9 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1339		
-错误	C2039	"leaky_relu": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1342		
-错误	C2039	"adaptive_avg_pool2d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1345		
-错误	C2039	"adaptive_avg_pool1d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1348		
-错误	C1907	无法从以前的错误中恢复；正在停止编译	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	19		
+错误	C2601	“ones_like”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	895		
+错误	C2601	“eye”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	896		
+错误	C2601	“leaky_relu”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	899		
+错误	C2601	“adaptive_avg_pool2d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	909		
+错误	C2601	“adaptive_avg_pool1d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	934		
+错误	C2601	“conv2d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	956		
+错误	C2601	“conv1d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1021		
+错误	C2601	“batch_norm”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1072		
+错误	C2601	“linear”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1111		
+错误	C2870	“nn”: 命名空间定义必须出现在文件范围内或紧接着出现在另一命名空间定义内	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1157		
+错误	C3861	“tensor”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	893		
+错误	C2039	"linear": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1244		
+错误	C3861	“linear”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1244		
+错误	C2039	"batch_norm": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1305		
+错误	C3861	“batch_norm”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1305		
+错误	C2039	"conv2d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1327		
+错误	C2660	“breptorch::nn::functional::conv2d”: 函数不接受 5 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1327		
+错误	C2039	"conv1d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1331		
+错误	C2660	“breptorch::nn::functional::conv1d”: 函数不接受 5 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1331		
+错误	C2039	"linear": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1335		
+错误	C2039	"batch_norm": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1338		
+错误	C2660	“breptorch::nn::functional::batch_norm”: 函数不接受 9 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1338		
+错误	C2039	"leaky_relu": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1341		
+错误	C2039	"adaptive_avg_pool2d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1344		
+错误	C2039	"adaptive_avg_pool1d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1347		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	23		
+错误	C2061	语法错误: 标识符“basic_streambuf”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	26		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	27		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	27		
+错误	C2653	“_Mystr”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C2146	语法错误: 缺少“;”(在标识符“size_type”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	36		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	36		
+错误	C2535	“breptorch::std::basic_stringbuf<_Elem,_Traits,_Alloc>::basic_stringbuf(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	36		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	38		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	38		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	216		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	216		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	218		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	227		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	227		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	394		
+错误	C2061	语法错误: 标识符“seekdir”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	394		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	460		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	460		
+错误	C2061	语法错误: 标识符“pointer_traits”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	572		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	578		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	578		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	612		
+错误	C2061	语法错误: 标识符“basic_istream”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	614		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	617		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	617		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	625		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	625		
+错误	C2535	“breptorch::std::basic_istringstream<_Elem,_Traits,_Alloc>::basic_istringstream(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	625		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	628		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	628		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	685		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	685		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	687		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	691		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	691		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	731		
+错误	C2061	语法错误: 标识符“basic_ostream”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	733		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	736		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	736		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	744		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	744		
+错误	C2535	“breptorch::std::basic_ostringstream<_Elem,_Traits,_Alloc>::basic_ostringstream(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	744		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	747		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	747		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	804		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	804		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	806		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	810		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	810		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	851		
+错误	C2061	语法错误: 标识符“basic_iostream”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	853		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	861		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	861		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	869		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	869		
+错误	C2535	“breptorch::std::basic_stringstream<_Elem,_Traits,_Alloc>::basic_stringstream(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	869		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	872		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	872		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	929		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	929		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	931		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	935		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	935		
+错误	C2039	"vector": 不是 "breptorch::std" 的成员	brepnet	D:\cnpy\cnpy.h	25		
+错误	C1003	错误计数超过 100；正在停止编译	brepnet	D:\cnpy\cnpy.h	25		
+错误	C2601	“stack”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	867		
+错误	C2601	“zeros”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	883		
+错误	C2601	“zeros”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	884		
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	885		
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	886		
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	887		
+错误	C2601	“full”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	888		
+错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	889		
+错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	890		
+错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	891		
+错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	892		
+错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	893		
+错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	894		
+错误	C2601	“ones_like”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	895		
+错误	C2601	“eye”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	896		
+错误	C2601	“leaky_relu”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	899		
+错误	C2601	“adaptive_avg_pool2d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	909		
+错误	C2601	“adaptive_avg_pool1d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	934		
+错误	C2601	“conv2d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	956		
+错误	C2601	“conv1d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1021		
+错误	C2601	“batch_norm”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1072		
+错误	C2601	“linear”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1111		
+错误	C2870	“nn”: 命名空间定义必须出现在文件范围内或紧接着出现在另一命名空间定义内	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1157		
+错误	C3861	“tensor”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	893		
+错误	C2039	"linear": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1244		
+错误	C3861	“linear”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1244		
+错误	C2039	"batch_norm": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1305		
+错误	C3861	“batch_norm”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1305		
+错误	C2039	"conv2d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1327		
+错误	C2660	“breptorch::nn::functional::conv2d”: 函数不接受 5 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1327		
+错误	C2039	"conv1d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1331		
+错误	C2660	“breptorch::nn::functional::conv1d”: 函数不接受 5 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1331		
+错误	C2039	"linear": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1335		
+错误	C2039	"batch_norm": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1338		
+错误	C2660	“breptorch::nn::functional::batch_norm”: 函数不接受 9 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1338		
+错误	C2039	"leaky_relu": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1341		
+错误	C2039	"adaptive_avg_pool2d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1344		
+错误	C2039	"adaptive_avg_pool1d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1347		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	23		
+错误	C2061	语法错误: 标识符“basic_streambuf”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	26		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	27		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	27		
+错误	C2653	“_Mystr”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C2146	语法错误: 缺少“;”(在标识符“size_type”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	36		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	36		
+错误	C2535	“breptorch::std::basic_stringbuf<_Elem,_Traits,_Alloc>::basic_stringbuf(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	36		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	38		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	38		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	216		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	216		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	218		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	227		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	227		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	394		
+错误	C2061	语法错误: 标识符“seekdir”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	394		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	460		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	460		
+错误	C2061	语法错误: 标识符“pointer_traits”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	572		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	578		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	578		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	612		
+错误	C2061	语法错误: 标识符“basic_istream”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	614		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	617		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	617		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	625		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	625		
+错误	C2535	“breptorch::std::basic_istringstream<_Elem,_Traits,_Alloc>::basic_istringstream(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	625		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	628		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	628		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	685		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	685		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	687		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	691		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	691		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	731		
+错误	C2061	语法错误: 标识符“basic_ostream”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	733		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	736		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	736		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	744		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	744		
+错误	C2535	“breptorch::std::basic_ostringstream<_Elem,_Traits,_Alloc>::basic_ostringstream(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	744		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	747		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	747		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	804		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	804		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	806		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	810		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	810		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	851		
+错误	C2061	语法错误: 标识符“basic_iostream”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	853		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	861		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	861		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	869		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	869		
+错误	C2535	“breptorch::std::basic_stringstream<_Elem,_Traits,_Alloc>::basic_stringstream(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	869		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	872		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	872		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	929		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	929		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	931		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	935		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	935		
+错误	C2039	"vector": 不是 "breptorch::std" 的成员	brepnet	D:\cnpy\cnpy.h	25		
+错误	C1003	错误计数超过 100；正在停止编译	brepnet	D:\cnpy\cnpy.h	25		
+错误	C2601	“stack”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	867		
+错误	C2601	“zeros”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	883		
+错误	C2601	“zeros”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	884		
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	885		
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	886		
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	887		
+错误	C2601	“full”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	888		
+错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	889		
+错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	890		
+错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	891		
+错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	892		
+错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	893		
+错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	894		
+错误	C2601	“ones_like”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	895		
+错误	C2601	“eye”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	896		
+错误	C2601	“leaky_relu”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	899		
+错误	C2601	“adaptive_avg_pool2d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	909		
+错误	C2601	“adaptive_avg_pool1d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	934		
+错误	C2601	“conv2d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	956		
+错误	C2601	“conv1d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1021		
+错误	C2601	“batch_norm”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1072		
+错误	C2601	“linear”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1111		
+错误	C2870	“nn”: 命名空间定义必须出现在文件范围内或紧接着出现在另一命名空间定义内	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1157		
+错误	C3861	“tensor”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	893		
+错误	C2039	"linear": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1244		
+错误	C3861	“linear”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1244		
+错误	C2039	"batch_norm": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1305		
+错误	C3861	“batch_norm”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1305		
+错误	C2039	"conv2d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1327		
+错误	C2660	“breptorch::nn::functional::conv2d”: 函数不接受 5 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1327		
+错误	C2039	"conv1d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1331		
+错误	C2660	“breptorch::nn::functional::conv1d”: 函数不接受 5 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1331		
+错误	C2039	"linear": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1335		
+错误	C2039	"batch_norm": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1338		
+错误	C2660	“breptorch::nn::functional::batch_norm”: 函数不接受 9 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1338		
+错误	C2039	"leaky_relu": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1341		
+错误	C2039	"adaptive_avg_pool2d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1344		
+错误	C2039	"adaptive_avg_pool1d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1347		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	23		
+错误	C2061	语法错误: 标识符“basic_streambuf”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	26		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	27		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	27		
+错误	C2653	“_Mystr”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C2146	语法错误: 缺少“;”(在标识符“size_type”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	28		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	36		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	36		
+错误	C2535	“breptorch::std::basic_stringbuf<_Elem,_Traits,_Alloc>::basic_stringbuf(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	36		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	38		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	38		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	216		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	216		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	218		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	227		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	227		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	394		
+错误	C2061	语法错误: 标识符“seekdir”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	394		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	460		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	460		
+错误	C2061	语法错误: 标识符“pointer_traits”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	572		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	578		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	578		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	612		
+错误	C2061	语法错误: 标识符“basic_istream”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	614		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	617		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	617		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	625		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	625		
+错误	C2535	“breptorch::std::basic_istringstream<_Elem,_Traits,_Alloc>::basic_istringstream(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	625		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	628		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	628		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	685		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	685		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	687		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	691		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	691		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	731		
+错误	C2061	语法错误: 标识符“basic_ostream”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	733		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	736		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	736		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	744		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	744		
+错误	C2535	“breptorch::std::basic_ostringstream<_Elem,_Traits,_Alloc>::basic_ostringstream(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	744		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	747		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	747		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	804		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	804		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	806		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	810		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	810		
+错误	C2143	语法错误: 缺少“,”(在“<”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	851		
+错误	C2061	语法错误: 标识符“basic_iostream”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	853		
+错误	C2061	语法错误: 标识符“basic_string”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	861		
+错误	C2059	语法错误:“>”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	861		
+错误	C2653	“ios_base”: 不是类或命名空间名称	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	869		
+错误	C2061	语法错误: 标识符“openmode”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	869		
+错误	C2535	“breptorch::std::basic_stringstream<_Elem,_Traits,_Alloc>::basic_stringstream(void)”: 已经定义或声明成员函数	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	869		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	872		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	872		
+错误	C3646	“str”: 未知重写说明符	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	929		
+错误	C2059	语法错误:“(”	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	929		
+错误	C2334	“{”的前面有意外标记；跳过明显的函数体	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	931		
+错误	C4430	缺少类型说明符 - 假定为 int。注意: C++ 不支持默认 int	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	935		
+错误	C2143	语法错误: 缺少“,”(在“&”的前面)	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	935		
+错误	C2039	"vector": 不是 "breptorch::std" 的成员	brepnet	D:\cnpy\cnpy.h	25		
+错误	C1003	错误计数超过 100；正在停止编译	brepnet	D:\cnpy\cnpy.h	25		
