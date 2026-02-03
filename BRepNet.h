@@ -184,34 +184,19 @@ struct BRepNetLayerImpl : Module {
     std::tuple<Tensor, Tensor, Tensor> forward(Tensor Xf, Tensor Xe, Tensor Xc, Tensor Kf, Tensor Ke, Tensor Kc, Tensor Ce, Tensor Cf, const std::vector<Tensor>& Csf) {
         Tensor Psi = build_matrix_Psi(Xf, Xe, Xc, Kf, Ke, Kc);
 
-
-        // Set row 0 to 0 (padding)
         Tensor Z = mlp->forward(Psi);
-        classification_layer = register_module("classification_layer", Linear(LinearOptions(hidden_dim, num_classes)));
 
-        if (!grid.defined()) return target_feat;
+        // Slice into coedge, edge, face features
+        Tensor Zc = Z.slice(1, 0, out_size);
+        Tensor Ze = Z.slice(1, out_size, 2 * out_size);
+        Tensor Zf = Z.slice(1, 2 * out_size, 3 * out_size);
 
-        int64_t target_rows = target_feat.size(0);
-        int64_t grid_rows = grid.size(0);
-        Tensor input_grid = grid;
+        Tensor He, Hf;
+        He = find_max_feature_vectors_for_each_edge(Ze, Ce);
+        Hf = find_max_feature_vectors_for_each_face(Zf, Cf, Csf);
 
-        // 1. �Զ� Padding ������
-        if (grid_rows == target_rows - 1) {
-            // Set row 0 to 0 (padding)
-            // ��ȡ Grid ��ά��: [1, C, H, W] or [1, C, L]
-            std::vector<int64_t> pad_shape = grid.sizes().vec();
-            pad_shape[0] = 1;
-            auto padding = breptorch::zeros(pad_shape, grid.options());
-            input_grid = breptorch::cat({ padding, grid }, 0);
-        }
-        else if (grid_rows != target_rows) {
-            std::cerr << "[Error] " << name << " ά�����ز�ƥ��! Target: " << target_rows << ", Grid: " << grid_rows << std::endl;
-            throw std::runtime_error("Grid dimension mismatch in " + name);
-        }
-
-
-        // 3. ƴ��: [N, �ֹ�Dim] + [N, 64] -> [N, �ֹ�Dim+64]
-        return breptorch::cat({ target_feat, grid_emb }, 1);
+        // Zc doesn't need pooling, pass through directly
+        return std::make_tuple(Hf, He, Zc);
     }
 
     // Forward ����
@@ -244,8 +229,10 @@ struct BRepNetLayerImpl : Module {
                 // view(Nc, -1) ���Զ��������ά (2, 64) չƽΪ 128
                 Tensor uv_feat_f = out_f.view({ Nc, -1 });
 
-                // 4. ����� Xf ������ƴ�ӣ�����ֱ���滻
-                // ���� Python: Pt = Xf (Xf ���� surface_encoder)
+                // 4. Update Xf with UV features (direct replacement)
+                // Python equivalent: Pt = Xf (Xf from surface_encoder)
+                Xf = uv_feat_f;
+            }
             if (EdgeGridsLocal.defined()) {
                 // Set row 0 to 0 (padding)
                 // ���� -> [N_c, 64]
@@ -353,7 +340,6 @@ struct BRepNetLayerImpl : Module {
     // ���� MLP Ȩ�� (���ֲ���)
     void load_mlp_weights(const std::string& path) {
         cnpy::npz_t npz = cnpy::npz_load(path);
-        breptorch::NoGradGuard no_grad;
 
         for (auto& p : this->named_parameters()) {
             std::string name = p.first;
