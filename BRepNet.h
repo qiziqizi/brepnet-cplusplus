@@ -198,8 +198,39 @@ struct BRepNetLayerImpl : Module {
         // Zc doesn't need pooling, pass through directly
         return std::make_tuple(Hf, He, Zc);
     }
+};
+TORCH_MODULE(BRepNetLayer)
 
-    // Forward ����
+// 3. Main BRepNet Implementation
+struct BRepNetImpl : Module {
+    bool use_uvnet = false;
+    UVNetSurfaceEncoder surf_enc{ nullptr };
+    UVNetCurveEncoder curve_enc{ nullptr };
+    SequentialPtr layers{ nullptr };
+    BRepNetFaceOutputLayer output_layer{ nullptr };
+    LinearPtr classification_layer{ nullptr };
+
+    BRepNetImpl(int kernel_size_face, int kernel_size_edge, int num_layers, int num_classes) {
+        // Initialize layers
+        layers = register_module("layers", Sequential());
+
+        // Add layers based on configuration
+        // Layer 0
+        layers->push_back("layer_0", BRepNetLayer(kernel_size_face * 128 + kernel_size_edge * 64 + kernel_size_edge * 64, 120));
+
+        // Middle layers
+        for (int i = 1; i < num_layers; ++i) {
+            layers->push_back("layer_" + std::to_string(i), BRepNetLayer(120 * 3, 120));
+        }
+
+        // Output layer
+        output_layer = register_module("output_layer", BRepNetFaceOutputLayer(kernel_size_face * 120 + kernel_size_edge * 120 + kernel_size_edge * 120, 120));
+
+        // Classification layer
+        classification_layer = register_module("classification_layer", Linear(LinearOptions(120, num_classes).bias(false)));
+    }
+
+    // Forward function
     Tensor forward(Tensor Xf, Tensor Xe, Tensor Xc,
         Tensor Kf, Tensor Ke, Tensor Kc,
         Tensor Ce, Tensor Cf, const std::vector<Tensor>& Csf,
