@@ -1,14 +1,14 @@
-#define _CRT_SECURE_NO_WARNINGS // <--- ±ØÐë¼ÓÔÚ×îµÚÒ»ÐÐ£¡
-#define ENABLE_TEST  // <--- ¼ÓÉÏÕâÒ»ÐÐÒÔÆôÓÃ²âÊÔÖ÷º¯Êý
+#define _CRT_SECURE_NO_WARNINGS // <--- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½Ð£ï¿½
+#define ENABLE_TEST  // <--- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 #include <iostream>
 #include <iomanip>
 #include <string>
 #include <vector>
 #include <filesystem>
-#include <chrono>   // ÓÃÓÚ¼ÆÊ±
+#include <chrono>   // ï¿½ï¿½ï¿½Ú¼ï¿½Ê±
 #include <windows.h> // Windows ÏµÍ³ API
-#include <psapi.h>   // ÓÃÓÚ²éÑ¯½ø³ÌÄÚ´æ×´Ì¬
-#pragma comment(lib, "psapi.lib") // Á´½Ó¿â
+#include <psapi.h>   // ï¿½ï¿½ï¿½Ú²ï¿½Ñ¯ï¿½ï¿½ï¿½ï¿½ï¿½Ú´ï¿½×´Ì¬
+#pragma comment(lib, "psapi.lib") // ï¿½ï¿½ï¿½Ó¿ï¿½
 namespace fs = std::filesystem;
 
 #include "BRepTorch.h"
@@ -17,25 +17,26 @@ namespace torch = breptorch;
 #include "BRepNet.h"
 #include "BRepPipeline.h"
 #include "InferenceEngine.h"
-#include "SimpleLogger.h" 
+#include "SimpleLogger.h"
+#include "VerificationLogger.h" 
 //#include "BRepTest.h"
 
 
-// ¸¨Öú£º¼ì²éÎÄ¼þÊÇ·ñ´æÔÚ
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½Ç·ï¿½ï¿½ï¿½ï¿½
 void check_file(const std::string& path) {
     if (!std::filesystem::exists(path)) {
-        throw std::runtime_error("ÎÄ¼þ²»´æÔÚ: " + path);
+        throw std::runtime_error("ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: " + path);
     }
-    std::cout << " ÎÄ¼þ´æÔÚ: " << path << std::endl;
+    std::cout << " ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½: " << path << std::endl;
 }
 
 
-// »ñÈ¡µ±Ç°ÎïÀíÄÚ´æÕ¼ÓÃ (Working Set)
+// ï¿½ï¿½È¡ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½ï¿½Ú´ï¿½Õ¼ï¿½ï¿½ (Working Set)
 double get_current_memory_mb() {
     PROCESS_MEMORY_COUNTERS pmc;
     if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
-        // WorkingSetSize ÊÇµ±Ç°Õ¼ÓÃµÄÎïÀíÄÚ´æ (Bytes)
-        // ³ýÒÔ 1024*1024 ×ª»»Îª MB
+        // WorkingSetSize ï¿½Çµï¿½Ç°Õ¼ï¿½Ãµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú´ï¿½ (Bytes)
+        // ï¿½ï¿½ï¿½ï¿½ 1024*1024 ×ªï¿½ï¿½Îª MB
         return (double)pmc.WorkingSetSize / (1024.0 * 1024.0);
     }
     return 0.0;
@@ -44,19 +45,19 @@ double get_current_memory_mb() {
 #ifdef ENABLE_TEST
 int main() {
 
-    // Ö»ÒªÕâÐÐ´æÔÚ£¬ËùÓÐµÄ cout/cerr ¶¼»á±»¼ÇÂ¼£¬³ÌÐòÍË³öÊ±×Ô¶¯±£´æ
+    // Ö»Òªï¿½ï¿½ï¿½Ð´ï¿½ï¿½Ú£ï¿½ï¿½ï¿½ï¿½Ðµï¿½ cout/cerr ï¿½ï¿½ï¿½á±»ï¿½ï¿½Â¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë³ï¿½Ê±ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½
     Tools::AutoLogger _logger;
     try {
         auto start_total = std::chrono::high_resolution_clock::now();
         double mem_start = get_current_memory_mb();
-        std::cout << "[Perf] ³õÊ¼ÄÚ´æ: " << mem_start << " MB" << std::endl;
+        std::cout << "[Perf] ï¿½ï¿½Ê¼ï¿½Ú´ï¿½: " << mem_start << " MB" << std::endl;
 
-		// ²âÊÔÎÄ¼þÂ·¾¶ÐÞ¸ÄÎªÏà¶ÔÂ·¾¶
+		// ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½Â·ï¿½ï¿½ï¿½Þ¸ï¿½Îªï¿½ï¿½ï¿½Â·ï¿½ï¿½
         fs::path base_dir = "test_data";
         std::string verify_path = (base_dir / "verification_data_0101.npz").string();
         std::string weights_path = (base_dir / "brepnet_weights_0101.npz").string();
         std::string step_path = (base_dir / "136322_81d84c1b_1.stp").string();
-        // Ê¹ÓÃ Tools::GetAbsPath ´òÓ¡¾ø¶ÔÂ·¾¶£¬·½±ãÈÕÖ¾»ØËÝ
+        // Ê¹ï¿½ï¿½ Tools::GetAbsPath ï¿½ï¿½Ó¡ï¿½ï¿½ï¿½ï¿½Â·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¾ï¿½ï¿½ï¿½ï¿½
         std::cout << "[Config] Verify File : " << Tools::GetAbsPath(verify_path) << std::endl;
         std::cout << "[Config] Weights File: " << Tools::GetAbsPath(weights_path) << std::endl;
         std::cout << "[Config] STEP File   : " << Tools::GetAbsPath(step_path) << std::endl;
@@ -64,21 +65,21 @@ int main() {
 
         check_file(verify_path);
 
-        // µÚÒ»¶ÎÊý¾ÝÔ¤´¦Àí
+        // ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô¤ï¿½ï¿½ï¿½ï¿½
         auto start_load = std::chrono::high_resolution_clock::now();
 
         BRepPipeline pipeline;
         pipeline.process(step_path);
 
-        pipeline.load_stats(weights_path); // ¼ÓÔØ¾ùÖµºÍ·½²î
+        pipeline.load_stats(weights_path); // ï¿½ï¿½ï¿½Ø¾ï¿½Öµï¿½Í·ï¿½ï¿½ï¿½
         if (pipeline.has_stats)
-            pipeline.standardize(); // Ö´ÐÐ (x - mean) / std
+            pipeline.standardize(); // Ö´ï¿½ï¿½ (x - mean) / std
 
         // ==========================================
-        // ½×¶ÎÒ»£ºÊý¾Ý¼ÓÔØÓëÔ¤´¦Àí (BRepPipeline)
+        // ï¿½×¶ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Ý¼ï¿½ï¿½ï¿½ï¿½ï¿½Ô¤ï¿½ï¿½ï¿½ï¿½ (BRepPipeline)
         // ==========================================
 
-        // 1. ¼ÓÔØÊý¾Ý
+        // 1. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         cnpy::npz_t npz_data = cnpy::npz_load(verify_path);
 
         auto load_t = [&](std::string key) {
@@ -95,14 +96,14 @@ int main() {
             else return torch::from_blob(arr.data<int>(), s, torch::kInt).to(torch::kLong).clone();
             };
 
-        // ÑéÖ¤¾Ö²¿×ø±êÏµ±ä»» (LCS Math Check)
-        //¼ÓÔØÔ­Ê¼ÌØÕ÷ ¼ÓÔØÔ­Ê¼Ë÷Òý
+        // ï¿½ï¿½Ö¤ï¿½Ö²ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ä»» (LCS Math Check)
+        //ï¿½ï¿½ï¿½ï¿½Ô­Ê¼ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½Ô­Ê¼ï¿½ï¿½ï¿½ï¿½
         /*
-        //¼ÓÔØÔ­Ê¼ÌØÕ÷ (´ËÊ±»¹Ã»ÓÐ Padding) 
+        //ï¿½ï¿½ï¿½ï¿½Ô­Ê¼ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½Ê±ï¿½ï¿½Ã»ï¿½ï¿½ Padding) 
         pipeline.Xf = load_t("Xf");
         pipeline.Xe = load_t("Xe");
         pipeline.Xc = load_t("Xc");
-        //¼ÓÔØÔ­Ê¼Ë÷Òý (0-based)
+        //ï¿½ï¿½ï¿½ï¿½Ô­Ê¼ï¿½ï¿½ï¿½ï¿½ (0-based)
         pipeline.Kf = load_long("Kf");
         std::cout << " C++ Ke: " << pipeline.Ke << std::endl;
         pipeline.Ke = load_long("Ke");
@@ -111,7 +112,7 @@ int main() {
         pipeline.Ce = load_long("Ce");
         pipeline.Cf = load_long("Cf");*/
 
-        // BRepPipeline.ÖÐ generate_tensors ½« int max_cpf ´Ó 64¸ÄÎª 512£¬ÉáÆú¸´ÔÓµÄ Csf ÁÐ±í£¬°Ñ Cf ¾ØÕó¿ª´óÒ»µã
+        // BRepPipeline.ï¿½ï¿½ generate_tensors ï¿½ï¿½ int max_cpf ï¿½ï¿½ 64ï¿½ï¿½Îª 512ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Óµï¿½ Csf ï¿½Ð±ï¿½ï¿½ï¿½ï¿½ï¿½ Cf ï¿½ï¿½ï¿½ó¿ª´ï¿½Ò»ï¿½ï¿½
         /*if (npz_data.count("num_big_faces")) {
             int num = *npz_data["num_big_faces"].data<int>();
             for (int i = 0; i < num; ++i) pipeline.Csf.push_back(load_long("Csf_" + std::to_string(i)));
@@ -119,14 +120,14 @@ int main() {
 
                     data[i] = v + 1;
                 }
-                // ·ñÔò (Í¨³£ÊÇ padding index = limit)£¬¹é 0
+                // ï¿½ï¿½ï¿½ï¿½ (Í¨ï¿½ï¿½ï¿½ï¿½ padding index = limit)ï¿½ï¿½ï¿½ï¿½ 0
                 else {
                     data[i] = 0;
                 }
             }
             };
 
-        // Ë÷ÒýÆ«ÒÆ Kf Ö¸Ïò Face£¬Ke Ö¸Ïò EdgeµÈ
+        // ï¿½ï¿½ï¿½ï¿½Æ«ï¿½ï¿½ Kf Ö¸ï¿½ï¿½ Faceï¿½ï¿½Ke Ö¸ï¿½ï¿½ Edgeï¿½ï¿½
         shift_indices(pipeline.Kf, num_faces);
         shift_indices(pipeline.Ke, num_edges);
         shift_indices(pipeline.Kc, num_coedges);
@@ -134,10 +135,10 @@ int main() {
         shift_indices(pipeline.Cf, num_coedges);
         for (auto& t : pipeline.Csf) shift_indices(t, num_coedges);
 
-        // 3. ¸ø¾ØÕóÍ·²¿¼Ó 0 (Padding)
-        // Ë÷ÒýÒÑ¾­ +1 ÌÚ³öÎ»ÖÃÁË£¬ÏÖÔÚÕæÕý²åÈëÕâÒ»ÐÐ
+        // 3. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í·ï¿½ï¿½ï¿½ï¿½ 0 (Padding)
+        // ï¿½ï¿½ï¿½ï¿½ï¿½Ñ¾ï¿½ +1 ï¿½Ú³ï¿½Î»ï¿½ï¿½ï¿½Ë£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½
 
-        // ÌØÕ÷²¹0
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½0
         auto pad_front = [](torch::Tensor& x) {
             auto pad = torch::zeros({ 1, x.size(1) }, x.options());
             x = torch::cat({ pad, x }, 0);
@@ -146,12 +147,12 @@ int main() {
         pad_front(pipeline.Xe);
         pad_front(pipeline.Xc);
 
-        // ÍØÆË²¹0
+        // ï¿½ï¿½ï¿½Ë²ï¿½0
         pad_front(pipeline.Kf);
         pad_front(pipeline.Ke);
         pad_front(pipeline.Kc);
 
-        // Íø¸ñ²¹Æë£¬Grid±ØÐëºÍÌØÕ÷¾ØÕóÐÐÊýÒ»ÖÂ (ÒòÎªÌØÕ÷¾ØÕó¸Õ²¹ÁËÒ»ÐÐ 0)
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ë£¬Gridï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ (ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õ²ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ 0)
         auto align_grid = [](torch::Tensor& g, int64_t target_rows) {
             if (g.defined() && g.size(0) == target_rows - 1) {
                 std::vector<int64_t> s = g.sizes(); 
@@ -160,73 +161,73 @@ int main() {
             }
             };
 
-        // ÒªÓÃKf,¶ø²»ÊÇXf
+        // Òªï¿½ï¿½Kf,ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Xf
         align_grid(pipeline.FaceGridsLocal, pipeline.Kf.size(0));
         align_grid(pipeline.EdgeGridsLocal, pipeline.Xe.size(0));
         align_grid(pipeline.CoedgeGridsLocal, pipeline.Xc.size(0));
 
-        //µÚÒ»¶ÎÊý¾ÝÔ¤´¦Àí½áÊø
+        //ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô¤ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         auto end_load = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> load_ms = end_load - start_load;
-        std::cout << "[Perf] Êý¾ÝÔ¤´¦ÀíºÄÊ±: " << load_ms.count() << " ms" << std::endl;
-        std::cout << "[Perf] Êý¾ÝÔ¤´¦ÀíºóÄÚ´æ: " << get_current_memory_mb() << " MB" << std::endl;
+        std::cout << "[Perf] ï¿½ï¿½ï¿½ï¿½Ô¤ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±: " << load_ms.count() << " ms" << std::endl;
+        std::cout << "[Perf] ï¿½ï¿½ï¿½ï¿½Ô¤ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú´ï¿½: " << get_current_memory_mb() << " MB" << std::endl;
 
         // ==============================================================================================================================
-        // µÚ¶þ½×¶Î & µÚÈý½×¶Î£ºÄ£ÐÍ³õÊ¼»¯ÓëÍÆÀí
+        // ï¿½Ú¶ï¿½ï¿½×¶ï¿½ & ï¿½ï¿½ï¿½ï¿½ï¿½×¶Î£ï¿½Ä£ï¿½Í³ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         // ==============================================================================================================================
         
         auto start_init = std::chrono::high_resolution_clock::now();
-        // 1. ³õÊ¼»¯ÒýÇæ (²ÎÊý: 320, 120, 5, 8)
+        // 1. ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½: 320, 120, 5, 8)
         InferenceEngine engine(320, 120, 5, 8);
-        // 2. ¼ÓÔØÈ¨ÖØ
+        // 2. ï¿½ï¿½ï¿½ï¿½È¨ï¿½ï¿½
         engine.load_weights(weights_path);
         auto end_init = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> init_ms = end_init - start_init;
-        std::cout << "[Perf] Ä£ÐÍ³õÊ¼»¯ºÄÊ±: " << init_ms.count() << " ms" << std::endl;
-        std::cout << "[Perf] Ä£ÐÍ¼ÓÔØºóÄÚ´æ: " << get_current_memory_mb() << " MB" << std::endl;
+        std::cout << "[Perf] Ä£ï¿½Í³ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½Ê±: " << init_ms.count() << " ms" << std::endl;
+        std::cout << "[Perf] Ä£ï¿½Í¼ï¿½ï¿½Øºï¿½ï¿½Ú´ï¿½: " << get_current_memory_mb() << " MB" << std::endl;
         
         auto start_infer = std::chrono::high_resolution_clock::now();
-        // 3. ÔËÐÐÍÆÀí (Ö±½Ó°Ñ´¦ÀíºÃµÄ pipeline ÈÓ½øÈ¥)
+        // 3. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (Ö±ï¿½Ó°Ñ´ï¿½ï¿½ï¿½ï¿½Ãµï¿½ pipeline ï¿½Ó½ï¿½È¥)
         torch::Tensor logits = engine.predict(pipeline);
         auto end_infer = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> infer_ms = end_infer - start_infer;
-        std::cout << "=== ÍÆÀí³É¹¦! ===" << std::endl;
-        std::cout << "[Perf] ÍÆÀí¼ÆËãºÄÊ±: " << infer_ms.count() << " ms" << std::endl;
-        std::cout << "[Perf] ÍÆÀí·åÖµÄÚ´æ (½üËÆ): " << get_current_memory_mb() << " MB" << std::endl;
+        std::cout << "=== ï¿½ï¿½ï¿½ï¿½ï¿½É¹ï¿½! ===" << std::endl;
+        std::cout << "[Perf] ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±: " << infer_ms.count() << " ms" << std::endl;
+        std::cout << "[Perf] ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµï¿½Ú´ï¿½ (ï¿½ï¿½ï¿½ï¿½): " << get_current_memory_mb() << " MB" << std::endl;
 
-        // ¶Ô±È½á¹û
+        // ï¿½Ô±È½ï¿½ï¿½
         if (npz_data.count("expected_output")) {
             torch::Tensor expected = load_t("expected_output");
 
-            // ¶ÔÆëÇÐÆ¬ (Ìø¹ý C++ µÄµÚ 0 ÐÐ)
-            // Python µÄ logits Í¨³£²»º¬ Padding (NÐÐ)
-            // C++ µÄ logits º¬ Padding (N+1ÐÐ)
+            // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ¬ (ï¿½ï¿½ï¿½ï¿½ C++ ï¿½Äµï¿½ 0 ï¿½ï¿½)
+            // Python ï¿½ï¿½ logits Í¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Padding (Nï¿½ï¿½)
+            // C++ ï¿½ï¿½ logits ï¿½ï¿½ Padding (N+1ï¿½ï¿½)
             int64_t rows = std::min(logits.size(0) - 1, expected.size(0));
             torch::Tensor c_valid = logits.slice(0, 1, 1 + rows);
             torch::Tensor p_valid = expected.slice(0, 0, rows);
 
-            std::cout << "\nC++ Logits (row 1):\n" << c_valid.slice(0, 0, 1) << std::endl; 
-            std::cout << "Py  Logits (row 0):\n" << p_valid.slice(0, 0, 1) << std::endl;
+            Verification::LogTensorSlice("CPP_Logits_Row1", c_valid, 0, 1, 0, c_valid.size(1));
+            Verification::LogTensorSlice("Py_Logits_Row0", p_valid, 0, 1, 0, p_valid.size(1));
 
             float err = (c_valid - p_valid).abs().sum().item<float>();
-            std::cout << ">>> ×îÖÕÎó²î: " << err << std::endl;
+            Verification::Log("Total_Error", err);
 
-            if (err < 0.1) std::cout << "SUCCESS! Í¨¹ý" << std::endl;
-            else std::cout << "Ê§°Ü" << std::endl;
+            if (err < 0.1) std::cout << "SUCCESS! Í¨ï¿½ï¿½" << std::endl;
+            else std::cout << "Ê§ï¿½ï¿½" << std::endl;
         }
 
         // ==========================================
-        // µÚËÄ¶Î ×Ü½á
+        // ï¿½ï¿½ï¿½Ä¶ï¿½ ï¿½Ü½ï¿½
         // ==========================================
         //
         auto end_total = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> total_ms = end_total - start_total;
-        std::cout << "\n---------------- ÐÔÄÜ±¨¸æ ----------------" << std::endl;
-        std::cout << "×ÜºÄÊ±: " << total_ms.count() << " ms" << std::endl;
-        std::cout << "  - Êý¾ÝÔ¤´¦Àí: " << load_ms.count() << " ms" << std::endl;
-        std::cout << "  - Ä£ÐÍ¼ÓÔØ: " << init_ms.count() << " ms" << std::endl;
-        std::cout << "  - ÍøÂçÍÆÀí: " << infer_ms.count() << " ms" << std::endl;
-        std::cout << "ÄÚ´æÔö³¤: " << (get_current_memory_mb() - mem_start) << " MB" << std::endl;
+        std::cout << "\n---------------- ï¿½ï¿½ï¿½Ü±ï¿½ï¿½ï¿½ ----------------" << std::endl;
+        std::cout << "ï¿½Üºï¿½Ê±: " << total_ms.count() << " ms" << std::endl;
+        std::cout << "  - ï¿½ï¿½ï¿½ï¿½Ô¤ï¿½ï¿½ï¿½ï¿½: " << load_ms.count() << " ms" << std::endl;
+        std::cout << "  - Ä£ï¿½Í¼ï¿½ï¿½ï¿½: " << init_ms.count() << " ms" << std::endl;
+        std::cout << "  - ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: " << infer_ms.count() << " ms" << std::endl;
+        std::cout << "ï¿½Ú´ï¿½ï¿½ï¿½ï¿½ï¿½: " << (get_current_memory_mb() - mem_start) << " MB" << std::endl;
         std::cout << "------------------------------------------" << std::endl;
 
     }

@@ -923,30 +923,6 @@ private:
 
     // 生成Face局部网格
     void generate_face_local_grids(std::vector<Tensor>& lcs_invs) {
-        /*//检查 lcs_invs 是否正确
-        std::cout << "\n[Debug] LCS invs check:\n";
-        std::cout << "  Number of lcs_invs: " << lcs_invs.size() << "\n";
-
-        for (int i = 0; i < std::min(3, (int)lcs_invs.size()); ++i) {
-            std::cout << "  lcs_invs[" << i << "] shape: [";
-            for (int d = 0; d < lcs_invs[i].dim(); d++) {
-                std::cout << lcs_invs[i].size(d);
-                if (d < lcs_invs[i].dim() - 1) std::cout << ", ";
-            }
-            std::cout << "]\n";
-
-            float* mat = lcs_invs[i].data_ptr<float>();
-            std::cout << "  Matrix:\n";
-            for (int row = 0; row < 4; row++) {
-                std::cout << "    [";
-                for (int col = 0; col < 4; col++) {
-                    std::cout << mat[row * 4 + col];
-                    if (col < 3) std::cout << ", ";
-                }
-                std::cout << "]\n";
-            }
-        }
-        */
         int num_c = coedges.size();
         std::vector<Tensor> f_list;
         f_list.reserve(num_c);

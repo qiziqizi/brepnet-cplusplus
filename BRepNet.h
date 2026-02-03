@@ -6,63 +6,61 @@
 #include <iostream>
 #include <tuple>
 #include <memory>
-#include "cnpy.h" 
-#include "UVNet.h" 
+#include "cnpy.h"
+#include "UVNet.h"
+#include "VerificationLogger.h" 
 
 using Tensor = breptorch::Tensor;
 using namespace breptorch;
 using namespace breptorch::nn;
 
-// --- ¸¨ÖúÊýÑ§º¯Êý ---
+// --- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ñ§ï¿½ï¿½ï¿½ï¿½ ---
 
-// 0. °²È«¼ì²éº¯Êý (ÐÂÔö)
+// 0. ï¿½ï¿½È«ï¿½ï¿½éº¯ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½)
 inline void check_indices(const std::string& name, Tensor values, Tensor indices) {
     int64_t max_idx = indices.max().item<int64_t>();
     int64_t size = values.size(0);
     if (max_idx >= size) {
         std::cerr << "\n=========================================" << std::endl;
-        std::cerr << "ÖÂÃü´íÎó: Ë÷ÒýÔ½½ç¼ì²â (" << name << ")" << std::endl;
-        std::cerr << "   ¾ØÕó×ÜÐÐÊý (Size): " << size << " (ÓÐÐ§Ë÷Òý 0 ~ " << size - 1 << ")" << std::endl;
-        std::cerr << "   ÇëÇóµÄË÷Òý (Index): " << max_idx << std::endl;
+        std::cerr << "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½Ô½ï¿½ï¿½ï¿½ï¿½ (" << name << ")" << std::endl;
+        std::cerr << "   ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (Size): " << size << " (ï¿½ï¿½Ð§ï¿½ï¿½ï¿½ï¿½ 0 ~ " << size - 1 << ")" << std::endl;
+        std::cerr << "   ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (Index): " << max_idx << std::endl;
         std::cerr << "=========================================\n" << std::endl;
-        // ÕâÒ»ÐÐ»áÈÃ³ÌÐòÔÝÍ££¬ÈÃÄã¿´µ½ÉÏÃæµÄ´íÎó
+        // ï¿½ï¿½Ò»ï¿½Ð»ï¿½ï¿½Ã³ï¿½ï¿½ï¿½ï¿½ï¿½Í£ï¿½ï¿½ï¿½ï¿½ï¿½ã¿´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä´ï¿½ï¿½ï¿½
         throw std::runtime_error("Index out of bounds in " + name);
     }
 }
 
-// ÐÞ¸Ä build_matrix_PsiÎªlocal
+// ï¿½Þ¸ï¿½ build_matrix_PsiÎªlocal
 inline Tensor build_matrix_Psi(Tensor Xf, Tensor Xe, Tensor Xc,
     Tensor Kf, Tensor Ke, Tensor Kc) {
-    // Local Ä£Ê½ÏÂ:
-    // Xf ÒÑ¾­ÊÇ [N_c, 128] (LeftFace + RightFace)
-    // Xe, Xc Ò²ÊÇ¶ÔÆëµ½ Coedge µÄ
-    // Ö»ÓÐ Edge ºÍ Coedge µÄÁÚ¾ÓÐèÒª²é±í (¸ù¾Ý Python ´úÂë build_matrix_Psi_local)
-    // Python ´úÂë: Pet = Xe[Ke], Pct = Xc[Kc], Pt = Xf (Ö±½Ó¸³Öµ)
+    // Local Ä£Ê½ï¿½ï¿½:
+    // Xf ï¿½Ñ¾ï¿½ï¿½ï¿½ [N_c, 128] (LeftFace + RightFace)
+    // Xe, Xc Ò²ï¿½Ç¶ï¿½ï¿½ëµ½ Coedge ï¿½ï¿½
+    // Ö»ï¿½ï¿½ Edge ï¿½ï¿½ Coedge ï¿½ï¿½ï¿½Ú¾ï¿½ï¿½ï¿½Òªï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ Python ï¿½ï¿½ï¿½ï¿½ build_matrix_Psi_local)
+    // Python ï¿½ï¿½ï¿½ï¿½: Pet = Xe[Ke], Pct = Xc[Kc], Pt = Xf (Ö±ï¿½Ó¸ï¿½Öµ)
 
     Tensor Pet = Xe.index({ Ke });
     Tensor Pct = Xc.index({ Kc });
 
-    // Xf ²»ÐèÒª index select!
+    // Xf ï¿½ï¿½ï¿½ï¿½Òª index select!
     Tensor Pt = Xf;
 
     Tensor Pe = breptorch::flatten(Pet, 1);
     Tensor Pc = breptorch::flatten(Pct, 1);
 
-    // --- Õï¶Ï£º¼ì²é Psi ×é³É²¿·Ö ---
-    static bool psi_diag_printed = false;
-    if (!psi_diag_printed) {
-        std::cout << "\n[Diagnostic] build_matrix_Psi Components:" << std::endl;
-        std::cout << "  Pt (Face) Shape: " << Pt.sizes() << " Min: " << Pt.min().item<float>() << " Max: " << Pt.max().item<float>() << std::endl;
-        std::cout << "  Pe (Edge) Shape: " << Pe.sizes() << " Min: " << Pe.min().item<float>() << " Max: " << Pe.max().item<float>() << std::endl;
-        std::cout << "  Pc (Coedge) Shape: " << Pc.sizes() << " Min: " << Pc.min().item<float>() << " Max: " << Pc.max().item<float>() << std::endl;
-        psi_diag_printed = true;
-    }
-    // -----------------------------
+    // Verification: Log Psi components
+    Verification::LogOnce("Psi_Pt_Shape", Pt.sizes());
+    Verification::LogOnce("Psi_Pt_Range", std::string("Min: ") + std::to_string(Pt.min().item<float>()) + " Max: " + std::to_string(Pt.max().item<float>()));
+    Verification::LogOnce("Psi_Pe_Shape", Pe.sizes());
+    Verification::LogOnce("Psi_Pe_Range", std::string("Min: ") + std::to_string(Pe.min().item<float>()) + " Max: " + std::to_string(Pe.max().item<float>()));
+    Verification::LogOnce("Psi_Pc_Shape", Pc.sizes());
+    Verification::LogOnce("Psi_Pc_Range", std::string("Min: ") + std::to_string(Pc.min().item<float>()) + " Max: " + std::to_string(Pc.max().item<float>()));
 
     return breptorch::cat({ Pt, Pe, Pc }, 1);
 }
 
-// 2. ±ßÌØÕ÷µÄ×î´ó³Ø»¯ (´ø×Ô¶¯ Padding ÐÞÕý)
+// 2. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø»ï¿½ (ï¿½ï¿½ï¿½Ô¶ï¿½ Padding ï¿½ï¿½ï¿½ï¿½)
 inline Tensor find_max_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
     int64_t max_req = Ce.max().item<int64_t>();
 
@@ -74,7 +72,7 @@ inline Tensor find_max_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
 
     // check_indices("Pooling Edge (Ze/Ce)", Ze, Ce);
 
-    // ÉèÖÃµÚ0ÐÐÎª¸ºÎÞÇî
+    // ï¿½ï¿½ï¿½Ãµï¿½0ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     //if (Ze.size(0) > 0) Ze.index_put_({ 0 }, -1e9);
     if (Ze.size(0) > 0) Ze.index_put_({ 0 }, 0);
     Tensor Zet = Ze.index({ Ce });
@@ -83,28 +81,28 @@ inline Tensor find_max_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
     Tensor padding = breptorch::zeros({ 1, He_raw.size(1) }, Ze.options());
     return breptorch::cat({ padding, He_raw }, 0);
 }
- //3. ÃæÌØÕ÷µÄ×î´ó³Ø»¯ (´ø×Ô¶¯ Padding ÐÞÕý)
+ //3. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø»ï¿½ (ï¿½ï¿½ï¿½Ô¶ï¿½ Padding ï¿½ï¿½ï¿½ï¿½)
 inline Tensor find_max_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const std::vector<Tensor>& Csf) {
     int64_t num_filters = Zf.size(1);
 
-    // 1. ¼ì²é Cf µÄ×î´óË÷ÒýÐèÇó
+    // 1. ï¿½ï¿½ï¿½ Cf ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     int64_t max_req = Cf.max().item<int64_t>();
     if (!Csf.empty()) {
         for (auto& c : Csf) max_req = std::max(max_req, c.max().item<int64_t>());
     }
 
-    // 2. Èç¹û Zf ²»¹»´ó£¬×Ô¶¯²¹ Padding
+    // 2. ï¿½ï¿½ï¿½ Zf ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ Padding
     if (Zf.size(0) <= max_req) {
-        // std::cout << "  [Pooling] ²¹È« Zf: " << Zf.size(0) << " -> Req: " << max_req << std::endl;
+        // std::cout << "  [Pooling] ï¿½ï¿½È« Zf: " << Zf.size(0) << " -> Req: " << max_req << std::endl;
         int64_t diff = max_req - Zf.size(0) + 1;
-        // ÓÃ¸ºÎÞÇî²¹£¬²»Ó°Ïì Max Pooling
+        // ï¿½Ã¸ï¿½ï¿½ï¿½ï¿½î²¹ï¿½ï¿½ï¿½ï¿½Ó°ï¿½ï¿½ Max Pooling
         //auto pad = breptorch::full({ diff, num_filters }, -1e9, Zf.options()); 
         auto pad = breptorch::full({ diff, num_filters }, 0, Zf.options());
         Zf = breptorch::cat({ Zf, pad }, 0);
     }
 
-    // 3. ÕâÀïµÄ index_put ÊÇÎªÁËÈÃµÚ 0 ÐÐ (Padding) ²»²ÎÓë Max Pooling
-    // È·±£ Zf ÖÁÉÙÓÐ 1 ÐÐ
+    // 3. ï¿½ï¿½ï¿½ï¿½ï¿½ index_put ï¿½ï¿½Îªï¿½ï¿½ï¿½Ãµï¿½ 0 ï¿½ï¿½ (Padding) ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Max Pooling
+    // È·ï¿½ï¿½ Zf ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 1 ï¿½ï¿½
     if (Zf.size(0) > 0) {
         //Zf.index_put_({ 0 }, -1e9);
         Zf.index_put_({ 0 }, 0);
@@ -130,42 +128,42 @@ inline Tensor find_max_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const
         Hf_final = breptorch::cat(Hf_list, 0);
     }
 
-    // ÕâÒ»²½Êä³ö¸øÏÂÒ»²ãÓÃµÄ Padding ±ØÐëÊÇ 0
+    // ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ãµï¿½ Padding ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 0
     Tensor padding_out = breptorch::zeros({ 1, Hf_final.size(1) }, Zf.options());
     return breptorch::cat({ padding_out, Hf_final }, 0);
 }
 
-// ÐÂÔö£ºÆ½¾ù³Ø»¯ (Mean Pooling)£¬µ«Î´µ÷ÓÃ
-// Edge Æ½¾ù³Ø»¯
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ½ï¿½ï¿½ï¿½Ø»ï¿½ (Mean Pooling)ï¿½ï¿½ï¿½ï¿½Î´ï¿½ï¿½ï¿½ï¿½
+// Edge Æ½ï¿½ï¿½ï¿½Ø»ï¿½
 inline Tensor get_average_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
-    // 1. È·±£µÚ 0 ÐÐÊÇ 0 (Padding)
+    // 1. È·ï¿½ï¿½ï¿½ï¿½ 0 ï¿½ï¿½ï¿½ï¿½ 0 (Padding)
     if (Ze.size(0) > 0) Ze[0].zero_();
 
-    // 2. ²é±í [N_e, 2, D]
+    // 2. ï¿½ï¿½ï¿½ [N_e, 2, D]
     Tensor Zet = Ze.index({ Ce });
 
-    // 3. È¡Æ½¾ù
+    // 3. È¡Æ½ï¿½ï¿½
     Tensor He = breptorch::mean(Zet, 1); // dim=1
 
-    // 4. ²¹»Ø Padding (±£³Ö¸ñÊ½Ò»ÖÂ)
+    // 4. ï¿½ï¿½ï¿½ï¿½ Padding (ï¿½ï¿½ï¿½Ö¸ï¿½Ê½Ò»ï¿½ï¿½)
     Tensor padding = breptorch::zeros({ 1, He.size(1) }, Ze.options());
     return breptorch::cat({ padding, He }, 0);
 }
-// Face Æ½¾ù³Ø»¯
+// Face Æ½ï¿½ï¿½ï¿½Ø»ï¿½
 inline Tensor get_average_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const std::vector<Tensor>& Csf) {
     int64_t num_filters = Zf.size(1);
 
-    // 1. È·±£µÚ 0 ÐÐÊÇ 0 (Padding)
-    // Mean Pooling ±ØÐëÓÃ 0 Ìî³ä£¬²»ÄÜÓÃ -1e9
+    // 1. È·ï¿½ï¿½ï¿½ï¿½ 0 ï¿½ï¿½ï¿½ï¿½ 0 (Padding)
+    // Mean Pooling ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 0 ï¿½ï¿½ä£¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ -1e9
     if (Zf.size(0) > 0) Zf[0].zero_();
 
-    // 2. Ð¡Ãæ´¦Àí [N_small, 64, D]
+    // 2. Ð¡ï¿½æ´¦ï¿½ï¿½ [N_small, 64, D]
     Tensor Zft = Zf.index({ Cf });
 
-    // È¡Æ½¾ù
+    // È¡Æ½ï¿½ï¿½
     Tensor Hf_small = breptorch::mean(Zft, 1);
 
-    // 3. ´óÃæ´¦Àí
+    // 3. ï¿½ï¿½ï¿½æ´¦ï¿½ï¿½
     Tensor Hf_final;
     if (Csf.empty()) {
         Hf_final = Hf_small;
@@ -175,7 +173,7 @@ inline Tensor get_average_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, co
         Hf_list.push_back(Hf_small);
         for (const auto& indices : Csf) {
             Tensor Zsingle = Zf.index({ indices });
-            // ´óÃæÖ±½Ó¶ÔËùÓÐ±ßÈ¡Æ½¾ù
+            // ï¿½ï¿½ï¿½ï¿½Ö±ï¿½Ó¶ï¿½ï¿½ï¿½ï¿½Ð±ï¿½È¡Æ½ï¿½ï¿½
             Tensor Hbig = breptorch::mean(Zsingle, 0);
             Hf_list.push_back(Hbig.reshape({ 1, num_filters }));
         }
@@ -183,36 +181,36 @@ inline Tensor get_average_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, co
     }
 
 
-    // 4. ²¹»Ø Padding
+    // 4. ï¿½ï¿½ï¿½ï¿½ Padding
     Tensor padding_out = breptorch::zeros({ 1, Hf_final.size(1) }, Zf.options());
     return breptorch::cat({ padding_out, Hf_final }, 0);
 }
  
-/*--- ÍøÂçÄ£¿é¶¨Òå ---*/
+/*--- ï¿½ï¿½ï¿½ï¿½Ä£ï¿½é¶¨ï¿½ï¿½ ---*/
 
 namespace breptorch {
 namespace nn {
 
-//1. »ù´¡ MLP Ä£¿é
+//1. ï¿½ï¿½ï¿½ï¿½ MLP Ä£ï¿½ï¿½
 struct BRepNetMLPImpl : Module {
     SequentialPtr mlp;
 
     BRepNetMLPImpl(int in_size, int hidden, int out_size, bool is_final)
         : mlp(register_module("mlp", Sequential())) {
 
-        // MLP µÚÒ»²ã (Layer 0 of MLP)
-        // ÈÎºÎ²ãµÄµÚÒ»¼¶¶¼ÓÐ Bias ºÍ ReLU
+        // MLP ï¿½ï¿½Ò»ï¿½ï¿½ (Layer 0 of MLP)
+        // ï¿½ÎºÎ²ï¿½Äµï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Bias ï¿½ï¿½ ReLU
         mlp->push_back("linear_0", Linear(LinearOptions(in_size, hidden).bias(true)));
         mlp->push_back("relu_0", ReLU());
 
-        // MLP µÚ¶þ²ã (Layer 1 of MLP)
+        // MLP ï¿½Ú¶ï¿½ï¿½ï¿½ (Layer 1 of MLP)
         if (is_final) { 
-            // [Output Layer] ¸ù¾ÝPython: use_bias=False, use_relu=False
+            // [Output Layer] ï¿½ï¿½ï¿½ï¿½Python: use_bias=False, use_relu=False
             mlp->push_back("linear_1", Linear(LinearOptions(hidden, out_size).bias(false)));
             // mlp->push_back("relu_1", torch::nn::ReLU());
         }
         else {
-            // [(Layer 0)] ¸ù¾ÝPython: use_bias=True, ÇÒÓÐ ReLU()
+            // [(Layer 0)] ï¿½ï¿½ï¿½ï¿½Python: use_bias=True, ï¿½ï¿½ï¿½ï¿½ ReLU()
             mlp->push_back("linear_1", Linear(LinearOptions(hidden, out_size).bias(true)));
             mlp->push_back("relu_1", ReLU());
         }
@@ -226,7 +224,7 @@ struct BRepNetMLPImpl : Module {
 TORCH_MODULE(BRepNetMLP)
 
 
-// 2. Í¨ÓÃ²ã (BRepNetLayer)
+// 2. Í¨ï¿½Ã²ï¿½ (BRepNetLayer)
 struct BRepNetLayerImpl : Module {
     BRepNetMLP mlp{ nullptr };
     int out_size;
@@ -234,7 +232,7 @@ struct BRepNetLayerImpl : Module {
 
 
     BRepNetLayerImpl(int in_s, int out_s) : out_size(out_s) {
-        // Êä³öÎ¬¶ÈÀ©´ó3±¶£¬ÒòÎªÒªÇÐ·Ö³É Face, Edge, Coedge Èý²¿·Ö
+        // ï¿½ï¿½ï¿½Î¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½3ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÎªÒªï¿½Ð·Ö³ï¿½ Face, Edge, Coedge ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         mlp = register_module("mlp", BRepNetMLP(in_s, 3 * out_s, 3 * out_s, false));
     }
 
@@ -242,7 +240,7 @@ struct BRepNetLayerImpl : Module {
         Tensor Psi = build_matrix_Psi(Xf, Xe, Xc, Kf, Ke, Kc);
 
 
-        // 1. Õï¶ÏÊäÈë Xf (Layer 0 Input)
+        // 1. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Xf (Layer 0 Input)
         Tensor Z = mlp->forward(Psi);
         classification_layer = register_module("classification_layer", Linear(LinearOptions(hidden_dim, num_classes)));
 
@@ -252,26 +250,26 @@ struct BRepNetLayerImpl : Module {
         int64_t grid_rows = grid.size(0);
         Tensor input_grid = grid;
 
-        // 1. ×Ô¶¯ Padding ¶ÔÆë¼ì²é
+        // 1. ï¿½Ô¶ï¿½ Padding ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         if (grid_rows == target_rows - 1) {
-            // Grid ÉÙÒ»ÐÐ (Raw Data) -> Í·²¿²¹ 0
-            // »ñÈ¡ Grid µÄÎ¬¶È: [1, C, H, W] or [1, C, L]
+            // Grid ï¿½ï¿½Ò»ï¿½ï¿½ (Raw Data) -> Í·ï¿½ï¿½ï¿½ï¿½ 0
+            // ï¿½ï¿½È¡ Grid ï¿½ï¿½Î¬ï¿½ï¿½: [1, C, H, W] or [1, C, L]
             std::vector<int64_t> pad_shape = grid.sizes().vec();
             pad_shape[0] = 1;
             auto padding = breptorch::zeros(pad_shape, grid.options());
             input_grid = breptorch::cat({ padding, grid }, 0);
         }
         else if (grid_rows != target_rows) {
-            std::cerr << "[Error] " << name << " Î¬¶ÈÑÏÖØ²»Æ¥Åä! Target: " << target_rows << ", Grid: " << grid_rows << std::endl;
+            std::cerr << "[Error] " << name << " Î¬ï¿½ï¿½ï¿½ï¿½ï¿½Ø²ï¿½Æ¥ï¿½ï¿½! Target: " << target_rows << ", Grid: " << grid_rows << std::endl;
             throw std::runtime_error("Grid dimension mismatch in " + name);
         }
 
 
-        // 3. Æ´½Ó: [N, ÊÖ¹¤Dim] + [N, 64] -> [N, ÊÖ¹¤Dim+64]
+        // 3. Æ´ï¿½ï¿½: [N, ï¿½Ö¹ï¿½Dim] + [N, 64] -> [N, ï¿½Ö¹ï¿½Dim+64]
         return breptorch::cat({ target_feat, grid_emb }, 1);
     }
 
-    // Forward º¯Êý
+    // Forward ï¿½ï¿½ï¿½ï¿½
     Tensor forward(Tensor Xf, Tensor Xe, Tensor Xc,
         Tensor Kf, Tensor Ke, Tensor Kc,
         Tensor Ce, Tensor Cf, const std::vector<Tensor>& Csf,
@@ -280,77 +278,77 @@ struct BRepNetLayerImpl : Module {
         Tensor CoedgeGridsLocal = Tensor()) {
 
         // ----------------------------------------------------------------
-        // 1. UV-Net ÌØÕ÷ÌáÈ¡ (Local Ä£Ê½)
+        // 1. UV-Net ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¡ (Local Ä£Ê½)
         // ----------------------------------------------------------------
         if (use_uvnet) {
 
-            // --- A. Face ´¦Àí (×î¸´ÔÓ) ---
+            // --- A. Face ï¿½ï¿½ï¿½ï¿½ (ï¿½î¸´ï¿½ï¿½) ---
             if (FaceGridsLocal.defined()) {
-                // ÊäÈë: [N_c, 2, 9, 10, 10]
-                // Ä¿±ê: ±ä³É [N_c, 128] (¼´ 64*2)
+                // ï¿½ï¿½ï¿½ï¿½: [N_c, 2, 9, 10, 10]
+                // Ä¿ï¿½ï¿½: ï¿½ï¿½ï¿½ [N_c, 128] (ï¿½ï¿½ 64*2)
 
                 int64_t Nc = FaceGridsLocal.size(0);
 
-                // 1. Reshape ³É [N_c * 2, 9, 10, 10] ÒÔ±ãÅúÁ¿¾í»ý
+                // 1. Reshape ï¿½ï¿½ [N_c * 2, 9, 10, 10] ï¿½Ô±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
                 Tensor input_f = FaceGridsLocal.view({ Nc * 2, 9, 10, 10 });
 
-                // 2. ¾í»ý -> [N_c * 2, 64]
+                // 2. ï¿½ï¿½ï¿½ï¿½ -> [N_c * 2, 64]
                 Tensor out_f = surf_enc->forward(input_f);
 
-                // 3. Reshape »Ø [N_c, 128] (Concatenate Left & Right)
-                // view(Nc, -1) »á×Ô¶¯°Ñ×îºóÁ½Î¬ (2, 64) Õ¹Æ½Îª 128
+                // 3. Reshape ï¿½ï¿½ [N_c, 128] (Concatenate Left & Right)
+                // view(Nc, -1) ï¿½ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î¬ (2, 64) Õ¹Æ½Îª 128
                 Tensor uv_feat_f = out_f.view({ Nc, -1 });
 
-                // 4. ÕâÀïµÄ Xf ²»ÔÙÊÇÆ´½Ó£¬¶øÊÇÖ±½ÓÌæ»»
-                // ¸ù¾Ý Python: Pt = Xf (Xf À´×Ô surface_encoder)
+                // 4. ï¿½ï¿½ï¿½ï¿½ï¿½ Xf ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ´ï¿½Ó£ï¿½ï¿½ï¿½ï¿½ï¿½Ö±ï¿½ï¿½ï¿½æ»»
+                // ï¿½ï¿½ï¿½ï¿½ Python: Pt = Xf (Xf ï¿½ï¿½ï¿½ï¿½ surface_encoder)
             if (EdgeGridsLocal.defined()) {
                 // EdgeGridsLocal: [N_c, 13, 10]
-                // ¾í»ý -> [N_c, 64]
+                // ï¿½ï¿½ï¿½ï¿½ -> [N_c, 64]
                 Tensor uv_feat_e = curve_enc->forward(EdgeGridsLocal);
 
-                // ¸²¸Ç Xe
+                // ï¿½ï¿½ï¿½ï¿½ Xe
                 Xe = uv_feat_e;
             }
-            // --- B. Coedge ´¦Àí ---
+            // --- B. Coedge ï¿½ï¿½ï¿½ï¿½ ---
             if (CoedgeGridsLocal.defined()) {
                 // CoedgeGridsLocal: [N_c, 13, 10]
                 Tensor uv_feat_c = curve_enc->forward(CoedgeGridsLocal);
 
-                // Python ´úÂë: Xe = curve_encoder(Ge), Xc = curve_encoder(Gc)
-                // ÔÚ Local Ä£Ê½ÏÂ£¬Ge ºÍ Gc Í¨³£¶¼ÊÇ»ùÓÚ Coedge Grid ±ä»»À´µÄ
-                // ÕâÀï¼ò»¯£º¼ÙÉè Xe ºÍ Xc ¶¼ÓÃÕâÒ»Ì×ÌØÕ÷
+                // Python ï¿½ï¿½ï¿½ï¿½: Xe = curve_encoder(Ge), Xc = curve_encoder(Gc)
+                // ï¿½ï¿½ Local Ä£Ê½ï¿½Â£ï¿½Ge ï¿½ï¿½ Gc Í¨ï¿½ï¿½ï¿½ï¿½ï¿½Ç»ï¿½ï¿½ï¿½ Coedge Grid ï¿½ä»»ï¿½ï¿½ï¿½ï¿½
+                // ï¿½ï¿½ï¿½ï¿½ò»¯£ï¿½ï¿½ï¿½ï¿½ï¿½ Xe ï¿½ï¿½ Xc ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
                 Xc = uv_feat_c;
             }
         }
 
 
         // ----------------------------------------------------------------
-        // 2. GNN ÍÆÀí (ÓÉÓÚ build_matrix_Psi ¸ÄÁË£¬ÕâÀïÖ±½Ó´«)
+        // 2. GNN ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ build_matrix_Psi ï¿½ï¿½ï¿½Ë£ï¿½ï¿½ï¿½ï¿½ï¿½Ö±ï¿½Ó´ï¿½)
         // ----------------------------------------------------------------
 
         auto modules = layers->children();
         auto layer0_base = modules[0];
         auto layer0 = std::dynamic_pointer_cast<BRepNetLayerImpl>(layer0_base);
 
-        // ÔËÐÐ Layer 0
+        // ï¿½ï¿½ï¿½ï¿½ Layer 0
         auto res = layer0->forward(Xf, Xe, Xc, Kf, Ke, Kc, Ce, Cf, Csf);
 
         Tensor next_Xf = std::get<0>(res);
         Tensor next_Xe = std::get<1>(res);
         Tensor next_Xc = std::get<2>(res);
 
-        // ÇåÏ´ Padding (Mean Pooling ¶Ô 0 Ãô¸Ð£¬ÒÀÈ»½¨ÒéÇåÏ´)
+        // ï¿½ï¿½Ï´ Padding (Mean Pooling ï¿½ï¿½ 0 ï¿½ï¿½ï¿½Ð£ï¿½ï¿½ï¿½È»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï´)
         if (next_Xf.size(0) > 0) next_Xf[0].zero_();
         if (next_Xe.size(0) > 0) next_Xe[0].zero_();
         if (next_Xc.size(0) > 0) next_Xc[0].zero_();
 
-        // ÔËÐÐ Output Layer
+        // ï¿½ï¿½ï¿½ï¿½ Output Layer
         Tensor embeds = output_layer->forward(next_Xf, next_Xe, next_Xc, Kf, Ke, Kc, Ce, Cf, Csf);
 
         return classification_layer->forward(embeds);
     }
 
-    // ¡¾¹Ø¼ü¡¿¼ÓÔØ UV-Net È¨ÖØ (×Ô¶¯·ÖÁ÷)
+    // ï¿½ï¿½ï¿½Ø¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ UV-Net È¨ï¿½ï¿½ (ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½)
     void load_uvnet_weights(const std::string& npz_path) {
         std::cout << "[Debug] load_uvnet_weights start" << std::endl;
         cnpy::npz_t npz = cnpy::npz_load(npz_path);
@@ -363,7 +361,7 @@ struct BRepNetLayerImpl : Module {
         for (auto& item : npz) {
             std::string name = item.first;
 
-            // É¸Ñ¡ Surface Encoder È¨ÖØ
+            // É¸Ñ¡ Surface Encoder È¨ï¿½ï¿½
             if (name.find("surface_encoder") != std::string::npos) {
                 // std::cout << "[Debug] Loading surface_encoder weight: " << name << std::endl;
                 cnpy::NpyArray arr = item.second;
@@ -376,7 +374,7 @@ struct BRepNetLayerImpl : Module {
                 surf_dict[name] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
                 found_any = true;
             }
-            // É¸Ñ¡ Curve Encoder È¨ÖØ
+            // É¸Ñ¡ Curve Encoder È¨ï¿½ï¿½
             else if (name.find("curve_encoder") != std::string::npos) {
                 // std::cout << "[Debug] Loading curve_encoder weight: " << name << std::endl;
                 cnpy::NpyArray arr = item.second;
@@ -407,14 +405,14 @@ struct BRepNetLayerImpl : Module {
         }
     }
 
-    // ¼ÓÔØ MLP È¨ÖØ (±£³Ö²»±ä)
+    // ï¿½ï¿½ï¿½ï¿½ MLP È¨ï¿½ï¿½ (ï¿½ï¿½ï¿½Ö²ï¿½ï¿½ï¿½)
     void load_mlp_weights(const std::string& path) {
         cnpy::npz_t npz = cnpy::npz_load(path);
         breptorch::NoGradGuard no_grad;
 
         for (auto& p : this->named_parameters()) {
             std::string name = p.first;
-            // Ìø¹ý UV-Net µÄ²ÎÊý£¬ÒòÎªËüÃÇÍ¨¹ý load_uvnet_weights µ¥¶À¼ÓÔØ
+            // ï¿½ï¿½ï¿½ï¿½ UV-Net ï¿½Ä²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½Í¨ï¿½ï¿½ load_uvnet_weights ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
             if (name.find("surface_encoder") != std::string::npos || name.find("curve_encoder") != std::string::npos) {
                 continue;
             }
@@ -423,14 +421,14 @@ struct BRepNetLayerImpl : Module {
                 cnpy::NpyArray arr = npz[name];
                 auto t = breptorch::from_blob(arr.data<float>(), p.second->sizes(), breptorch::kFloat32).clone();
                 p.second->copy_(t);
-                //test_step.cppÔÝÊ±È¡Ïû
+                //test_step.cppï¿½ï¿½Ê±È¡ï¿½ï¿½
                 //std::cout << "Loaded MLP Weight: " << name << std::endl;
             }
         }
-        // 2. ¡¾¹Ø¼üÐÂÔö¡¿¼ÓÔØ Buffers(Running Mean / Var)
+        // 2. ï¿½ï¿½ï¿½Ø¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Buffers(Running Mean / Var)
         for (auto& p : this->named_buffers()) {
             std::string name = p.first;
-            // Ìø¹ý UV-Net
+            // ï¿½ï¿½ï¿½ï¿½ UV-Net
             if (name.find("surface_encoder") != std::string::npos || name.find("curve_encoder") != std::string::npos) {
                 continue;
             }
@@ -442,7 +440,7 @@ struct BRepNetLayerImpl : Module {
                 std::cout << "Loaded Buffer: " << name << std::endl;
             }
             else {
-                // ÓÐÐ© buffer ±ÈÈç num_batches_tracked ²»ÐèÒª¼ÓÔØ£¬¿ÉÒÔºöÂÔ¾¯¸æ
+                // ï¿½ï¿½Ð© buffer ï¿½ï¿½ï¿½ï¿½ num_batches_tracked ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½ï¿½Ø£ï¿½ï¿½ï¿½ï¿½Ôºï¿½ï¿½Ô¾ï¿½ï¿½ï¿½
                 if (name.find("num_batches_tracked") == std::string::npos)
                     std::cerr << "Missing Buffer: " << name << std::endl;
             }
