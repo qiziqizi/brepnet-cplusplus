@@ -1,5 +1,6 @@
 brepnet/
 .vs/
+.claude/
 x64/
 *.user
 *.db
