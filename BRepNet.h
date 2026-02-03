@@ -14,31 +14,31 @@ using Tensor = breptorch::Tensor;
 using namespace breptorch;
 using namespace breptorch::nn;
 
-// --- ������ѧ���� ---
+// --- Helper Math Functions ---
 
-// 0. ��ȫ��麯�� (����)
+// Set row 0 to 0 (padding)
 inline void check_indices(const std::string& name, Tensor values, Tensor indices) {
     int64_t max_idx = indices.max().item<int64_t>();
     int64_t size = values.size(0);
     if (max_idx >= size) {
         std::cerr << "\n=========================================" << std::endl;
-        std::cerr << "��������: ����Խ���� (" << name << ")" << std::endl;
-        std::cerr << "   ���������� (Size): " << size << " (��Ч���� 0 ~ " << size - 1 << ")" << std::endl;
-        std::cerr << "   ��������� (Index): " << max_idx << std::endl;
+        std::cerr << "ERROR: Index out of bounds (" << name << ")" << std::endl;
+        std::cerr << "   Tensor size: " << size << " (valid range: 0 ~ " << size - 1 << ")" << std::endl;
+        std::cerr << "   Max index: " << max_idx << std::endl;
         std::cerr << "=========================================\n" << std::endl;
-        // ��һ�л��ó�����ͣ�����㿴������Ĵ���
+        // Throw exception on first occurrence to debug
         throw std::runtime_error("Index out of bounds in " + name);
     }
 }
 
-// �޸� build_matrix_PsiΪlocal
+// Modified build_matrix_Psi for local mode
 inline Tensor build_matrix_Psi(Tensor Xf, Tensor Xe, Tensor Xc,
     Tensor Kf, Tensor Ke, Tensor Kc) {
-    // Local ģʽ��:
-    // Xf �Ѿ��� [N_c, 128] (LeftFace + RightFace)
-    // Xe, Xc Ҳ�Ƕ��뵽 Coedge ��
-    // ֻ�� Edge �� Coedge ���ھ���Ҫ��� (���� Python ���� build_matrix_Psi_local)
-    // Python ����: Pet = Xe[Ke], Pct = Xc[Kc], Pt = Xf (ֱ�Ӹ�ֵ)
+    // Local mode:
+    // Xf is already [N_c, 128] (LeftFace + RightFace)
+    // Xe, Xc are also aligned to Coedge
+    // Only Edge and Coedge need indexing (similar to Python's build_matrix_Psi_local)
+    // Python equivalent: Pet = Xe[Ke], Pct = Xc[Kc], Pt = Xf (direct assignment)
 
     Tensor Pet = Xe.index({ Ke });
     Tensor Pct = Xc.index({ Kc });
@@ -60,7 +60,7 @@ inline Tensor build_matrix_Psi(Tensor Xf, Tensor Xe, Tensor Xc,
     return breptorch::cat({ Pt, Pe, Pc }, 1);
 }
 
-// 2. �����������ػ� (���Զ� Padding ����)
+// 2. Edge max pooling (with auto padding)
 inline Tensor find_max_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
     int64_t max_req = Ce.max().item<int64_t>();
 
@@ -71,7 +71,7 @@ inline Tensor find_max_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
     }
 
 
-    // ���õ�0��Ϊ������
+    // Set row 0 to 0 (padding)
     //if (Ze.size(0) > 0) Ze.index_put_({ 0 }, -1e9);
     if (Ze.size(0) > 0) Ze.index_put_({ 0 }, 0);
     Tensor Zet = Ze.index({ Ce });
@@ -80,19 +80,19 @@ inline Tensor find_max_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
     Tensor padding = breptorch::zeros({ 1, He_raw.size(1) }, Ze.options());
     return breptorch::cat({ padding, He_raw }, 0);
 }
- //3. �����������ػ� (���Զ� Padding ����)
+ //3. Face max pooling (with auto padding)
 inline Tensor find_max_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const std::vector<Tensor>& Csf) {
     int64_t num_filters = Zf.size(1);
 
-    // 1. ��� Cf �������������
+    // 1. Find max required index from Cf and Csf
     int64_t max_req = Cf.max().item<int64_t>();
     if (!Csf.empty()) {
         for (auto& c : Csf) max_req = std::max(max_req, c.max().item<int64_t>());
     }
 
-    // 2. ��� Zf �������Զ��� Padding
+    // 2. Edge max pooling (with auto padding)
     if (Zf.size(0) <= max_req) {
-        // std::cout << "  [Pooling] ��ȫ Zf: " << Zf.size(0) << " -> Req: " << max_req << std::endl;
+        // Set row 0 to 0 (padding)
         int64_t diff = max_req - Zf.size(0) + 1;
         // �ø��������Ӱ�� Max Pooling
         //auto pad = breptorch::full({ diff, num_filters }, -1e9, Zf.options()); 
@@ -100,8 +100,8 @@ inline Tensor find_max_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const
         Zf = breptorch::cat({ Zf, pad }, 0);
     }
 
-    // 3. ����� index_put ��Ϊ���õ� 0 �� (Padding) ������ Max Pooling
-    // ȷ�� Zf ������ 1 ��
+    // Set row 0 to 0 (padding)
+    // Ensure Zf has at least 1 row
     if (Zf.size(0) > 0) {
         //Zf.index_put_({ 0 }, -1e9);
         Zf.index_put_({ 0 }, 0);
@@ -126,7 +126,7 @@ inline Tensor find_max_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const
         Hf_final = breptorch::cat(Hf_list, 0);
     }
 
-    // ��һ���������һ���õ� Padding ������ 0
+    // Set row 0 to 0 (padding)
     Tensor padding_out = breptorch::zeros({ 1, Hf_final.size(1) }, Zf.options());
     return breptorch::cat({ padding_out, Hf_final }, 0);
 }
@@ -144,7 +144,7 @@ struct BRepNetMLPImpl : Module {
     BRepNetMLPImpl(int in_size, int hidden, int out_size, bool is_final)
         : mlp(register_module("mlp", Sequential())) {
 
-        // MLP ��һ�� (Layer 0 of MLP)
+        // Set row 0 to 0 (padding)
         // �κβ�ĵ�һ������ Bias �� ReLU
         mlp->push_back("linear_0", Linear(LinearOptions(in_size, hidden).bias(true)));
         mlp->push_back("relu_0", ReLU());
@@ -156,7 +156,7 @@ struct BRepNetMLPImpl : Module {
             // mlp->push_back("relu_1", torch::nn::ReLU());
         }
         else {
-            // [(Layer 0)] ����Python: use_bias=True, ���� ReLU()
+            // Set row 0 to 0 (padding)
             mlp->push_back("linear_1", Linear(LinearOptions(hidden, out_size).bias(true)));
             mlp->push_back("relu_1", ReLU());
         }
@@ -170,7 +170,7 @@ struct BRepNetMLPImpl : Module {
 TORCH_MODULE(BRepNetMLP)
 
 
-// 2. ͨ�ò� (BRepNetLayer)
+// 2. Edge max pooling (with auto padding)
 struct BRepNetLayerImpl : Module {
     BRepNetMLP mlp{ nullptr };
     int out_size;
@@ -185,7 +185,7 @@ struct BRepNetLayerImpl : Module {
         Tensor Psi = build_matrix_Psi(Xf, Xe, Xc, Kf, Ke, Kc);
 
 
-        // 1. ������� Xf (Layer 0 Input)
+        // Set row 0 to 0 (padding)
         Tensor Z = mlp->forward(Psi);
         classification_layer = register_module("classification_layer", Linear(LinearOptions(hidden_dim, num_classes)));
 
@@ -197,7 +197,7 @@ struct BRepNetLayerImpl : Module {
 
         // 1. �Զ� Padding ������
         if (grid_rows == target_rows - 1) {
-            // Grid ��һ�� (Raw Data) -> ͷ���� 0
+            // Set row 0 to 0 (padding)
             // ��ȡ Grid ��ά��: [1, C, H, W] or [1, C, L]
             std::vector<int64_t> pad_shape = grid.sizes().vec();
             pad_shape[0] = 1;
@@ -227,17 +227,17 @@ struct BRepNetLayerImpl : Module {
         // ----------------------------------------------------------------
         if (use_uvnet) {
 
-            // --- A. Face ���� (���) ---
+            // --- Helper Math Functions ---
             if (FaceGridsLocal.defined()) {
-                // ����: [N_c, 2, 9, 10, 10]
+                // Set row 0 to 0 (padding)
                 // Ŀ��: ��� [N_c, 128] (�� 64*2)
 
                 int64_t Nc = FaceGridsLocal.size(0);
 
-                // 1. Reshape �� [N_c * 2, 9, 10, 10] �Ա���������
+                // Set row 0 to 0 (padding)
                 Tensor input_f = FaceGridsLocal.view({ Nc * 2, 9, 10, 10 });
 
-                // 2. ���� -> [N_c * 2, 64]
+                // 2. Edge max pooling (with auto padding)
                 Tensor out_f = surf_enc->forward(input_f);
 
                 // 3. Reshape �� [N_c, 128] (Concatenate Left & Right)
@@ -247,16 +247,16 @@ struct BRepNetLayerImpl : Module {
                 // 4. ����� Xf ������ƴ�ӣ�����ֱ���滻
                 // ���� Python: Pt = Xf (Xf ���� surface_encoder)
             if (EdgeGridsLocal.defined()) {
-                // EdgeGridsLocal: [N_c, 13, 10]
+                // Set row 0 to 0 (padding)
                 // ���� -> [N_c, 64]
                 Tensor uv_feat_e = curve_enc->forward(EdgeGridsLocal);
 
                 // ���� Xe
                 Xe = uv_feat_e;
             }
-            // --- B. Coedge ���� ---
+            // --- Helper Math Functions ---
             if (CoedgeGridsLocal.defined()) {
-                // CoedgeGridsLocal: [N_c, 13, 10]
+                // Set row 0 to 0 (padding)
                 Tensor uv_feat_c = curve_enc->forward(CoedgeGridsLocal);
 
                 // Python ����: Xe = curve_encoder(Ge), Xc = curve_encoder(Gc)
@@ -268,21 +268,21 @@ struct BRepNetLayerImpl : Module {
 
 
         // ----------------------------------------------------------------
-        // 2. GNN ���� (���� build_matrix_Psi ���ˣ�����ֱ�Ӵ�)
+        // 2. Edge max pooling (with auto padding)
         // ----------------------------------------------------------------
 
         auto modules = layers->children();
         auto layer0_base = modules[0];
         auto layer0 = std::dynamic_pointer_cast<BRepNetLayerImpl>(layer0_base);
 
-        // ���� Layer 0
+        // Set row 0 to 0 (padding)
         auto res = layer0->forward(Xf, Xe, Xc, Kf, Ke, Kc, Ce, Cf, Csf);
 
         Tensor next_Xf = std::get<0>(res);
         Tensor next_Xe = std::get<1>(res);
         Tensor next_Xc = std::get<2>(res);
 
-        // ��ϴ Padding (Mean Pooling �� 0 ���У���Ȼ������ϴ)
+        // Set row 0 to 0 (padding)
         if (next_Xf.size(0) > 0) next_Xf[0].zero_();
         if (next_Xe.size(0) > 0) next_Xe[0].zero_();
         if (next_Xc.size(0) > 0) next_Xc[0].zero_();
@@ -370,7 +370,7 @@ struct BRepNetLayerImpl : Module {
                 //std::cout << "Loaded MLP Weight: " << name << std::endl;
             }
         }
-        // 2. ���ؼ����������� Buffers(Running Mean / Var)
+        // 2. Edge max pooling (with auto padding)
         for (auto& p : this->named_buffers()) {
             std::string name = p.first;
             // ���� UV-Net

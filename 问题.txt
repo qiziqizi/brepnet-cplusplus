@@ -1,0 +1,43 @@
+BRepNet.h出现了很多乱码，是不是中文注释都变成乱码了？
+libtorch是不需要的，我已经写了一个BRepTorch.h了,libtorch是不允许使用的.、
+编译出现的错误如下：
+严重性	代码	说明	项目	文件	行	抑制状态	详细信息
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	887		
+错误	C2601	“stack”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	868		
+错误	C2601	“zeros”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	884		
+错误	C2601	“zeros”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	885		
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	886		
+错误	C2601	“ones”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	888		
+错误	C2601	“full”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	889		
+错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	890		
+错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	891		
+错误	C2601	“from_blob”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	892		
+错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	893		
+错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	894		
+错误	C2601	“tensor”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	895		
+错误	C2601	“ones_like”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	896		
+错误	C2601	“eye”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	897		
+错误	C2601	“leaky_relu”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	900		
+错误	C2601	“adaptive_avg_pool2d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	910		
+错误	C2601	“adaptive_avg_pool1d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	935		
+错误	C2601	“conv2d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	957		
+错误	C2601	“conv1d”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1022		
+错误	C2601	“batch_norm”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1073		
+错误	C2601	“linear”: 本地函数定义是非法的	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1112		
+错误	C2870	“nn”: 命名空间定义必须出现在文件范围内或紧接着出现在另一命名空间定义内	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1158		
+错误	C3861	“tensor”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	894		
+错误	C2039	"linear": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1245		
+错误	C3861	“linear”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1245		
+错误	C2039	"batch_norm": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1306		
+错误	C3861	“batch_norm”: 找不到标识符	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1306		
+错误	C2039	"conv2d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1328		
+错误	C2660	“breptorch::nn::functional::conv2d”: 函数不接受 5 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1328		
+错误	C2039	"conv1d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1332		
+错误	C2660	“breptorch::nn::functional::conv1d”: 函数不接受 5 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1332		
+错误	C2039	"linear": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1336		
+错误	C2039	"batch_norm": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1339		
+错误	C2660	“breptorch::nn::functional::batch_norm”: 函数不接受 9 个参数	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1339		
+错误	C2039	"leaky_relu": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1342		
+错误	C2039	"adaptive_avg_pool2d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1345		
+错误	C2039	"adaptive_avg_pool1d": 不是 "breptorch" 的成员	brepnet	D:\brepnet-cplusplus\BRepTorch.h	1348		
+错误	C1907	无法从以前的错误中恢复；正在停止编译	brepnet	D:\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\include\sstream	19		

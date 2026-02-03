@@ -66,11 +66,11 @@ namespace breptorch {
             storage_ = std::make_shared<Storage>(n, dt);
         }
 
-        // Ìí¼Ó´Ë¹¹Ôìº¯Êý£¬ÓÅÏÈÆ¥Åä initializer_list
+        // ï¿½ï¿½ï¿½Ó´Ë¹ï¿½ï¿½ìº¯ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ¥ï¿½ï¿½ initializer_list
         Tensor(std::initializer_list<int64_t> sizes, DType dt = kFloat32)
             : Tensor(std::vector<int64_t>(sizes.begin(), sizes.end()), dt)
         {
-            // Î¯ÍÐ¹¹Ôì£º½« initializer_list ×ª»»Îª vector£¬ÔÙµ÷ÓÃÒÑÓÐ¹¹Ôìº¯Êý
+            // Î¯ï¿½Ð¹ï¿½ï¿½ì£ºï¿½ï¿½ initializer_list ×ªï¿½ï¿½Îª vectorï¿½ï¿½ï¿½Ùµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¹ï¿½ï¿½ìº¯ï¿½ï¿½
         }
 
         // Static factories
@@ -775,20 +775,20 @@ namespace breptorch {
     //}
     //
     inline Tensor dot(const Tensor& a, const Tensor& b) {
-        // Ð£Ñé£º±ØÐëÊÇ 3D ÏòÁ¿£¨Æ¥ÅäÄãµÄ ProjectVector ³¡¾°£©
+        // Ð£ï¿½é£ºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 3D ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ¥ï¿½ï¿½ï¿½ï¿½ï¿½ ProjectVector ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         if (a.sizes() != std::vector<int64_t>{3} || b.sizes() != std::vector<int64_t>{3}) {
             throw std::runtime_error("dot only supports 3D vectors (size={3})");
         }
         float sum = 0.0f;
         if (a.dtype_ == kFloat32 && b.dtype_ == kFloat32) {
-            for (size_t i = 0; i < 3; ++i) { // ¹Ì¶¨3Î¬£¬¸ü¸ßÐ§
+            for (size_t i = 0; i < 3; ++i) { // ï¿½Ì¶ï¿½3Î¬ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð§
                 sum += a.storage_->dataf_[i] * b.storage_->dataf_[i];
             }
         }
-        return Tensor(sum); // ·µ»Ø Tensor£¬Æ¥ÅäÄãµ÷ÓÃ .item<float>() µÄÂß¼­
+        return Tensor(sum); // ï¿½ï¿½ï¿½ï¿½ Tensorï¿½ï¿½Æ¥ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ .item<float>() ï¿½ï¿½ï¿½ß¼ï¿½
     }
 
-    // 2. ²¹È« norm º¯Êý£¨breptorch ÃüÃû¿Õ¼äÄÚ£¬·µ»Ø Tensor£©
+    // 2. ï¿½ï¿½È« norm ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½breptorch ï¿½ï¿½ï¿½ï¿½ï¿½Õ¼ï¿½ï¿½Ú£ï¿½ï¿½ï¿½ï¿½ï¿½ Tensorï¿½ï¿½
     inline Tensor norm(const Tensor& a) {
         if (a.sizes() != std::vector<int64_t>{3}) {
             throw std::runtime_error("norm only supports 3D vectors (size={3})");
@@ -799,7 +799,7 @@ namespace breptorch {
                 sum_sq += a.storage_->dataf_[i] * a.storage_->dataf_[i];
             }
         }
-        return Tensor(std::sqrt(sum_sq)); // ·µ»Ø Tensor
+        return Tensor(std::sqrt(sum_sq)); // ï¿½ï¿½ï¿½ï¿½ Tensor
     }
 
     inline Tensor cat(const std::vector<Tensor>& l, int d) {
@@ -860,7 +860,6 @@ namespace breptorch {
             }
         }
 
-        if (dt == kFloat32 && out.storage_->dataf_.size() > 0) {
         return out;
     }
 
