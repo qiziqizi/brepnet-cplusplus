@@ -70,7 +70,6 @@ inline Tensor find_max_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
         Ze = breptorch::cat({ Ze, pad }, 0);
     }
 
-    // check_indices("Pooling Edge (Ze/Ce)", Ze, Ce);
 
     // ���õ�0��Ϊ������
     //if (Ze.size(0) > 0) Ze.index_put_({ 0 }, -1e9);
@@ -108,7 +107,6 @@ inline Tensor find_max_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const
         Zf.index_put_({ 0 }, 0);
     }
 
-    // check_indices("Pooling Face Small (Zf/Cf)", Zf, Cf);
 
     Tensor Zft = Zf.index({ Cf });
     Tensor Hf_small = std::get<0>(breptorch::max(Zft, 1));

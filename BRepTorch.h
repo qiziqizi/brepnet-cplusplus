@@ -816,12 +816,6 @@ namespace breptorch {
         for (const auto& t : l) cat_dim_size += t.size(d);
         out_sizes[d] = cat_dim_size;
 
-        std::cout << "[cat] Output shape: [";
-        for (size_t i = 0; i < out_sizes.size(); ++i) {
-            std::cout << out_sizes[i];
-            if (i < out_sizes.size() - 1) std::cout << ",";
-        }
-        std::cout << "]\n";
 
         Tensor out(out_sizes, dt);
 
@@ -841,12 +835,6 @@ namespace breptorch {
             }
 
             if (dt == kFloat32 && out.storage_->dataf_.size() > 0) {
-                std::cout << "[cat] After copy (dim=0), first 3 values: ["
-                    << out.storage_->dataf_[0] << ", "
-                    << (out.storage_->dataf_.size() > 1 ? out.storage_->dataf_[1] : 0) << ", "
-                    << (out.storage_->dataf_.size() > 2 ? out.storage_->dataf_[2] : 0) << "]\n";
-            }
-
             return out;
         }
 
@@ -873,12 +861,6 @@ namespace breptorch {
         }
 
         if (dt == kFloat32 && out.storage_->dataf_.size() > 0) {
-            std::cout << "[cat] After copy (dim=" << d << "), first 3 values: ["
-                << out.storage_->dataf_[0] << ", "
-                << (out.storage_->dataf_.size() > 1 ? out.storage_->dataf_[1] : 0) << ", "
-                << (out.storage_->dataf_.size() > 2 ? out.storage_->dataf_[2] : 0) << "]\n";
-        }
-
         return out;
     }
 
