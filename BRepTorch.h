@@ -1243,7 +1243,7 @@ namespace breptorch {
                 _get_buffers("", out);
                 return out;
             }
-            void train(bool) {} void eval() {}
+
         };
 
         struct LinearOptions { int in, out; bool b; LinearOptions(int i, int o) :in(i), out(o), b(true) {} LinearOptions& bias(bool v) { b = v; return *this; } };
@@ -1368,7 +1368,6 @@ namespace breptorch {
         }
     } // namespace nn
 
-    struct NoGradGuard {};
 
 #define TORCH_MODULE(Name) \
     struct Name : public std::shared_ptr<Name##Impl> { \

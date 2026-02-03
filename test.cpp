@@ -61,23 +61,6 @@ int main() {
         std::cout << "[Config] Weights File: " << Tools::GetAbsPath(weights_path) << std::endl;
         std::cout << "[Config] STEP File   : " << Tools::GetAbsPath(step_path) << std::endl;
 
-        //std::string verify_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\verification_data_0101.npz";
-        //std::string weights_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\brepnet_weights_0101.npz";
-        //std::string step_path = "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\136322_81d84c1b_1.stp";
-        
-        //  批量待测试的文件列表
-        //std::vector<std::string> test_files = {
-        //    "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\102176_a8c040fb_8.stp", // Faces: 1
-        //    "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\21773_01f6bc23_25.stp", // Faces: 4
-        //    "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\109762_cb162371_37.stp", // Faces: 6
-        //    "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\50410_f8f03667_29.stp", // Faces: 6
-        //    "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\23675_0aa59777_2.stp", // Faces: 8
-        //    "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\30714_dafa62f6_2.stp", // Faces: 10
-        //    "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\41774_88a7a483_14.stp", // Faces: 13
-        //    "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\44742_71324dd1_17.stp", // Faces: 18
-        //    "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\93869_8b1922a3_0.stp", // Faces: 28
-        //    "D:\\Workplace\\PycharmProjects\\BRepNet\\s2.0.0\\breps\\step\\30435_c97330d2_6.stp", // Faces: 421
-        //};
 
         check_file(verify_path);
 
@@ -113,27 +96,6 @@ int main() {
             };
 
         // 验证局部坐标系变换 (LCS Math Check)
-        /*if (npz_data.count("gt_face_local") && pipeline.FaceGridsLocal.defined()) {
-            std::cout << "\n---------------- [LCS 几何变换测试] ----------------" << std::endl;
-
-            torch::Tensor py_local = load_t("gt_face_local"); // [N, 2, 9, 10, 10]
-            torch::Tensor cpp_local = pipeline.FaceGridsLocal;
-
-            // 维度对齐检查 (C++可能有Padding)
-            // 如果 cpp_local 是 [31, ...], py 是 [30, ...]
-            if (cpp_local.size(0) > py_local.size(0)) {
-                cpp_local = cpp_local.slice(0, 1, 1 + py_local.size(0));
-            }
-
-            // 对比前 3 个通道 (XYZ)
-            // 取第 0 个 Coedge，第 0 个面 (Self)
-            std::cout << "Py  XYZ (First Point): " << py_local[0][0].slice(0, 0, 3).slice(1, 0, 1).slice(2, 0, 1).flatten() << std::endl;
-            std::cout << "Cpp XYZ (First Point): " << cpp_local[0][0].slice(0, 0, 3).slice(1, 0, 1).slice(2, 0, 1).flatten() << std::endl;
-
-            float diff = (py_local - cpp_local).abs().mean().item<float>();
-            std::cout << ">>> 几何变换平均误差 (Mean L1): " << diff << std::endl;
-        }*/
-
         //加载原始特征 加载原始索引
         /*
         //加载原始特征 (此时还没有 Padding) 
@@ -155,27 +117,6 @@ int main() {
             for (int i = 0; i < num; ++i) pipeline.Csf.push_back(load_long("Csf_" + std::to_string(i)));
         }*/
 
-        // =========================================================
-        // [关键步骤] 索引转换 & 补 Padding
-        // =========================================================
-        // 1. 获取原始数量 (这是判断 Padding 的唯一标准)
-        int64_t num_faces = pipeline.Xf.size(0);
-        int64_t num_edges = pipeline.Xe.size(0);
-        int64_t num_coedges = pipeline.Xc.size(0);
-
-        std::cout << "原始数量 -> Face: " << num_faces << ", Edge: " << num_edges << ", Coedge: " << num_coedges << std::endl;
-
-        // 2. 定义转换函数 (绝对不要用 min/max 猜测！)
-        //  C++11 开始，引入了 Lambda 表达式（匿名函数），写在 main 里，可以避免污染全局命名空间
-        // 最终应该变成 BRepPipeline 类的私有成员函数
-        auto shift_indices = [](torch::Tensor& t, int64_t limit) {
-            if (!t.defined()) return;
-            auto flat = t.flatten();
-            int64_t* data = flat.data_ptr<int64_t>();
-            for (int64_t i = 0; i < flat.numel(); ++i) {
-                int64_t v = data[i];
-                // 如果索引在有效范围内 (0 ~ N-1)，则 +1 (变成 1 ~ N)
-                if (v >= 0 && v < limit) {
                     data[i] = v + 1;
                 }
                 // 否则 (通常是 padding index = limit)，归 0

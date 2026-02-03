@@ -243,169 +243,9 @@ struct BRepNetLayerImpl : Module {
 
 
         // 1. 诊断输入 Xf (Layer 0 Input)
-        /*static bool printed_L0_in = false;
-        if (!printed_L0_in) { // 只打印一次
-            std::cout << "\n---------------- [C++ Layer 0 诊断] ----------------" << std::endl;
-            // 打印第 1 行 (跳过 Padding)，前 5 列
-            std::cout << "Cpp L0 Input Xf (Head): " << Xf.slice(0, 1, 2).slice(1, 0, 5) << std::endl;
-            printed_L0_in = true;
-        }*/
-        // ========================================================
-        // 拆解 MLP
-        // ========================================================
-        /*static bool debug_printed = false;
-        if (!debug_printed) {
-            std::cout << "\n---------------- [C++ Layer 0 深度诊断] ----------------" << std::endl;
-
-            // 1. 获取 Linear 层
-            // mlp 是一个 Sequential，第 0 个是 Linear，第 1 个是 ReLU
-            auto linear = mlp->mlp->children()[0]; // dynamic cast not used in mock
-
-
-            if (linear) {
-                // 2. 运行 Linear
-                Tensor z_lin = linear->forward(Psi);
-
-                // 打印第 1 行 (跳过 Padding 0)，前 10 个
-                // 注意：这里要对应 Python 的 [0]，因为 Python 无 Padding
-                if (z_lin.size(0) > 1) {
-                    std::cout << "Cpp L0 Linear (Head): " << z_lin[1].slice(0, 0, 10) << std::endl;
-                }
-                else {
-                    std::cout << "Cpp L0 Linear (Head): " << z_lin[0].slice(0, 0, 10) << std::endl;
-                }
-
-                std::cout << "Cpp L0 Linear Mean:   " << z_lin.mean().item<float>() << std::endl;
-                std::cout << "Cpp L0 Linear Max:    " << z_lin.max().item<float>() << std::endl;
-            }
-            else {
-                std::cout << "? 无法获取 Linear 层！" << std::endl;
-            }
-            std::cout << "------------------------------------------------------\n" << std::endl;
-            debug_printed = true;
-        }*/
-        
         Tensor Z = mlp->forward(Psi);
-        
-        // 2. 诊断 Psi
-        /*static bool printed_L0_psi = false;
-        if (!printed_L0_psi) {
-            std::cout << "Cpp L0 Psi (Head):      " << Psi.slice(0, 1, 2).slice(1, 0, 5) << std::endl;
-            // 假设 Face=128, Edge=64. Edge 大概在 128~133 附近
-            std::cout << "Cpp L0 Psi (Middle/Edge): " << Psi.slice(0, 1, 2).slice(1, 128, 133) << std::endl;
-            // 打印 Psi 的后半段 (Coedge 部分)，看看是否对齐
-            // 假设总长 320，最后 5 位
-            std::cout << "Cpp L0 Psi (Tail):      " << Psi.slice(0, 1, 2).slice(1, Psi.size(1) - 5, Psi.size(1)) << std::endl;
-            printed_L0_psi = true;
-        }*/
-
-        // 切片操作 252维变成3*84维 
-        Tensor Zc = Z.slice(1, 0, out_size);
-        Tensor Ze = Z.slice(1, out_size, 2 * out_size);
-        Tensor Zf = Z.slice(1, 2 * out_size, 3 * out_size);
-
-        Tensor He, Hf;
-
-        // 【分支选择】
-        if (use_average_pooling) {
-            He = get_average_feature_vectors_for_each_edge(Ze, Ce);
-            Hf = get_average_feature_vectors_for_each_face(Zf, Cf, Csf);
-        }
-        else {
-            He = find_max_feature_vectors_for_each_edge(Ze, Ce);
-            Hf = find_max_feature_vectors_for_each_face(Zf, Cf, Csf);
-        }
-
-        // 3. 诊断输出 Hf
-        /*static bool printed_L0_out = false;
-        if (!printed_L0_out) {
-            std::cout << "Cpp L0 Output Hf (Head):" << Hf.slice(0, 1, 2).slice(1, 0, 5) << std::endl;
-            std::cout << "----------------------------------------------------" << std::endl;
-            printed_L0_out = true;
-        }*/
-
-
-        // Zc 不需要池化，直接传下去
-        return std::make_tuple(Hf, He, Zc);
-    }
-};
-TORCH_MODULE(BRepNetLayer)
-
-// 3. 输出层 
-struct BRepNetFaceOutputLayerImpl : Module {
-    BRepNetMLP mlp{ nullptr };
-
-    BRepNetFaceOutputLayerImpl(int in_s, int out_s) {
-        // final_layer = true
-        mlp = register_module("mlp", BRepNetMLP(in_s, out_s, out_s, true));
-    }
-
-    Tensor forward(Tensor Xf, Tensor Xe, Tensor Xc, Tensor Kf, Tensor Ke, Tensor Kc, Tensor Ce, Tensor Cf, const std::vector<Tensor>& Csf) {
-
-        // 2. 聚合面 边 共边特征 (Kernel Size = 2)
-        Tensor Pft = Xf.index({ Kf }); // [N, 2, 64]
-        Tensor Pet = Xe.index({ Ke }); // [N, 5, 64]
-        Tensor Pct = Xc.index({ Kc });
-
-        Tensor Pt = breptorch::flatten(Pft, 1); // [N, 128]
-        Tensor Pe = breptorch::flatten(Pet, 1); // [N, 320]
-        Tensor Pc = breptorch::flatten(Pct, 1); 
-        // 5. 拼接 (包含 Coedge!)
-        Tensor Psi = breptorch::cat({ Pt, Pe, Pc}, 1);
-
-        Tensor Z = mlp->forward(Psi);
-
-        // 【调试插入】打印 Z
-        /*std::cout << "Cpp Final Z Shape: " << Z.sizes() << std::endl;
-        std::cout << "Cpp Final Z [Head]:\n" << Z.slice(0, 1, 6).slice(1, 0, 5) << std::endl;
-        std::cout << "--------------------------------------------------------------" << std::endl;*/
-
-        // 6. 池化回Face
-        Tensor embeds = find_max_feature_vectors_for_each_face(Z, Cf, Csf);
-        // ========== 新增：打印Output Layer池化后的embeds ==========
-        //std::cout << "[Output Layer] Pooled Embeds:\n" << embeds.slice(0, 1, 2).slice(1, 0, 5) << std::endl;
-        //std::cout << "\n[关键验证] C++ OutputLayer池化后embeds:\n"<< embeds.slice(0, 0, 5).slice(1, 0, 5) << std::endl;
-        return embeds;
-    }
-};
-TORCH_MODULE(BRepNetFaceOutputLayer)
-
-// 4. 主网络 (BRepNet) 
-struct BRepNetImpl : Module {
-    // GNN 核心层
-    SequentialPtr layers{ nullptr };
-    BRepNetFaceOutputLayer output_layer{ nullptr };
-    LinearPtr classification_layer{ nullptr };
-
-    // UV-Net 编码器模块
-    UVNetSurfaceEncoder surf_enc{ nullptr }; // 用于面 (Face)
-    UVNetCurveEncoder curve_enc{ nullptr };  // 用于边 (Edge) 和 共边 (Coedge)
-
-    bool use_uvnet = false;
-
-    // 构造函数
-    BRepNetImpl(int input_dim, int hidden_dim, int kernel_size_sum, int num_classes) {
-        // 1. Hidden Layers (Layers.0)
-        // 注意：input_dim 必须等于 (手工特征 + Grid特征) 的总和
-        layers = register_module("layers", Sequential());
-        layers->push_back("0", BRepNetLayer(input_dim, hidden_dim));
-
-        // 2. Output Layer
-        output_layer = register_module("output_layer", BRepNetFaceOutputLayer(kernel_size_sum * hidden_dim, hidden_dim));
-
-        // 3. Classification
         classification_layer = register_module("classification_layer", Linear(LinearOptions(hidden_dim, num_classes)));
 
-        // 4. 初始化 UV-Net 模块
-        surf_enc = register_module("surface_encoder", UVNetSurfaceEncoder(new UVNetSurfaceEncoderImpl()));
-        curve_enc = register_module("curve_encoder", UVNetCurveEncoder(new UVNetCurveEncoderImpl()));
-    }
-
-    // 辅助函数：智能对齐并提取特征
-    // 输入: Target(手工特征张量), Grid(网格张量), Encoder(使用的编码器), Name(用于日志)
-    // 输出: 拼接后的新特征张量
-    template<typename ModuleType>
-    Tensor process_grid_feature(Tensor target_feat, Tensor grid, ModuleType& encoder, std::string name) {
         if (!grid.defined()) return target_feat;
 
         int64_t target_rows = target_feat.size(0);
@@ -426,9 +266,6 @@ struct BRepNetImpl : Module {
             throw std::runtime_error("Grid dimension mismatch in " + name);
         }
 
-        // 2. 卷积提取特征
-        // input_grid 包含了 Padding (第0行为0)，卷积后输出也是 0 (或 bias)，安全。
-        Tensor grid_emb = encoder->forward(input_grid);
 
         // 3. 拼接: [N, 手工Dim] + [N, 64] -> [N, 手工Dim+64]
         return breptorch::cat({ target_feat, grid_emb }, 1);
@@ -466,9 +303,6 @@ struct BRepNetImpl : Module {
 
                 // 4. 这里的 Xf 不再是拼接，而是直接替换
                 // 根据 Python: Pt = Xf (Xf 来自 surface_encoder)
-                Xf = uv_feat_f;
-            }
-            // --- B. Edge 处理 ---
             if (EdgeGridsLocal.defined()) {
                 // EdgeGridsLocal: [N_c, 13, 10]
                 // 卷积 -> [N_c, 64]
@@ -488,19 +322,6 @@ struct BRepNetImpl : Module {
                 Xc = uv_feat_c;
             }
         }
-        /*
-        // ====================================================
-        //  【诊断插入】检查特征是否存活
-        // ====================================================
-        std::cout << "\n---------------- [Feature Diagnosis] ----------------" << std::endl;
-        std::cout << "Xf Max: " << Xf.max().item<float>() << " (Should > 0)" << std::endl;
-        std::cout << "Xe Max: " << Xe.max().item<float>() << " (Should > 0)" << std::endl;
-        std::cout << "Xc Max: " << Xc.max().item<float>() << " (Should > 0)" << std::endl;
-
-        // 检查是否全 0
-        if (std::abs(Xe.max().item<float>()) < 1e-6) std::cerr << "?? 警告: Xe (Edge) 特征全为 0！" << std::endl;
-        if (std::abs(Xc.max().item<float>()) < 1e-6) std::cerr << "?? 警告: Xc (Coedge) 特征全为 0！" << std::endl;
-        std::cout << "-----------------------------------------------------\n" << std::endl;*/
 
 
         // ----------------------------------------------------------------

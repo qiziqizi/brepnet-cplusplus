@@ -22,7 +22,6 @@ torch::Tensor InferenceEngine::predict(BRepPipeline& pipeline) {
     if (!net) throw std::runtime_error("Network not initialized!");
 
     // 使用 NoGradGuard 关闭梯度计算，节省内存和时间
-    torch::NoGradGuard no_grad;
 
     // 执行 Forward
     // 直接从 pipeline 中取数据，保持 test.cpp 的整洁
