@@ -133,58 +133,6 @@ inline Tensor find_max_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const
     return breptorch::cat({ padding_out, Hf_final }, 0);
 }
 
-// ������ƽ���ػ� (Mean Pooling)����δ����
-// Edge ƽ���ػ�
-inline Tensor get_average_feature_vectors_for_each_edge(Tensor Ze, Tensor Ce) {
-    // 1. ȷ���� 0 ���� 0 (Padding)
-    if (Ze.size(0) > 0) Ze[0].zero_();
-
-    // 2. ��� [N_e, 2, D]
-    Tensor Zet = Ze.index({ Ce });
-
-    // 3. ȡƽ��
-    Tensor He = breptorch::mean(Zet, 1); // dim=1
-
-    // 4. ���� Padding (���ָ�ʽһ��)
-    Tensor padding = breptorch::zeros({ 1, He.size(1) }, Ze.options());
-    return breptorch::cat({ padding, He }, 0);
-}
-// Face ƽ���ػ�
-inline Tensor get_average_feature_vectors_for_each_face(Tensor Zf, Tensor Cf, const std::vector<Tensor>& Csf) {
-    int64_t num_filters = Zf.size(1);
-
-    // 1. ȷ���� 0 ���� 0 (Padding)
-    // Mean Pooling ������ 0 ��䣬������ -1e9
-    if (Zf.size(0) > 0) Zf[0].zero_();
-
-    // 2. С�洦�� [N_small, 64, D]
-    Tensor Zft = Zf.index({ Cf });
-
-    // ȡƽ��
-    Tensor Hf_small = breptorch::mean(Zft, 1);
-
-    // 3. ���洦��
-    Tensor Hf_final;
-    if (Csf.empty()) {
-        Hf_final = Hf_small;
-    }
-    else {
-        std::vector<Tensor> Hf_list;
-        Hf_list.push_back(Hf_small);
-        for (const auto& indices : Csf) {
-            Tensor Zsingle = Zf.index({ indices });
-            // ����ֱ�Ӷ����б�ȡƽ��
-            Tensor Hbig = breptorch::mean(Zsingle, 0);
-            Hf_list.push_back(Hbig.reshape({ 1, num_filters }));
-        }
-        Hf_final = breptorch::cat(Hf_list, 0);
-    }
-
-
-    // 4. ���� Padding
-    Tensor padding_out = breptorch::zeros({ 1, Hf_final.size(1) }, Zf.options());
-    return breptorch::cat({ padding_out, Hf_final }, 0);
-}
  
 /*--- ����ģ�鶨�� ---*/
 
@@ -228,7 +176,6 @@ TORCH_MODULE(BRepNetMLP)
 struct BRepNetLayerImpl : Module {
     BRepNetMLP mlp{ nullptr };
     int out_size;
-    bool use_average_pooling = false;
 
 
     BRepNetLayerImpl(int in_s, int out_s) : out_size(out_s) {
