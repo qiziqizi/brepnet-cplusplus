@@ -8,7 +8,7 @@ x64/
 test_data/
 logs/
 inference_data/
-python端代码/
+python端的代码/
 过时的代码/
 
 # 忽略所有文档、日志和图片
