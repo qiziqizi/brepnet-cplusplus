@@ -1,7 +1,7 @@
 #include "BRepUtils.h"
 
-// OpenCascade Ëã·¨ÊµÏÖËùĞèµÄÍ·ÎÄ¼ş
-// ÕâĞ©Í·ÎÄ¼ş±È½ÏÖØ£¬·ÅÔÚ .cpp Àï¿ÉÒÔ¼Ó¿ìÆäËûÎÄ¼şµÄ±àÒëËÙ¶È
+// OpenCascade ï¿½ã·¨Êµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í·ï¿½Ä¼ï¿½
+// ï¿½ï¿½Ğ©Í·ï¿½Ä¼ï¿½ï¿½È½ï¿½ï¿½Ø£ï¿½ï¿½ï¿½ï¿½ï¿½ .cpp ï¿½ï¿½ï¿½ï¿½Ô¼Ó¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½Ä±ï¿½ï¿½ï¿½ï¿½Ù¶ï¿½
 #include <STEPControl_Reader.hxx>
 #include <TopoDS_Wire.hxx>
 #include <TopExp.hxx>
@@ -35,9 +35,9 @@
 using namespace breptorch;
 
 namespace BRepUtils {
-    // --- ÊıÑ§¸¨Öúº¯Êı ---
+    // --- ï¿½ï¿½Ñ§ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ---
     //
-    // ¸¨Öú£º¼ÆËãÍ¶Ó°
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¶Ó°
     Tensor ProjectVector(Tensor vec, Tensor target_plane_normal) {
         // vec: [3], normal: [3]
         // v_proj = v - (v . n) * n
@@ -45,11 +45,11 @@ namespace BRepUtils {
         Tensor delta = target_plane_normal * dp;
         Tensor res = vec - delta;
         float len = norm(res).template item<float>();
-        if (len < 1e-7) return Tensor(); // Ê§°Ü
-        return res / len; // ¹éÒ»»¯
+        if (len < 1e-7) return Tensor(); // Ê§ï¿½ï¿½
+        return res / len; // ï¿½ï¿½Ò»ï¿½ï¿½
     }
 
-    // ¸¨Öú£ºÕÒÈÎÒâÕı½»ÏòÁ¿
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     Tensor AnyOrthogonalTensor(Tensor vec) {
         //Tensor res = ProjectVector(tensor({ 1.0, 0.0, 0.0 }, vec.options()), vec);
         //if (res.defined()) return res;
@@ -57,7 +57,7 @@ namespace BRepUtils {
         //if (res.defined()) return res;
         //return ProjectVector(tensor({ 0.0, 0.0, 1.0 }, vec.options()), vec);
 
-        // ³¢ÊÔÈı¸ö±ê×¼»ùÏòÁ¿
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         Tensor candidates[3] = {
             tensor({1.0f, 0.0f, 0.0f}),
             tensor({0.0f, 1.0f, 0.0f}),
@@ -73,15 +73,26 @@ namespace BRepUtils {
 
     }
 
-    // ¸¨Öú£ºÑÏ¸ñµÄÏßĞÔ²åÖµ£¬±£Ö¤Ê×Î²¾«È·ÃüÖĞ±ß½ç
-    double GetParamStrict(int index, int total, double min_val, double max_val) {
-        if (index == 0) return min_val;
-        if (index == total - 1) return max_val;
-        return min_val + (max_val - min_val) * (double)index / (double)(total - 1);
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¸ï¿½ï¿½ï¿½ï¿½ï¿½Ô²ï¿½Öµï¿½ï¿½ï¿½ï¿½Ö¤ï¿½ï¿½Î²ï¿½ï¿½È·ï¿½ï¿½ï¿½Ğ±ß½ï¿½
+    // IMPORTANT: Python samples U from max to min, but V from min to max
+    // U parameter (reverse=true): index=0 -> max_val, index=total-1 -> min_val
+    // V parameter (reverse=false): index=0 -> min_val, index=total-1 -> max_val
+    double GetParamStrict(int index, int total, double min_val, double max_val, bool reverse) {
+        if (reverse) {
+            // Sample from max to min (for U parameter)
+            if (index == 0) return max_val;
+            if (index == total - 1) return min_val;
+            return max_val - (max_val - min_val) * (double)index / (double)(total - 1);
+        } else {
+            // Sample from min to max (for V parameter)
+            if (index == 0) return min_val;
+            if (index == total - 1) return max_val;
+            return min_val + (max_val - min_val) * (double)index / (double)(total - 1);
+        }
     }
-    // --- ¼¸ºÎ¸¨Öúº¯Êı ---
+    // --- ï¿½ï¿½ï¿½Î¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ---
 
-    // --- ¸¨Öú£º¼ÆËã¼¸ºÎÊôĞÔ ---
+    // --- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ã¼¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ---
     double GetFaceArea(const TopoDS_Shape& face) {
         GProp_GProps props;
         BRepGProp::SurfaceProperties(face, props);
@@ -108,12 +119,12 @@ namespace BRepUtils {
         return BRepBuilderAPI_Transform(s, sc * t, Standard_True).Shape();
     }
 
-    // ¼ÆËãÇúÃæÉÏÄ³µãµÄ·¨Ïß
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä³ï¿½ï¿½Ä·ï¿½ï¿½ï¿½
     gp_Vec GetNormalAtPoint(const TopoDS_Face& face, const gp_Pnt& p) {
         BRepAdaptor_Surface surf(face);
-        // ½« 3D µãÍ¶Ó°»Ø UV ¿Õ¼ä (Õâ¶Ô¼ÆËã¾«È··¨ÏßºÜÖØÒª)
-        // ÕâÀï¼ò»¯´¦Àí£º¼ÙÉèµãÔÚÃæÉÏ£¬Ê¹ÓÃ GeomAPI_ProjectPointOnSurf
-        // ÎªÁËĞÔÄÜ£¬¹¤Òµ¼¶ÊµÏÖÍ¨³£»áÀûÓÃ Edge µÄ pcurve£¬ÕâÀïÓÃÍ¶Ó°×÷ÎªÍ¨ÓÃ½â·¨
+        // ï¿½ï¿½ 3D ï¿½ï¿½Í¶Ó°ï¿½ï¿½ UV ï¿½Õ¼ï¿½ (ï¿½ï¿½Ô¼ï¿½ï¿½ã¾«È·ï¿½ï¿½ï¿½ßºï¿½ï¿½ï¿½Òª)
+        // ï¿½ï¿½ï¿½ï¿½ò»¯´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï£ï¿½Ê¹ï¿½ï¿½ GeomAPI_ProjectPointOnSurf
+        // Îªï¿½ï¿½ï¿½ï¿½ï¿½Ü£ï¿½ï¿½ï¿½Òµï¿½ï¿½Êµï¿½ï¿½Í¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Edge ï¿½ï¿½ pcurveï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¶Ó°ï¿½ï¿½ÎªÍ¨ï¿½Ã½â·¨
         GeomAPI_ProjectPointOnSurf proj(p, BRep_Tool::Surface(face));
         if (proj.NbPoints() > 0) {
             double u, v;
@@ -130,7 +141,7 @@ namespace BRepUtils {
                 return n;
             }
         }
-        return gp_Vec(0, 0, 0); // Ê§°Ü
+        return gp_Vec(0, 0, 0); // Ê§ï¿½ï¿½
     }
 
     gp_Vec GetNormalAtFace(const TopoDS_Face& face, const gp_Pnt& p) {
@@ -143,7 +154,7 @@ namespace BRepUtils {
         if (props.IsNormalDefined()) {
             gp_Vec n = props.Normal();
             if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
-            // ? È·±£¹éÒ»»¯
+            // ? È·ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½
             if (n.Magnitude() > 1e-7) {
                 n.Normalize();
             }
@@ -161,7 +172,7 @@ namespace BRepUtils {
         Handle(Geom_Curve) c3d = BRep_Tool::Curve(edge, first, last);
         if (c3d.IsNull()) return 2;
 
-        // È¡ÖĞµã¸½½ü£¬·ÀÖ¹ÌØÊâµã
+        // È¡ï¿½Ğµã¸½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¹ï¿½ï¿½ï¿½ï¿½ï¿½
         double p_val = first + (last - first) * 0.43;
         gp_Pnt p; gp_Vec tang;
         c3d->D1(p_val, p, tang);
@@ -171,7 +182,7 @@ namespace BRepUtils {
 
         if (n1.Angle(n2) < 0.087 || (M_PI - n1.Angle(n2)) < 0.087) return 2; // Smooth
 
-        // Í¹°¼ÅĞ¶Ï
+        // Í¹ï¿½ï¿½ï¿½Ğ¶ï¿½
         gp_Vec cross = n1 ^ n2;
 
         bool f1_fwd = false;

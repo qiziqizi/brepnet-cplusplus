@@ -43,7 +43,7 @@ namespace Verification {
             if (i > 0) std::cout << ", ";
             std::cout << t.size(i);
         }
-        std::cout << "] Mean=" << t.mean().item<float>()
+        std::cout << "] Min=" << t.min().item<float>()
                   << " Max=" << t.max().item<float>() << std::endl;
         #endif
     }

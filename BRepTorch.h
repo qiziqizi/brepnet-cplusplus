@@ -377,11 +377,27 @@ namespace breptorch {
         }
 
         // Operators
-        Tensor operator-(const Tensor& b) const { 
+        Tensor operator-(const Tensor& b) const {
+            if (!storage_ || !b.storage_) {
+                std::cerr << "[BRepTorch Error] Null storage in operator-" << std::endl;
+                std::cerr << "  this->storage_: " << (storage_ ? "valid" : "null") << std::endl;
+                std::cerr << "  b.storage_: " << (b.storage_ ? "valid" : "null") << std::endl;
+                throw std::runtime_error("Null storage in tensor subtraction");
+            }
             Tensor out = clone();
             if (dtype_ == kFloat32) {
+                if (out.storage_->dataf_.size() != b.storage_->dataf_.size()) {
+                    std::cerr << "[BRepTorch Error] Size mismatch in operator-: "
+                              << out.storage_->dataf_.size() << " vs " << b.storage_->dataf_.size() << std::endl;
+                    throw std::runtime_error("Size mismatch in tensor subtraction");
+                }
                 for(size_t i=0; i<out.storage_->dataf_.size(); ++i) out.storage_->dataf_[i] -= b.storage_->dataf_[i];
             } else {
+                if (out.storage_->datal_.size() != b.storage_->datal_.size()) {
+                    std::cerr << "[BRepTorch Error] Size mismatch in operator-: "
+                              << out.storage_->datal_.size() << " vs " << b.storage_->datal_.size() << std::endl;
+                    throw std::runtime_error("Size mismatch in tensor subtraction");
+                }
                 for(size_t i=0; i<out.storage_->datal_.size(); ++i) out.storage_->datal_[i] -= b.storage_->datal_[i];
             }
             return out;
@@ -422,11 +438,27 @@ namespace breptorch {
             }
             return out;
         }
-        Tensor operator/(const Tensor& b) const { 
+        Tensor operator/(const Tensor& b) const {
+            if (!storage_ || !b.storage_) {
+                std::cerr << "[BRepTorch Error] Null storage in operator/" << std::endl;
+                std::cerr << "  this->storage_: " << (storage_ ? "valid" : "null") << std::endl;
+                std::cerr << "  b.storage_: " << (b.storage_ ? "valid" : "null") << std::endl;
+                throw std::runtime_error("Null storage in tensor division");
+            }
             Tensor out = clone();
             if (dtype_ == kFloat32) {
+                if (out.storage_->dataf_.size() != b.storage_->dataf_.size()) {
+                    std::cerr << "[BRepTorch Error] Size mismatch in operator/: "
+                              << out.storage_->dataf_.size() << " vs " << b.storage_->dataf_.size() << std::endl;
+                    throw std::runtime_error("Size mismatch in tensor division");
+                }
                 for(size_t i=0; i<out.storage_->dataf_.size(); ++i) out.storage_->dataf_[i] /= b.storage_->dataf_[i];
             } else {
+                if (out.storage_->datal_.size() != b.storage_->datal_.size()) {
+                    std::cerr << "[BRepTorch Error] Size mismatch in operator/: "
+                              << out.storage_->datal_.size() << " vs " << b.storage_->datal_.size() << std::endl;
+                    throw std::runtime_error("Size mismatch in tensor division");
+                }
                 for(size_t i=0; i<out.storage_->datal_.size(); ++i) out.storage_->datal_[i] /= b.storage_->datal_[i];
             }
             return out;
@@ -904,6 +936,44 @@ namespace breptorch {
         return out;
     }
 
+    // Softmax function (for classification)
+    inline Tensor softmax(Tensor x, int dim = -1) {
+        // x: [N, C] - N samples, C classes
+        // Apply softmax along dimension dim
+        if (x.dtype_ != kFloat32) return x;
+
+        Tensor out = x.clone();
+
+        if (dim == -1 || dim == 1) {
+            // Softmax along the last dimension (classes)
+            int64_t N = x.size(0);
+            int64_t C = x.size(1);
+
+            for (int64_t n = 0; n < N; ++n) {
+                // Find max for numerical stability
+                float max_val = out.at({n, 0});
+                for (int64_t c = 1; c < C; ++c) {
+                    max_val = std::max(max_val, out.at({n, c}));
+                }
+
+                // Compute exp(x - max) and sum
+                float sum = 0.0f;
+                for (int64_t c = 0; c < C; ++c) {
+                    float val = std::exp(out.at({n, c}) - max_val);
+                    out.at({n, c}) = val;
+                    sum += val;
+                }
+
+                // Normalize
+                for (int64_t c = 0; c < C; ++c) {
+                    out.at({n, c}) /= sum;
+                }
+            }
+        }
+
+        return out;
+    }
+
     inline Tensor adaptive_avg_pool2d(Tensor x, std::initializer_list<int> output_size) {
         // Assume output_size is {1, 1} for global average pooling
         // x: [N, C, H, W] -> [N, C, 1, 1]
@@ -1196,7 +1266,11 @@ namespace breptorch {
                 }
                 for (auto& kv : modules_) {
                     std::string sub_prefix = prefix.empty() ? kv.first : prefix + "." + kv.first;
-                    kv.second->_get_parameters(sub_prefix, out);
+                    if (kv.second) {  // Check for nullptr before recursion
+                        kv.second->_get_parameters(sub_prefix, out);
+                    } else {
+                        std::cerr << "[Warning] Null module found: " << sub_prefix << std::endl;
+                    }
                 }
             }
             
@@ -1207,7 +1281,11 @@ namespace breptorch {
                 }
                 for (auto& kv : modules_) {
                     std::string sub_prefix = prefix.empty() ? kv.first : prefix + "." + kv.first;
-                    kv.second->_get_buffers(sub_prefix, out);
+                    if (kv.second) {  // Check for nullptr before recursion
+                        kv.second->_get_buffers(sub_prefix, out);
+                    } else {
+                        std::cerr << "[Warning] Null module found in buffers: " << sub_prefix << std::endl;
+                    }
                 }
             }
 
@@ -1226,21 +1304,24 @@ namespace breptorch {
         };
 
         struct LinearOptions { int in, out; bool b; LinearOptions(int i, int o) :in(i), out(o), b(true) {} LinearOptions& bias(bool v) { b = v; return *this; } };
-        struct LinearImpl : Module { 
+        struct LinearImpl : Module {
             Tensor weight, bias;
             LinearImpl(LinearOptions o) {
                 weight = Tensor::zeros({(int64_t)o.out, (int64_t)o.in}, kFloat32);
                 // Simple initialization
-                weight.fill(0.01f); 
+                weight.fill(0.01f);
                 register_parameter("weight", weight);
                 if (o.b) {
                     bias = Tensor::zeros({(int64_t)o.out}, kFloat32);
                     register_parameter("bias", bias);
                 }
-            } 
-            Tensor forward(Tensor x) override { 
-                return breptorch::linear(x, weight, bias); 
-            } 
+            }
+            Tensor forward(Tensor x) override {
+                // Update internal references in case they were modified externally (e.g. load_state_dict)
+                if (params_.count("weight")) weight = params_["weight"];
+                if (params_.count("bias")) bias = params_["bias"];
+                return breptorch::linear(x, weight, bias);
+            }
         };
         
         struct ReLUImpl : Module { 

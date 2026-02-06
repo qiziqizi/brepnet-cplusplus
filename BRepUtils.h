@@ -8,8 +8,8 @@
 #include "BRepTorch.h"
 #include "cnpy.h"
 
-// OpenCascade »ù´¡Êý¾ÝÀàÐÍÍ·ÎÄ¼þ
-// (Ö»±£ÁôÉùÃ÷ÐèÒªµÄÍ·ÎÄ¼þ£¬¼õÉÙ±àÒëÒÀÀµ)
+// OpenCascade ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í·ï¿½Ä¼ï¿½
+// (Ö»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½Í·ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ù±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)
 #include <TopoDS.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Face.hxx>
@@ -22,34 +22,36 @@
 using namespace breptorch;
 
 namespace BRepUtils {
-    // --- ÊýÑ§¹¤¾ßº¯Êý ---
+    // --- ï¿½ï¿½Ñ§ï¿½ï¿½ï¿½ßºï¿½ï¿½ï¿½ ---
 
-    // ÏòÁ¿ÔÚÆ½ÃæÉÏµÄÍ¶Ó°
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ½ï¿½ï¿½ï¿½Ïµï¿½Í¶Ó°
     Tensor ProjectVector(Tensor vec, Tensor target_plane_normal);
 
-    // ¼ÆËãÈÎÒâÕý½»ÏòÁ¿
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     Tensor AnyOrthogonalTensor(Tensor vec);
 
-    // »ñÈ¡²ÎÊý£¨±£Ö¤Ê×Î²¾«È·£©
-    double GetParamStrict(int index, int total, double min_val, double max_val);
+    // Get parameter with strict boundary matching
+    // reverse=true: sample from max to min (for U parameter)
+    // reverse=false: sample from min to max (for V parameter)
+    double GetParamStrict(int index, int total, double min_val, double max_val, bool reverse = true);
 
-    // --- ¼¸ºÎÌØÕ÷¼ÆËãº¯Êý ---
+    // --- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ãº¯ï¿½ï¿½ ---
 
-    // ¼ÆËãÃæµÄÃæ»ý
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     double GetFaceArea(const TopoDS_Shape& face);
 
-    // ¼ÆËã±ßµÄ³¤¶È
+    // ï¿½ï¿½ï¿½ï¿½ßµÄ³ï¿½ï¿½ï¿½
     double GetEdgeLength(const TopoDS_Shape& edge);
 
-    // Ëõ·Å Shape µ½¹éÒ»»¯³ß´ç
+    // ï¿½ï¿½ï¿½ï¿½ Shape ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ß´ï¿½
     TopoDS_Shape ScaleShape(const TopoDS_Shape& s);
 
-    // »ñÈ¡µãÔÚÃæÉÏµÄ·¨ÏòÁ¿ (Í¨¹ý UV Í¶Ó°)
+    // ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÏµÄ·ï¿½ï¿½ï¿½ï¿½ï¿½ (Í¨ï¿½ï¿½ UV Í¶Ó°)
     gp_Vec GetNormalAtPoint(const TopoDS_Face& face, const gp_Pnt& p);
 
-    // »ñÈ¡µãÔÚÃæÉÏµÄ·¨ÏòÁ¿ (Í¨¹ý Geom Surface)
+    // ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÏµÄ·ï¿½ï¿½ï¿½ï¿½ï¿½ (Í¨ï¿½ï¿½ Geom Surface)
     gp_Vec GetNormalAtFace(const TopoDS_Face& face, const gp_Pnt& p);
 
-    // ¼ÆËã±ßµÄÍ¹ÐÔ (0: °¼, 1: Í¹, 2: Æ½»¬/ÆäËû)
+    // ï¿½ï¿½ï¿½ï¿½ßµï¿½Í¹ï¿½ï¿½ (0: ï¿½ï¿½, 1: Í¹, 2: Æ½ï¿½ï¿½/ï¿½ï¿½ï¿½ï¿½)
     int CalcConvexity(const TopoDS_Edge& edge, int f1_idx, int f2_idx, const TopTools_IndexedMapOfShape& unique_faces);
 }

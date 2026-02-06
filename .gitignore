@@ -7,3 +7,12 @@ x64/
 *.ipch
 test_data/
 logs/
+inference_data/
+python端代码/
+过时的代码/
+
+# 忽略所有文档、日志和图片
+*.md
+*.txt
+*.png
+*.pdf

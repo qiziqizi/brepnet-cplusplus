@@ -4,7 +4,7 @@
 #include <vector>
 #include <map>
 #include <string>
-#include <algorithm> // ÓÃÓÚ std::sort
+#include <algorithm> // ï¿½ï¿½ï¿½ï¿½ std::sort
 #include <cmath>
 
 // LibTorch
@@ -13,7 +13,7 @@
 #include "cnpy.h"
 #include "BRepUtils.h"
 
-// OpenCascade Í·ÎÄ¼ş
+// OpenCascade Í·ï¿½Ä¼ï¿½
 #include <STEPControl_Reader.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Shape.hxx>
@@ -44,13 +44,13 @@
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <BRepLProp_SLProps.hxx>
 
-// extract_face_point_grids Ïà¹Ø
+// extract_face_point_grids ï¿½ï¿½ï¿½
 #include <BRepTools.hxx>
 #include <BRepTopAdaptor_FClass2d.hxx>    
 #include <gp_Pnt2d.hxx>
 #include <Precision.hxx>
 
-// extract_face_point_grids Ïà¹Ø
+// extract_face_point_grids ï¿½ï¿½ï¿½
 #include <GCPnts_UniformAbscissa.hxx>
 #include <GeomLProp_SLProps.hxx>
 
@@ -119,83 +119,38 @@ public:
     BRepPipeline() {}
 
 
-    // --- ºËĞÄÈë¿Ú ---
+    // --- ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ---
     bool process(const std::string& step_file_path) {
         coedges.clear();
         unique_faces.Clear();
         unique_edges.Clear();
 
-        // 2. ¶ÁÈ¡ STEP
+        // 2. ï¿½ï¿½È¡ STEP
         STEPControl_Reader reader;
         IFSelect_ReturnStatus status = reader.ReadFile(step_file_path.c_str());
         int num_roots = reader.NbRootsForTransfer();
         reader.TransferRoots();
         TopoDS_Shape original_shape = reader.OneShape();
-        TopoDS_Shape shape = BRepUtils::ScaleShape(original_shape);
 
-        // ---------------- ÃæÅÅĞòÂß¼­ÓÅ»¯ ----------------
-        // Ê¹ÓÃ pair ´æ´¢ <Ãæ»ı, Face>£¬±ÜÃâÔÚ sort ÀïÖØ¸´¼ÆËã
-        std::vector<std::pair<double, TopoDS_Face>> face_props;
+        // FIXME: Disable scaling to match Python behavior (which uses original STEP coordinates)
+        // TopoDS_Shape shape = BRepUtils::ScaleShape(original_shape);
+        TopoDS_Shape shape = original_shape;
+
+        // Build unique faces and edges using default traversal order (same as Python)
+        // Python uses: TopologyUtils.TopologyExplorer(body, ignore_orientation=True)
+        // C++ equivalent: TopExp_Explorer with default settings
+
         TopExp_Explorer faceExp(shape, TopAbs_FACE);
-
-        int f_count = 0;
         for (; faceExp.More(); faceExp.Next()) {
             TopoDS_Face f = TopoDS::Face(faceExp.Current());
-            double area = 0.0;
-
-            // ¡¾°²È«·À»¤¡¿¼Ó try-catch ·ÀÖ¹ OCCT ÔÚ¼ÆËã¼¸ºÎÊôĞÔÊ±±ÀÀ£
-            try {
-                GProp_GProps props;
-                BRepGProp::SurfaceProperties(f, props);
-                area = props.Mass();
-                // ´¦Àí¼«Ğ¡Öµ»ò¸ºÖµ£¨·ÀÖ¹ NaN µ¼ÖÂÅÅĞò±ÀÀ££©
-                if (area < 1e-9) area = 0.0;
-            }
-            catch (...) {
-                std::cerr << "  [Warning] Face " << f_count << " Ãæ»ı¼ÆËãÊ§°Ü£¬ÉèÎª 0" << std::endl;
-                area = 0.0;
-            }
-            face_props.push_back({ area, f });
-            f_count++;
+            unique_faces.Add(f);
         }
 
-        // ´æÈë unique_faces
-        for (const auto& pair : face_props) {
-            unique_faces.Add(pair.second);
-        }
-        //std::cout << "[Debug] ÃæÅÅĞòÍê³É¡£" << std::endl;
-
-        // ---------------- ±ßÅÅĞòÂß¼­ÓÅ»¯ ----------------
-        std::vector<std::pair<double, TopoDS_Edge>> edge_props;
         TopExp_Explorer edgeExp(shape, TopAbs_EDGE);
-
-        int e_count = 0;
         for (; edgeExp.More(); edgeExp.Next()) {
             TopoDS_Edge e = TopoDS::Edge(edgeExp.Current());
-            double length = 0.0;
-
-            // ¡¾°²È«·À»¤¡¿¼Ó try-catch
-            try {
-                GProp_GProps props;
-                BRepGProp::LinearProperties(e, props);
-                length = props.Mass();
-                if (length < 1e-9) length = 0.0;
-            }
-            catch (...) {
-                std::cerr << " [Warning] Edge " << e_count << " ³¤¶È¼ÆËãÊ§°Ü£¬ÉèÎª 0" << std::endl;
-                length = 0.0;
-            }
-            edge_props.push_back({ length, e });
-            e_count++;
+            unique_edges.Add(e);
         }
-
-
-        // ´æÈë unique_edges
-        for (const auto& pair : edge_props) {
-            unique_edges.Add(pair.second);
-        }
-        //std::cout << "[Debug] ±ßÅÅĞòÍê³É¡£" << std::endl;
-
 
         build_topology();
         extract_features();
@@ -212,7 +167,7 @@ public:
             auto load_t = [&](const std::string& key) {
                 if (!npz.count(key)) {
                     std::cerr << "Stats missing key: " << key << std::endl;
-                    // ·µ»ØÒ»¸ö¿Õ tensor »òÕßÅ×³öÒì³££¬·ÀÖ¹ºóÃæ±À
+                    // ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ tensor ï¿½ï¿½ï¿½ï¿½ï¿½×³ï¿½ï¿½ì³£ï¿½ï¿½ï¿½ï¿½Ö¹ï¿½ï¿½ï¿½ï¿½ï¿½
                     return breptorch::ones({ 1 }, breptorch::kFloat32);
                 }
                 cnpy::NpyArray arr = npz[key];
@@ -238,7 +193,7 @@ public:
         }
     }
 
-    // ±ê×¼»¯
+    // ï¿½ï¿½×¼ï¿½ï¿½
     void standardize() {
         if (!has_stats) {
             std::cout << "[Warn] No stats loaded, skipping standardization." << std::endl;
@@ -249,14 +204,14 @@ public:
         if (Xe.size(0) > 1) Xe.sub_(mean_e).div_(std_e);
         if (Xc.size(0) > 1) Xc.sub_(mean_c).div_(std_c);
     }
-    // ÔÚ BRepPipeline ÀàµÄ public ²¿·ÖÔö¼Ó£º
+    // ï¿½ï¿½ BRepPipeline ï¿½ï¿½ï¿½ public ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó£ï¿½
 
-    Tensor FaceGridsGlobal; // ´æ´¢¶ÁÈ¡½øÀ´µÄ Grid Êı¾İ [N, 7, 10, 10]
+    Tensor FaceGridsGlobal; // ï¿½æ´¢ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Grid ï¿½ï¿½ï¿½ï¿½ [N, 7, 10, 10]
     Tensor EdgeGridsGlobal;
     Tensor CoedgeGridsGlobal;
     bool use_uvnet = false;
 
-    // ĞÂÔöº¯Êı£º¼ÓÔØ Grid Êı¾İ (´Ó Python µ¼³öµÄ npz)
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Grid ï¿½ï¿½ï¿½ï¿½ (ï¿½ï¿½ Python ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ npz)
     void load_grids_from_npz(const std::string& npz_path) {
         try {
             cnpy::npz_t npz = cnpy::npz_load(npz_path);
@@ -266,7 +221,7 @@ public:
                 cnpy::NpyArray arr = npz["face_point_grids"];
                 std::vector<int64_t> s; for (auto d : arr.shape) s.push_back(d);
                 FaceGridsGlobal = breptorch::from_blob(arr.data<float>(), s, breptorch::kFloat32).clone();
-                // Ã»ÓĞ²¹ Padding £¬Õâ²¿·ÖÂß¼­ÔÚ Forward Àï×ö¸ü°²È«£¬ÕâÀïÖ»¸ºÔğ¼ÓÔØ
+                // Ã»ï¿½Ğ²ï¿½ Padding ï¿½ï¿½ï¿½â²¿ï¿½ï¿½ï¿½ß¼ï¿½ï¿½ï¿½ Forward ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
                 use_uvnet = true;
                 std::cout << "Loaded Face Grids: " << FaceGridsGlobal.sizes() << std::endl;
                 //std::cout << FaceGridsGlobal[0][0] << std::endl;
@@ -294,10 +249,10 @@ public:
         }
     }
 
-    // ´æ´¢¾Ö²¿×ø±êÏµÏÂµÄÌØÕ÷
+    // ï¿½æ´¢ï¿½Ö²ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½Âµï¿½ï¿½ï¿½ï¿½ï¿½
     Tensor FaceGridsLocal;   // [N_c, 2, 9, 10, 10]
-    Tensor EdgeGridsLocal;    //Êµ¼ÊÃ»±£´æ
-    Tensor CoedgeGridsLocal;  //Êµ¼ÊÃ»±£´æ
+    Tensor EdgeGridsLocal;    //Êµï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½
+    Tensor CoedgeGridsLocal;  //Êµï¿½ï¿½Ã»ï¿½ï¿½ï¿½ï¿½
 
 
 private:
@@ -307,12 +262,23 @@ private:
 
         for (int f_idx = 1; f_idx <= unique_faces.Extent(); ++f_idx) {
             const TopoDS_Face& face = TopoDS::Face(unique_faces.FindKey(f_idx));
+
+            // è°ƒè¯•ï¼šç»Ÿè®¡ Face 0 çš„ Wires å’Œ Edges
+            if (f_idx == 1) {
+                int wire_count = 0;
+                TopExp_Explorer wireCounter(face, TopAbs_WIRE);
+                for (; wireCounter.More(); wireCounter.Next()) wire_count++;
+                std::cout << "[Debug Topology] Face 0 has " << wire_count << " wires" << std::endl;
+            }
+
             TopExp_Explorer wireExp(face, TopAbs_WIRE);
+            int wire_idx = 0;
             for (; wireExp.More(); wireExp.Next()) {
                 const TopoDS_Wire& wire = TopoDS::Wire(wireExp.Current());
                 int first_coedge = -1;
                 int prev_coedge = -1;
 
+                int edge_count_in_wire = 0;
                 BRepTools_WireExplorer edgeExp(wire);
                 for (; edgeExp.More(); edgeExp.Next()) {
                     const TopoDS_Edge& edge = edgeExp.Current();
@@ -323,12 +289,13 @@ private:
                     c.face_idx = f_idx - 1;
                     c.edge_idx = e_idx - 1;
                     c.orientation = (edge.Orientation() == TopAbs_FORWARD);
-                    c.next_idx = -1; 
+                    c.next_idx = -1;
                     c.prev_idx = -1;
                     c.mate_idx = -1;
 
                     coedges.push_back(c);
                     edge_to_coedge_map[e_idx].push_back(c.id);
+                    edge_count_in_wire++;
 
                     if (prev_coedge != -1) {
                         coedges[prev_coedge].next_idx = c.id;
@@ -339,6 +306,13 @@ private:
                     }
                     prev_coedge = c.id;
                 }
+
+                // è°ƒè¯•ï¼šæ‰“å° Face 0 æ¯ä¸ª Wire çš„è¾¹æ•°
+                if (f_idx == 1) {
+                    std::cout << "[Debug Topology] Face 0, Wire " << wire_idx << " has " << edge_count_in_wire << " edges" << std::endl;
+                }
+                wire_idx++;
+
                 if (prev_coedge != -1 && first_coedge != -1) {
                     coedges[prev_coedge].next_idx = first_coedge;
                     coedges[first_coedge].prev_idx = prev_coedge;
@@ -374,19 +348,19 @@ private:
         int num_f = unique_faces.Extent();
         int num_e = unique_edges.Extent();
         int num_c = coedges.size();
-        // 1. ³õÊ¼»¯ Face ÌØÕ÷¾ØÕó (Xf)
-        // µ¼Ê¦Ö¸Ê¾£º²»ĞèÒªÈ«¾Ö¼¸ºÎÌØÕ÷£¬ÕâÀï½ö×÷Õ¼Î»£¬È«ÉèÎª 0 »ò 1
-        // Î¬¶È±£³Ö 7 ÊÇÎªÁË¼æÈİÏÖÓĞµÄÈ¨ÖØÎÄ¼ş½á¹¹
+        // 1. ï¿½ï¿½Ê¼ï¿½ï¿½ Face ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (Xf)
+        // ï¿½ï¿½Ê¦Ö¸Ê¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÒªÈ«ï¿½Ö¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õ¼Î»ï¿½ï¿½È«ï¿½ï¿½Îª 0 ï¿½ï¿½ 1
+        // Î¬ï¿½È±ï¿½ï¿½ï¿½ 7 ï¿½ï¿½Îªï¿½Ë¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğµï¿½È¨ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½á¹¹
         Xf = breptorch::zeros({ num_f, 7 });
 
-        // 2. ³õÊ¼»¯ Edge ÌØÕ÷¾ØÕó (Xe)
-        // Î¬¶È±£³Ö 10 ÒÔ¼æÈİÈ¨ÖØ
+        // 2. ï¿½ï¿½Ê¼ï¿½ï¿½ Edge ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (Xe)
+        // Î¬ï¿½È±ï¿½ï¿½ï¿½ 10 ï¿½Ô¼ï¿½ï¿½ï¿½È¨ï¿½ï¿½
         Xe = breptorch::zeros({ num_e, 10 });
-        // 3. ³õÊ¼»¯ Coedge ÌØÕ÷¾ØÕó (Xc)
+        // 3. ï¿½ï¿½Ê¼ï¿½ï¿½ Coedge ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (Xc)
         Xc = breptorch::zeros({ num_c, 1 });
         auto Xc_a = Xc.accessor<float, 2>();
         for (int i = 0; i < num_c; ++i) {
-            // ½ö½ö±£ÁôÕâÒ»Ïî·½ÏòĞÅÏ¢£¬ÒòÎªËüÊôÓÚÍØÆË½á¹¹µÄÒ»²¿·Ö
+            // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½î·½ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ë½á¹¹ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½
             if (!coedges[i].orientation) Xc_a[i][0] = 1;
         }
 
@@ -394,76 +368,134 @@ private:
     }
 
     void generate_tensors() {
-        // »ñÈ¡ÊıÁ¿
+        // ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½
         int num_f = unique_faces.Extent();
         int num_e = unique_edges.Extent();
         int num_c = coedges.size();
 
         std::vector<int64_t> kf, ke, kc;
-        // winged_edge.json¸ÄÎª simple_edge.json
+        // winged_edge.jsonï¿½ï¿½Îª simple_edge.json
         //std::vector<std::vector<int>> fw = { {},{1} }, ew = { {},{2},{3},{1,2},{1,3} }, cw = { {},{1},{2},{3},{1,2},{1,3} };
         std::vector<std::vector<int>> fw = { {},{1} }, ew = { {} }, cw = { {},{1} };
-        // --- Éú³É Kf ---
-        // KfÓÃ²»µ½ÁË
-        // ¡¾ĞŞ¸Ä 1¡¿ ²»Òª push_back(0) ÁË
+        // --- ï¿½ï¿½ï¿½ï¿½ Kf ---
+        // Kfï¿½Ã²ï¿½ï¿½ï¿½ï¿½ï¿½
+        // ï¿½ï¿½ï¿½Ş¸ï¿½ 1ï¿½ï¿½ ï¿½ï¿½Òª push_back(0) ï¿½ï¿½
         for (const auto& c : coedges) {
             for (auto& rule : fw) {
                 int t = walk(c.id, rule);
-                // ¡¾ĞŞ¸Ä 2¡¿ Èç¹û t==-1 (ÎŞÁÚ¾Ó)£¬´æ num_f (×÷ÎªÔ½½çÖµ)
-                // Èç¹û t!=-1£¬´æ coedges[t].face_idx (0-based)
+                // ï¿½ï¿½ï¿½Ş¸ï¿½ 2ï¿½ï¿½ ï¿½ï¿½ï¿½ t==-1 (ï¿½ï¿½ï¿½Ú¾ï¿½)ï¿½ï¿½ï¿½ï¿½ num_f (ï¿½ï¿½ÎªÔ½ï¿½ï¿½Öµ)
+                // ï¿½ï¿½ï¿½ t!=-1ï¿½ï¿½ï¿½ï¿½ coedges[t].face_idx (0-based)
                 kf.push_back(t == -1 ? num_f : coedges[t].face_idx);
             }
         }
-        // ĞÎ×´¸ÄÎª {num_c, ...}
+        // ï¿½ï¿½×´ï¿½ï¿½Îª {num_c, ...}
         Kf = breptorch::from_blob(kf.data(), { num_c, (long long)fw.size() }, breptorch::kLong).clone();
 
-        // --- Éú³É Ke ---
-        // ²»Òª push_back(0)
+        // --- ï¿½ï¿½ï¿½ï¿½ Ke ---
+        // ï¿½ï¿½Òª push_back(0)
         for (const auto& c : coedges) {
             for (auto& rule : ew) {
                 int t = walk(c.id, rule);
-                // ÎŞÁÚ¾Ó´æ num_e£¬ÓĞÁÚ¾Ó´æ edge_idx
+                // ï¿½ï¿½ï¿½Ú¾Ó´ï¿½ num_eï¿½ï¿½ï¿½ï¿½ï¿½Ú¾Ó´ï¿½ edge_idx
                 ke.push_back(t == -1 ? num_e : coedges[t].edge_idx);
             }
         }
         Ke = breptorch::from_blob(ke.data(), { num_c, (long long)ew.size() }, breptorch::kLong).clone();
 
-        // --- Éú³É Kc ---
-        // ²»Òª push_back(0)
+        // --- ï¿½ï¿½ï¿½ï¿½ Kc ---
+        // ï¿½ï¿½Òª push_back(0)
         for (const auto& c : coedges) {
             for (auto& rule : cw) {
                 int t = walk(c.id, rule);
-                // ÎŞÁÚ¾Ó´æ num_c£¬ÓĞÁÚ¾Ó´æ t (¹²±ßID±¾Éí¾ÍÊÇ0-based)
+                // ï¿½ï¿½ï¿½Ú¾Ó´ï¿½ num_cï¿½ï¿½ï¿½ï¿½ï¿½Ú¾Ó´ï¿½ t (ï¿½ï¿½ï¿½ï¿½IDï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½0-based)
                 kc.push_back(t == -1 ? num_c : t);
             }
         }
         Kc = breptorch::from_blob(kc.data(), { num_c, (long long)cw.size() }, breptorch::kLong).clone();
 
         // --- Pooling Ce ---
-        std::vector<int64_t> ce(num_e * 2, num_c); // ³õÊ¼»¯Îª num_c (ÎŞĞ§Öµ)
+        std::vector<int64_t> ce(num_e * 2, num_c); // ï¿½ï¿½Ê¼ï¿½ï¿½Îª num_c (ï¿½ï¿½Ğ§Öµ)
         std::vector<int> ec(num_e, 0);
         for (const auto& c : coedges) {
-            // ´æ c.id (0-based)
+            // ï¿½ï¿½ c.id (0-based)
             if (ec[c.edge_idx] < 2) ce[c.edge_idx * 2 + ec[c.edge_idx]++] = c.id;
         }
         Ce = breptorch::from_blob(ce.data(), { num_e, 2 }, breptorch::kLong).clone();
 
-        // --- Pooling Cf ---
-        // ĞŞ¸Ä£¡£¡£¡
-        int max_cpf = 512;
-        std::vector<int64_t> cf(num_f * max_cpf, num_c); // ³õÊ¼»¯Îª num_c (ÎŞĞ§Öµ)
+        // --- Pooling Cf (æŒ‰ç…§ Python çš„æ–¹å¼ï¼šsmall faces + big faces) ---
+        int max_cpf = 30;  // Python çš„ max_coedges_per_face
+
+        // 1. ç»Ÿè®¡æ¯ä¸ª face çš„ coedge æ•°é‡
         std::vector<int> fc(num_f, 0);
         for (const auto& c : coedges) {
-            // ´æ c.id (0-based)
-            if (fc[c.face_idx] < max_cpf) cf[c.face_idx * max_cpf + fc[c.face_idx]++] = c.id;
+            fc[c.face_idx]++;
         }
-        Cf = breptorch::from_blob(cf.data(), { num_f, max_cpf }, breptorch::kLong).clone();
 
+        // 2. åˆ†ç¦» small faces å’Œ big faces
+        std::vector<int> small_face_indices;
+        std::vector<int> big_face_indices;
+        for (int f = 0; f < num_f; ++f) {
+            if (fc[f] <= max_cpf) {
+                small_face_indices.push_back(f);
+            } else {
+                big_face_indices.push_back(f);
+            }
+        }
+
+        std::cout << "[Debug BRepPipeline] Small faces: " << small_face_indices.size()
+                  << ", Big faces: " << big_face_indices.size() << std::endl;
+
+        // 3. æ„å»º face_permutation (small faces åœ¨å‰ï¼Œbig faces åœ¨å)
+        std::vector<int> face_permutation;
+        face_permutation.insert(face_permutation.end(), small_face_indices.begin(), small_face_indices.end());
+        face_permutation.insert(face_permutation.end(), big_face_indices.begin(), big_face_indices.end());
+
+        // 4. æ„å»º Cf (åªåŒ…å« small faces)
+        int num_small_faces = small_face_indices.size();
+        std::vector<int64_t> cf(num_small_faces * max_cpf, num_c); // åˆå§‹åŒ–ä¸º num_c (æ— æ•ˆå€¼)
+
+        // ä¸ºæ¯ä¸ª face æ”¶é›† coedges
+        std::vector<std::vector<int>> face_to_coedges(num_f);
+        for (const auto& c : coedges) {
+            face_to_coedges[c.face_idx].push_back(c.id);
+        }
+
+        // å¡«å…… Cf (æŒ‰ç…§ face_permutation çš„é¡ºåº)
+        for (int i = 0; i < num_small_faces; ++i) {
+            int original_face_idx = small_face_indices[i];
+            const auto& coedge_list = face_to_coedges[original_face_idx];
+            for (size_t j = 0; j < coedge_list.size() && j < max_cpf; ++j) {
+                cf[i * max_cpf + j] = coedge_list[j];
+            }
+        }
+
+        // è°ƒè¯•ï¼šæ‰“å° Cf[0] (ç¬¬ä¸€ä¸ª small face)
+        std::cout << "[Debug BRepPipeline] Cf[0] corresponds to original Face " << small_face_indices[0] << std::endl;
+        std::cout << "[Debug BRepPipeline] Cf[0] has " << face_to_coedges[small_face_indices[0]].size() << " coedges" << std::endl;
+        std::cout << "[Debug BRepPipeline] Cf[0] coedge IDs (first 30): ";
+        for (int i = 0; i < std::min(30, (int)face_to_coedges[small_face_indices[0]].size()); ++i) {
+            std::cout << face_to_coedges[small_face_indices[0]][i] << " ";
+        }
+        std::cout << std::endl;
+
+        Cf = breptorch::from_blob(cf.data(), { num_small_faces, max_cpf }, breptorch::kLong).clone();
+
+        // 5. æ„å»º Csf (big faces çš„ coedges)
         Csf.clear();
+        for (int big_face_idx : big_face_indices) {
+            const auto& coedge_list = face_to_coedges[big_face_idx];
+            std::vector<int64_t> coedge_tensor_data(coedge_list.begin(), coedge_list.end());
+            Tensor coedge_tensor = breptorch::from_blob(coedge_tensor_data.data(),
+                                                        {(int64_t)coedge_tensor_data.size()},
+                                                        breptorch::kLong).clone();
+            Csf.push_back(coedge_tensor);
+        }
+
+        std::cout << "[Debug BRepPipeline] Csf has " << Csf.size() << " big faces" << std::endl;
     }
 
 
-    // ¶ÔÓ¦ python ÖĞ extract_face_point_grid
+    // ï¿½ï¿½Ó¦ python ï¿½ï¿½ extract_face_point_grid
     // =========================================================================
 
     // BRepPipeline.h: generate_global_face_grid()
@@ -474,28 +506,33 @@ private:
         // Shape: [9, 10, 10]
         Tensor grid = breptorch::zeros({ 9, num_u, num_v }, breptorch::kFloat32);
 
-        // ? ĞŞ¸´:¼ÆËãÕıÈ·µÄ²½³¤
-        // ¶ÔÓÚ [C, H, W] ²¼¾Ö:
-        //   - Channel stride = H * W
-        //   - Row stride = W
-        //   - Col stride = 1
-        int64_t stride_c = num_u * num_v;  // Ã¿¸öÍ¨µÀµÄ´óĞ¡
-        int64_t stride_h = num_v;          // Ã¿ĞĞµÄ¿ç¶È
+        static int debug_face_count = 0;
+        bool debug_first_face = (debug_face_count == 0);
+        bool debug_first_three = (debug_face_count < 3);
 
-        // »ñÈ¡²ÎÊı
+        int64_t stride_c = num_u * num_v;
+        int64_t stride_h = num_v;
+
         Standard_Real umin, umax, vmin, vmax;
         BRepTools::UVBounds(face, umin, umax, vmin, vmax);
         BRepAdaptor_Surface surf(face);
         BRepTopAdaptor_FClass2d classifier(face, 0.0);
 
+        // IMPORTANT: UV sampling direction depends on face orientation
+        // Based on testing with Python output:
+        // REVERSED faces: U from max to min, V from min to max
+        // FORWARD faces: U from min to max, V from min to max (NOT max to min!)
+        bool is_reversed = (face.Orientation() == TopAbs_REVERSED);
+        bool u_reverse = is_reversed;   // REVERSED: max->min, FORWARD: min->max
+        bool v_reverse = false;         // Both: min->max
+
         float* data = grid.data_ptr<float>();
 
-        for (int i = 0; i < num_u; ++i) {        // ±éÀú U ·½Ïò (¸ß¶È)
-            for (int j = 0; j < num_v; ++j) {    // ±éÀú V ·½Ïò (¿í¶È)
-                double u = BRepUtils::GetParamStrict(i, num_u, umin, umax);
-                double v = BRepUtils::GetParamStrict(j, num_v, vmin, vmax);
+        for (int i = 0; i < num_u; ++i) {
+            for (int j = 0; j < num_v; ++j) {
+                double u = BRepUtils::GetParamStrict(i, num_u, umin, umax, u_reverse);
+                double v = BRepUtils::GetParamStrict(j, num_v, vmin, vmax, v_reverse);
 
-                // ¼ÆËã¼¸ºÎĞÅÏ¢
                 gp_Pnt p;
                 gp_Vec d1u, d1v;
                 surf.D1(u, v, p, d1u, d1v);
@@ -512,7 +549,6 @@ private:
                     n.Reverse();
                 }
 
-                // ¼ÆËã Mask
                 gp_Pnt2d p2d(u, v);
                 TopAbs_State state = classifier.Perform(p2d);
                 float mask_val = (state == TopAbs_IN) ? 1.0f : 0.0f;
@@ -522,44 +558,37 @@ private:
                     mask_val = 0.0f;
                 }
 
-                // ? ĞŞ¸´:ÕıÈ·µÄË÷Òı¼ÆËã
-                // ¶ÔÓÚÎ»ÖÃ [c, i, j],ÏßĞÔË÷Òı = c * stride_c + i * stride_h + j
                 int64_t idx = i * stride_h + j;
 
-                // Ìî³äÊı¾İ (Í¨µÀ 0-2: XYZ)
                 data[0 * stride_c + idx] = (float)p.X();
                 data[1 * stride_c + idx] = (float)p.Y();
                 data[2 * stride_c + idx] = (float)p.Z();
 
-                // Í¨µÀ 3-5: ·¨ÏòÁ¿
                 data[3 * stride_c + idx] = (float)n.X();
                 data[4 * stride_c + idx] = (float)n.Y();
                 data[5 * stride_c + idx] = (float)n.Z();
 
-                // Í¨µÀ 6: Mask
                 data[6 * stride_c + idx] = mask_val;
 
-                // Í¨µÀ 7-8: UV ²ÎÊı
                 data[7 * stride_c + idx] = (float)u;
                 data[8 * stride_c + idx] = (float)v;
             }
         }
 
-        // Flip ´¦Àí
-        if (face.Orientation() == TopAbs_REVERSED) {
-            grid = breptorch::flip(grid, { 1 });
-        }
+        // NOTE: Python does not flip REVERSED faces, so we don't either
+        // This was causing data corruption issues
+
         return grid;
     }
 
     Tensor generate_global_coedge_grid(int coedge_idx) {
         const CoedgeInfo& c_info = coedges[coedge_idx];
         
-        // 1. »ñÈ¡¼¸ºÎÊµÌå
+        // 1. ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Êµï¿½ï¿½
         TopoDS_Face face_left = TopoDS::Face(unique_faces.FindKey(c_info.face_idx + 1));
         TopoDS_Edge edge = TopoDS::Edge(unique_edges.FindKey(c_info.edge_idx + 1));
         
-        // »ñÈ¡ Mate Ãæ (Right Face)
+        // ï¿½ï¿½È¡ Mate ï¿½ï¿½ (Right Face)
         TopoDS_Face face_right;
         bool has_mate = (c_info.mate_idx != -1);
         if (has_mate) {
@@ -567,23 +596,23 @@ private:
             face_right = TopoDS::Face(unique_faces.FindKey(mate_face_idx + 1));
         }
 
-        // 2. ×¼±¸ Tensor [12, 10] (×îÖÕĞèÒª×ªÖÃÎª [12, 10] ? Python ÊÇ [12, 10]£¬µ« PyTorch Conv1d ÊäÈëÍ¨³£ÊÇ [Batch, Channel, Length])
-        // Python extract_coedge_point_grid ·µ»ØµÄÊÇ np.transpose(single_grid, (1,0)) 
-        // single_grid ÊÇ [10, 12]¡£×ªÖÃºóÊÇ [12, 10]¡£
-        // ÎÒÃÇÖ±½ÓÉú³É [12, 10]¡£
+        // 2. ×¼ï¿½ï¿½ Tensor [12, 10] (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Òª×ªï¿½ï¿½Îª [12, 10] ? Python ï¿½ï¿½ [12, 10]ï¿½ï¿½ï¿½ï¿½ PyTorch Conv1d ï¿½ï¿½ï¿½ï¿½Í¨ï¿½ï¿½ï¿½ï¿½ [Batch, Channel, Length])
+        // Python extract_coedge_point_grid ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½ np.transpose(single_grid, (1,0)) 
+        // single_grid ï¿½ï¿½ [10, 12]ï¿½ï¿½×ªï¿½Ãºï¿½ï¿½ï¿½ [12, 10]ï¿½ï¿½
+        // ï¿½ï¿½ï¿½ï¿½Ö±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ [12, 10]ï¿½ï¿½
         int num_u = 10;
         //Tensor grid = torch::zeros({12, num_u}, torch::kFloat32);
         Tensor grid = breptorch::zeros({13, num_u}, breptorch::kFloat32);
         // auto accessor = grid.accessor<float, 2>();
 
-        // 3. ÇúÏßÊÊÅäÆ÷
+        // 3. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         BRepAdaptor_Curve curve_adaptor(edge);
         double first = curve_adaptor.FirstParameter();
         double last = curve_adaptor.LastParameter();
         double len = last - first;
 
-        // 4. µÈ»¡³¤²ÉÑù (Uniform Abscissa) - Ä£·Â Python use_arclength_params=True
-        // Èç¹ûÇúÏßÌ«¶Ì»òÍË»¯£¬»ØÍËµ½²ÎÊı²ÉÑù
+        // 4. ï¿½È»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ (Uniform Abscissa) - Ä£ï¿½ï¿½ Python use_arclength_params=True
+        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì«ï¿½Ì»ï¿½ï¿½Ë»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ëµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         bool use_uniform = true;
         GCPnts_UniformAbscissa uniform_sampler;
         try {
@@ -591,7 +620,7 @@ private:
             if (!uniform_sampler.IsDone()) use_uniform = false;
         } catch(...) { use_uniform = false; }
 
-        // 5. Ñ­»·²ÉÑù
+        // 5. Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         float* data = grid.data_ptr<float>();
         int64_t stride_c = num_u;
 
@@ -600,14 +629,14 @@ private:
 
             double param;
             if (use_uniform && uniform_sampler.NbPoints() >= num_u) {
-                // GCPnts Éú³ÉµÄÊÇµãÊı£¬Ë÷Òı´Ó1¿ªÊ¼
-                // ÎÒÃÇĞèÒªÖØĞÂÓ³ÉäÒ»ÏÂ£¬»òÕß¼òµ¥¾ùÔÈ·Ö²¼²ÎÊı
-                // ÎªÁË¼ò»¯ÇÒÎÈ½¡£¬ÕâÀïÎÒÃÇÓÃ¼òµ¥µÄ²ÎÊı¿Õ¼ä¾ùÔÈ²ÉÑù£¬
-                // Èç¹ûÑÏ¸ñ×·Çó¾«¶È£¬¿ÉÒÔÓÃ GCPnts_UniformAbscissa µÄ Parameter(i+1)
-                // µ«Òª×¢Òâ GCPnts µÄµãÊı¿ÉÄÜ²»ÍêÈ«µÈÓÚ num_u
+                // GCPnts ï¿½ï¿½ï¿½Éµï¿½ï¿½Çµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½1ï¿½ï¿½Ê¼
+                // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½ï¿½ï¿½Ó³ï¿½ï¿½Ò»ï¿½Â£ï¿½ï¿½ï¿½ï¿½ß¼òµ¥¾ï¿½ï¿½È·Ö²ï¿½ï¿½ï¿½ï¿½ï¿½
+                // Îªï¿½Ë¼ï¿½ï¿½ï¿½ï¿½È½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã¼òµ¥µÄ²ï¿½ï¿½ï¿½ï¿½Õ¼ï¿½ï¿½ï¿½È²ï¿½ï¿½ï¿½ï¿½ï¿½
+                // ï¿½ï¿½ï¿½ï¿½Ï¸ï¿½×·ï¿½ó¾«¶È£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ GCPnts_UniformAbscissa ï¿½ï¿½ Parameter(i+1)
+                // ï¿½ï¿½Òª×¢ï¿½ï¿½ GCPnts ï¿½Äµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ü²ï¿½ï¿½ï¿½È«ï¿½ï¿½ï¿½ï¿½ num_u
                  param = uniform_sampler.Parameter(i + 1);
             } else {
-                // »ØÍË£º²ÎÊı¿Õ¼ä¾ùÔÈ²ÉÑù
+                // ï¿½ï¿½ï¿½Ë£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õ¼ï¿½ï¿½ï¿½È²ï¿½ï¿½ï¿½
                 param = first + (len * i) / (double)(num_u - 1);
             }
 
@@ -615,26 +644,26 @@ private:
             gp_Vec tangent;
             curve_adaptor.D1(param, p, tangent);
             
-            // ¹éÒ»»¯ÇĞÏòÁ¿
+            // ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
             if (tangent.Magnitude() > 1e-7) tangent.Normalize();
 
-            // ´¦Àí¹²±ß·½Ïò (Orientation)
-            // Èç¹û Coedge ÊÇ Reversed£¬ËµÃ÷ËüÑØ×Å Edge µÄ·´·½Ïò×ß
-            // ËüµÄ¡°ÇĞÏòÁ¿¡±Ó¦¸ÃÈ¡·´
+            // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ß·ï¿½ï¿½ï¿½ (Orientation)
+            // ï¿½ï¿½ï¿½ Coedge ï¿½ï¿½ Reversedï¿½ï¿½Ëµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Edge ï¿½Ä·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+            // ï¿½ï¿½ï¿½Ä¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½È¡ï¿½ï¿½
             if (!c_info.orientation) { // orientation == false means REVERSED
                 tangent.Reverse();
             }
-            // ×¢Òâ£ºPython´úÂëÀïÈç¹ûÊÇ Reversed£¬µãĞòÁĞ±¾ÉíÒ²ÊÇ·´µÄÂğ£¿
-            // Í¨³£ Grid ÊÇ°´¼¸ºÎË³Ğò´æµÄ£¬µ« Tangent »á¸ù¾İ Coedge ·½Ïòµ÷Õû¡£
-            // ÄãµÄ Python ´úÂëÀï coedge_data ËÆºõ´¦ÀíÁËÕâ¸öÎÊÌâ¡£
-            // ÕâÀïÎÒÃÇ¼ÙÉè Grid »¹ÊÇ°´¼¸ºÎ U ÔöÁ¿´æ£¬µ« Tangent ¸úËæ Coedge¡£
+            // ×¢ï¿½â£ºPythonï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Reversedï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ±ï¿½ï¿½ï¿½Ò²ï¿½Ç·ï¿½ï¿½ï¿½ï¿½ï¿½
+            // Í¨ï¿½ï¿½ Grid ï¿½Ç°ï¿½ï¿½ï¿½ï¿½ï¿½Ë³ï¿½ï¿½ï¿½Ä£ï¿½ï¿½ï¿½ Tangent ï¿½ï¿½ï¿½ï¿½ï¿½ Coedge ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+            // ï¿½ï¿½ï¿½ Python ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ coedge_data ï¿½Æºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½â¡£
+            // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç¼ï¿½ï¿½ï¿½ Grid ï¿½ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½ï¿½ U ï¿½ï¿½ï¿½ï¿½ï¿½æ£¬ï¿½ï¿½ Tangent ï¿½ï¿½ï¿½ï¿½ Coedgeï¿½ï¿½
 
-            // ¼ÆËã·¨Ïß
+            // ï¿½ï¿½ï¿½ã·¨ï¿½ï¿½
             gp_Vec n_left = BRepUtils::GetNormalAtPoint(face_left, p);
             gp_Vec n_right = (has_mate) ? BRepUtils::GetNormalAtPoint(face_right, p) : gp_Vec(0,0,0);
-            // ¡¾ĞÂÔö¡¿Edge µÄ±ßÔµÄ¨Áã
+            // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Edge ï¿½Ä±ï¿½ÔµÄ¨ï¿½ï¿½
 
-            // ÌîÈë Tensor
+            // ï¿½ï¿½ï¿½ï¿½ Tensor
             // Points (0-2)
             data[0 * stride_c + i] = (float)p.X();
             data[1 * stride_c + i] = (float)p.Y();
@@ -655,13 +684,13 @@ private:
             data[10 * stride_c + i] = (float)n_right.Y();
             data[11 * stride_c + i] = (float)n_right.Z();
 
-            // ĞŞ¸Ä£ºÌî³äĞÂÔöµÚ12Í¨µÀ£¨¶ÔÓ¦PythonµÄu_params£©
+            // ï¿½Ş¸Ä£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½12Í¨ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦Pythonï¿½ï¿½u_paramsï¿½ï¿½
             data[12 * stride_c + i] = (float)param; 
         }
         
-        // Èç¹û Coedge ÊÇ·´ÏòµÄ£¬Python µÄ EdgeDataExtractor ¿ÉÄÜ»á°ÑµãĞòÁĞÒ²·­×ª
-        // (¼´: grid[][0] ÊÇÖÕµã£¬grid[][9] ÊÇÆğµã)
-        // ÎªÁËºÍ Python ±£³ÖÒ»ÖÂ£¬Èç¹û orientation ÊÇ false£¬ÎÒÃÇĞèÒª flip dim 1
+        // ï¿½ï¿½ï¿½ Coedge ï¿½Ç·ï¿½ï¿½ï¿½Ä£ï¿½Python ï¿½ï¿½ EdgeDataExtractor ï¿½ï¿½ï¿½Ü»ï¿½Ñµï¿½ï¿½ï¿½ï¿½ï¿½Ò²ï¿½ï¿½×ª
+        // (ï¿½ï¿½: grid[][0] ï¿½ï¿½ï¿½Õµã£¬grid[][9] ï¿½ï¿½ï¿½ï¿½ï¿½)
+        // Îªï¿½Ëºï¿½ Python ï¿½ï¿½ï¿½ï¿½Ò»ï¿½Â£ï¿½ï¿½ï¿½ï¿½ orientation ï¿½ï¿½ falseï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Òª flip dim 1
         if (!c_info.orientation) {
             grid = breptorch::flip(grid, {1});
         }
@@ -669,7 +698,7 @@ private:
         return grid;
     }
 
-    // ĞŞ¸Ä compute_coedge_lcs (Ê¹ÓÃ¾«È·ÖĞµã)
+    // ï¿½Ş¸ï¿½ compute_coedge_lcs (Ê¹ï¿½Ã¾ï¿½È·ï¿½Ğµï¿½)
 
     
     Tensor compute_coedge_lcs(int coedge_idx) {
@@ -677,7 +706,7 @@ private:
         TopoDS_Edge edge = TopoDS::Edge(unique_edges.FindKey(c_info.edge_idx + 1));
         TopoDS_Face face = TopoDS::Face(unique_faces.FindKey(c_info.face_idx + 1));
 
-        // 1. »ñÈ¡±ßÖĞµã¡¢ÇĞÏß¡¢·¨Ïß
+        // 1. ï¿½ï¿½È¡ï¿½ï¿½ï¿½Ğµã¡¢ï¿½ï¿½ï¿½ß¡ï¿½ï¿½ï¿½ï¿½ï¿½
         double u0, u1;
         Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, u0, u1);
         double u_mid = (u0 + u1) / 2.0;
@@ -695,19 +724,19 @@ private:
         face_prop.Normal(uu, vv, p_face, normal);
 
 
-        // ÅĞ¶ÏÊÇ·ñ·´Ïò
+        // ï¿½Ğ¶ï¿½ï¿½Ç·ï¿½ï¿½ï¿½
         gp_Vec t_vec = tangent;
         gp_Vec n_vec = normal;
         if (!c_info.orientation) {
             t_vec.Reverse();
         }
 
-        // ×ª»»³ÉÊı×é½øĞĞÊÖ¶¯¼ÆËã
+        // ×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¶ï¿½ï¿½ï¿½ï¿½ï¿½
         float p_arr[3] = { (float)p.X(), (float)p.Y(), (float)p.Z() };
         float t_arr[3] = { (float)t_vec.X(), (float)t_vec.Y(), (float)t_vec.Z() };
         float n_arr[3] = { (float)n_vec.X(), (float)n_vec.Y(), (float)n_vec.Z() };
 
-        // 1. W Öá (·¨ÏòÁ¿¹éÒ»»¯)
+        // 1. W ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½)
         float w_norm = sqrt(n_arr[0] * n_arr[0] + n_arr[1] * n_arr[1] + n_arr[2] * n_arr[2]) + 1e-7f;
         float w_vec[3] = {
             n_arr[0] / w_norm,
@@ -715,7 +744,7 @@ private:
             n_arr[2] / w_norm
         };
 
-        // 2. V Öá (ÇĞÏòÁ¿Í¶Ó°µ½´¹Ö±ÓÚ W µÄÆ½Ãæ)
+        // 2. V ï¿½ï¿½ (ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¶Ó°ï¿½ï¿½ï¿½ï¿½Ö±ï¿½ï¿½ W ï¿½ï¿½Æ½ï¿½ï¿½)
         float dot_tw = t_arr[0] * w_vec[0] + t_arr[1] * w_vec[1] + t_arr[2] * w_vec[2];
         float v_vec[3] = {
             t_arr[0] - dot_tw * w_vec[0],
@@ -723,12 +752,12 @@ private:
             t_arr[2] - dot_tw * w_vec[2]
         };
 
-        // V Öá¹éÒ»»¯
+        // V ï¿½ï¿½ï¿½Ò»ï¿½ï¿½
         float v_norm = sqrt(v_vec[0] * v_vec[0] + v_vec[1] * v_vec[1] + v_vec[2] * v_vec[2]);
 
-        // Èç¹û V Öá³¤¶ÈÌ«Ğ¡£¬ËµÃ÷ÇĞÏß¼¸ºõÆ½ĞĞÓÚ·¨Ïß£¬ĞèÒªÕÒÒ»¸öÕı½»ÏòÁ¿
+        // ï¿½ï¿½ï¿½ V ï¿½á³¤ï¿½ï¿½Ì«Ğ¡ï¿½ï¿½Ëµï¿½ï¿½ï¿½ï¿½ï¿½ß¼ï¿½ï¿½ï¿½Æ½ï¿½ï¿½ï¿½Ú·ï¿½ï¿½ß£ï¿½ï¿½ï¿½Òªï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         if (v_norm < 1e-6f) {
-            // Ñ¡ÔñÒ»¸ö²»Æ½ĞĞÓÚ W µÄÏòÁ¿
+            // Ñ¡ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½Æ½ï¿½ï¿½ï¿½ï¿½ W ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
             float temp[3] = { 1.0f, 0.0f, 0.0f };
             if (fabs(w_vec[0]) > 0.9f) {
                 temp[0] = 0.0f;
@@ -736,7 +765,7 @@ private:
                 temp[2] = 0.0f;
             }
 
-            // Í¶Ó°µ½´¹Ö±ÓÚ W µÄÆ½Ãæ
+            // Í¶Ó°ï¿½ï¿½ï¿½ï¿½Ö±ï¿½ï¿½ W ï¿½ï¿½Æ½ï¿½ï¿½
             float dot_temp_w = temp[0] * w_vec[0] + temp[1] * w_vec[1] + temp[2] * w_vec[2];
             v_vec[0] = temp[0] - dot_temp_w * w_vec[0];
             v_vec[1] = temp[1] - dot_temp_w * w_vec[1];
@@ -749,7 +778,7 @@ private:
         v_vec[1] /= (v_norm + 1e-7f);
         v_vec[2] /= (v_norm + 1e-7f);
 
-        // 3. U Öá (V ¡Á W)
+        // 3. U ï¿½ï¿½ (V ï¿½ï¿½ W)
         float u_vec[3] = {
             v_vec[1] * w_vec[2] - v_vec[2] * w_vec[1],
             v_vec[2] * w_vec[0] - v_vec[0] * w_vec[2],
@@ -757,16 +786,16 @@ private:
         };
 
 
-        // 4. ×é×°¾ØÕó (ÊÖ¶¯Ìî³ä)
+        // 4. ï¿½ï¿½×°ï¿½ï¿½ï¿½ï¿½ (ï¿½Ö¶ï¿½ï¿½ï¿½ï¿½)
         Tensor mat = breptorch::eye(4);
         float* mat_ptr = mat.data_ptr<float>();
 
-        // Ìî³äĞı×ª²¿·Ö (Ç°3x3) - ÁĞÓÅÏÈ
+        // ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½ (Ç°3x3) - ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         mat_ptr[0 * 4 + 0] = u_vec[0];  mat_ptr[0 * 4 + 1] = v_vec[0];  mat_ptr[0 * 4 + 2] = w_vec[0];
         mat_ptr[1 * 4 + 0] = u_vec[1];  mat_ptr[1 * 4 + 1] = v_vec[1];  mat_ptr[1 * 4 + 2] = w_vec[1];
         mat_ptr[2 * 4 + 0] = u_vec[2];  mat_ptr[2 * 4 + 1] = v_vec[2];  mat_ptr[2 * 4 + 2] = w_vec[2];
 
-        // Ìî³äÆ½ÒÆ²¿·Ö (µÚ4ÁĞ)
+        // ï¿½ï¿½ï¿½Æ½ï¿½Æ²ï¿½ï¿½ï¿½ (ï¿½ï¿½4ï¿½ï¿½)
         mat_ptr[0 * 4 + 3] = p_arr[0];
         mat_ptr[1 * 4 + 3] = p_arr[1];
         mat_ptr[2 * 4 + 3] = p_arr[2];
@@ -774,10 +803,10 @@ private:
         return mat;
     }
 
-    // ¶ÔÓ¦ Python µÄ transform_face_point_grid_to_local
-    // ½« Grid (È«¾Ö) ±ä»»µ½ Local
-    // grid: [Channels, H, W] »ò [Channels, L]
-    // lcs_inv: [4, 4] Äæ¾ØÕó
+    // ï¿½ï¿½Ó¦ Python ï¿½ï¿½ transform_face_point_grid_to_local
+    // ï¿½ï¿½ Grid (È«ï¿½ï¿½) ï¿½ä»»ï¿½ï¿½ Local
+    // grid: [Channels, H, W] ï¿½ï¿½ [Channels, L]
+    // lcs_inv: [4, 4] ï¿½ï¿½ï¿½ï¿½ï¿½
     // is_face: true Îª FaceGrid (9ch), false Îª CoedgeGrid (13ch)
     Tensor transform_grid_to_local(Tensor grid, Tensor lcs_inv, bool is_face) {
         Tensor new_grid = grid.clone();
@@ -847,16 +876,17 @@ private:
     }
     
 
-    // Éú³ÉÈ«¾ÖFaceÍø¸ñ
+    // ï¿½ï¿½ï¿½ï¿½È«ï¿½ï¿½Faceï¿½ï¿½ï¿½ï¿½
     void generate_global_face_grids() {
         if (unique_faces.Extent() == 0) return;
 
         std::vector<Tensor> grids_list;
         int num_faces = unique_faces.Extent();
+
         for (int i = 1; i <= num_faces; ++i) {
             const TopoDS_Face& face = TopoDS::Face(unique_faces.FindKey(i));
             Tensor single_grid = generate_global_face_grid(face);
-            grids_list.push_back(single_grid);
+            grids_list.push_back(single_grid.clone());
         }
 
         if (!grids_list.empty()) {
@@ -864,7 +894,7 @@ private:
         }
     }
 
-    // ¼ÆËãËùÓĞCoedgeµÄLCS±ä»»¾ØÕó
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Coedgeï¿½ï¿½LCSï¿½ä»»ï¿½ï¿½ï¿½ï¿½
     void compute_all_lcs_matrices(std::vector<Tensor>& lcs_invs) {
         int num_c = coedges.size();
         lcs_invs.clear();
@@ -872,7 +902,7 @@ private:
 
         for (int i = 0; i < num_c; ++i) {
             Tensor mat = compute_coedge_lcs(i);
-            //// ? µ÷ÊÔ£º´òÓ¡Ç°3¸öµÄÍêÕû¾ØÕó
+            //// ? ï¿½ï¿½ï¿½Ô£ï¿½ï¿½ï¿½Ó¡Ç°3ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
             //if (i < 3) {
             //    std::cout << "\n[Debug] Coedge " << i << ":\n";
             //    std::cout << "  Forward mat (det=" << breptorch::det(mat) << "):\n";
@@ -889,7 +919,7 @@ private:
 
             Tensor mat_inv = breptorch::inverse(mat);
 
-            //// ? µ÷ÊÔ£º´òÓ¡Äæ¾ØÕó
+            //// ? ï¿½ï¿½ï¿½Ô£ï¿½ï¿½ï¿½Ó¡ï¿½ï¿½ï¿½ï¿½ï¿½
             //if (i < 3) {
             //    std::cout << "  Inverse mat:\n";
             //    float* m_inv = const_cast<Tensor&>(mat_inv).data_ptr<float>();
@@ -905,13 +935,13 @@ private:
         }
     }
 
-    // Éú³ÉCoedge¾Ö²¿Íø¸ñ
+    // ï¿½ï¿½ï¿½ï¿½Coedgeï¿½Ö²ï¿½ï¿½ï¿½ï¿½ï¿½
     void generate_coedge_local_grids(const std::vector<Tensor>& lcs_invs) {
         int num_c = coedges.size();
         std::vector<Tensor> c_list;
         c_list.reserve(num_c);
 
-        // ÏÈÉú³ÉµÄCoedgeGridsGlobal£¬µ«Ã»±ØÒª±£´æ
+        // ï¿½ï¿½ï¿½ï¿½ï¿½Éµï¿½CoedgeGridsGlobalï¿½ï¿½ï¿½ï¿½Ã»ï¿½ï¿½Òªï¿½ï¿½ï¿½ï¿½
         for (int i = 0; i < num_c; ++i) {
             Tensor g_global = generate_global_coedge_grid(i);
             Tensor g_local = transform_grid_to_local(g_global, lcs_invs[i], false);
@@ -921,24 +951,11 @@ private:
         CoedgeGridsLocal = breptorch::stack(c_list);
     }
 
-    // Éú³ÉFace¾Ö²¿Íø¸ñ
+    // ï¿½ï¿½ï¿½ï¿½Faceï¿½Ö²ï¿½ï¿½ï¿½ï¿½ï¿½
     void generate_face_local_grids(std::vector<Tensor>& lcs_invs) {
         int num_c = coedges.size();
         std::vector<Tensor> f_list;
         f_list.reserve(num_c);
-
-        // ? Ìí¼Ó:ÔÚ´¦ÀíµÚÒ»¸ö coedge Ç°¼ì²éÈ«¾Ö Grid
-        static bool debug_once = false;
-        if (!debug_once && FaceGridsGlobal.defined()) {
-            std::cout << "\n[Debug] FaceGridsGlobal Check:\n";
-            std::cout << "  Shape: " << FaceGridsGlobal.sizes() << std::endl;
-            std::cout << "  Min: " << FaceGridsGlobal.min().item<float>() << std::endl;
-            std::cout << "  Max: " << FaceGridsGlobal.max().item<float>() << std::endl;
-
-            // ¼ì²éµÚÒ»¸ö Face µÄµÚÒ»¸öÍ¨µÀµÄµÚÒ»¸öµã
-            std::cout << "  [0,0,0,0] = " << FaceGridsGlobal.at({ 0,0,0,0 }) << std::endl;
-            std::cout << "  [0,3,0,0] = " << FaceGridsGlobal.at({ 0,3,0,0 }) << " (Normal X)\n";
-        }
 
         for (int i = 0; i < num_c; ++i) {
             Tensor pair = breptorch::zeros({ 2, 9, 10, 10 }, breptorch::kFloat32);
@@ -946,24 +963,8 @@ private:
             // Left Face
             int f_idx = coedges[i].face_idx;
             if (FaceGridsGlobal.defined() && f_idx < FaceGridsGlobal.size(0)) {
-                //Tensor t = transform_grid_to_local(get_slice(FaceGridsGlobal, f_idx), lcs_invs[i], true);
-                
-                Tensor t_global = get_slice(FaceGridsGlobal, f_idx);
-                // ? Ìí¼Ó:±ä»»Ç°ºó¶Ô±È
-                if (!debug_once && i == 0) {
-                    std::cout << "\n[Debug] Before LCS Transform (Coedge 0, Left Face):\n";
-                    std::cout << "  Global [0,0,0] = " << t_global.at({ 0,0,0 }) << std::endl;
-                    std::cout << "  Global [3,0,0] = " << t_global.at({ 3,0,0 }) << " (Normal)\n";
-                }
-                Tensor t = transform_grid_to_local(t_global, lcs_invs[i], true);
-                if (!debug_once && i == 0) {
-                    std::cout << "[Debug] After LCS Transform:\n";
-                    std::cout << "  Local [0,0,0] = " << t.at({ 0,0,0 }) << std::endl;
-                    std::cout << "  Local [3,0,0] = " << t.at({ 3,0,0 }) << " (Normal)\n";
-                    debug_once = true;
-                }
-                //½áÊø
-
+                Tensor global_grid = get_slice(FaceGridsGlobal, f_idx);
+                Tensor t = transform_grid_to_local(global_grid, lcs_invs[i], true);
                 set_slice(pair, 0, t);
             }
 
@@ -983,12 +984,12 @@ private:
         FaceGridsLocal = breptorch::stack(f_list);
     }
 
-    // Éú³ÉEdge¾Ö²¿Íø¸ñ
+    // ï¿½ï¿½ï¿½ï¿½Edgeï¿½Ö²ï¿½ï¿½ï¿½ï¿½ï¿½
     void generate_edge_local_grids() {
         int num_e = unique_edges.Extent();
         if (num_e == 0 || !CoedgeGridsLocal.defined()) return;
 
-        // ¹¹½¨Edge¡úCoedgeÓ³Éä±í
+        // ï¿½ï¿½ï¿½ï¿½Edgeï¿½ï¿½CoedgeÓ³ï¿½ï¿½ï¿½
         std::vector<int> edge_representatives(num_e, -1);
         for (const auto& c : coedges) {
             int eid = c.edge_idx;
@@ -999,7 +1000,7 @@ private:
             }
         }
 
-        // Éú³ÉEdgeÍø¸ñ
+        // ï¿½ï¿½ï¿½ï¿½Edgeï¿½ï¿½ï¿½ï¿½
         std::vector<Tensor> e_list;
         e_list.reserve(num_e);
         for (int i = 0; i < num_e; ++i) {
@@ -1015,29 +1016,29 @@ private:
         EdgeGridsLocal = breptorch::stack(e_list);
     }
 
-    // Ö÷º¯Êı£ºÉú³ÉËùÓĞ¾Ö²¿Íø¸ñ
-    // Ö®Ç°½á¹¹»ìÂÒ£¬ÒÑĞŞ¸Ä
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ¾Ö²ï¿½ï¿½ï¿½ï¿½ï¿½
+    // Ö®Ç°ï¿½á¹¹ï¿½ï¿½ï¿½Ò£ï¿½ï¿½ï¿½ï¿½Ş¸ï¿½
     void generate_local_grids() {
         if (unique_faces.Extent() == 0) return;
 
-        // 1. Éú³ÉÈ«¾ÖFaceÍø¸ñ
+        // 1. ï¿½ï¿½ï¿½ï¿½È«ï¿½ï¿½Faceï¿½ï¿½ï¿½ï¿½
         generate_global_face_grids();
 
         int num_c = coedges.size();
         if (num_c == 0) return;
 
-        std::cout << "ÕıÔÚÉú³É¾Ö²¿×ø±êÏµÌØÕ÷ (LCS Transformation)..." << std::endl;
+        std::cout << "Generating local coordinate system features (LCS Transformation)..." << std::endl;
 
-        // 2. ¼ÆËãLCS±ä»»¾ØÕó
+        // 2. ï¿½ï¿½ï¿½ï¿½LCSï¿½ä»»ï¿½ï¿½ï¿½ï¿½
         std::vector<Tensor> lcs_invs;
         compute_all_lcs_matrices(lcs_invs);
 
-        // 3. Éú³ÉÈı¸öLocalGrids
+        // 3. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½LocalGrids
         generate_coedge_local_grids(lcs_invs);
         generate_face_local_grids(lcs_invs);
         generate_edge_local_grids();
 
-        // 4. Êä³öÍ³¼ÆĞÅÏ¢
+        // 4. ï¿½ï¿½ï¿½Í³ï¿½ï¿½ï¿½ï¿½Ï¢
         //std::cout << " Local Features Generated." << std::endl;
         //if (FaceGridsLocal.defined()) std::cout << "   Face: " << FaceGridsLocal.sizes() << std::endl;
         //if (CoedgeGridsLocal.defined()) std::cout << "   Coedge: " << CoedgeGridsLocal.sizes() << std::endl;

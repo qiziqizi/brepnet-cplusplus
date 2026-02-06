@@ -1,4 +1,15 @@
 #pragma once
+
+// Windows API å®å®šä¹‰ï¼ˆå¿…é¡»åœ¨åŒ…å« Windows.h ä¹‹å‰ï¼‰
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#endif
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -8,10 +19,10 @@
 #include <ctime>
 #include <iomanip>
 
-// Windows API (ÓÃÓÚ±àÂë×ª»»ºÍÎÄ¼ş¼Ğ²Ù×÷)
+// Windows API (ç”¨äºç¼–ç è½¬æ¢ï¼Œæ–‡ä»¶æ“ä½œç­‰)
 #ifdef _WIN32
 #include <direct.h>
-#include <windows.h>
+#include <Windows.h>
 #else
 #include <sys/stat.h>
 #endif
@@ -19,7 +30,7 @@
 namespace Tools {
 
     class AutoLogger {
-        // ÄÚ²¿Àà£ºË«»º³åÁ÷£¨Í¬Ê±Êä³öµ½¿ØÖÆÌ¨ºÍÄÚ´æ£©
+        // ï¿½Ú²ï¿½ï¿½à£ºË«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¬Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì¨ï¿½ï¿½ï¿½Ú´æ£©
         class TeeBuf : public std::streambuf {
             std::streambuf* sb1;
             std::streambuf* sb2;
@@ -49,22 +60,22 @@ namespace Tools {
         TeeBuf* tee_cerr;
 
 #ifdef _WIN32
-        // GBK ×ª UTF-8£¨Windows×¨ÓÃ£©
+        // GBK ×ª UTF-8ï¿½ï¿½Windows×¨ï¿½Ã£ï¿½
         std::string GBKToUTF8(const std::string& gbk) {
             if (gbk.empty()) return "";
 
-            // 1. GBK (CP_ACP) ¡ú UTF-16 (Wide Char)
+            // 1. GBK (CP_ACP) ï¿½ï¿½ UTF-16 (Wide Char)
             int wlen = MultiByteToWideChar(CP_ACP, 0, gbk.c_str(), -1, nullptr, 0);
             if (wlen <= 0) return gbk;
 
             std::wstring wstr(wlen, 0);
             MultiByteToWideChar(CP_ACP, 0, gbk.c_str(), -1, &wstr[0], wlen);
 
-            // 2. UTF-16 ¡ú UTF-8
+            // 2. UTF-16 ï¿½ï¿½ UTF-8
             int utf8len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
             if (utf8len <= 0) return gbk;
 
-            std::string utf8(utf8len - 1, 0);  // ¼õ1È¥µônull terminator
+            std::string utf8(utf8len - 1, 0);  // ï¿½ï¿½1È¥ï¿½ï¿½null terminator
             WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &utf8[0], utf8len, nullptr, nullptr);
 
             return utf8;
@@ -76,50 +87,50 @@ namespace Tools {
             const std::string& filename = "execution_history.log")
             : log_dir(directory), log_file(filename) {
 
-            // ¡ï ²»ĞŞ¸Ä¿ØÖÆÌ¨±àÂë£¬±£³Ö GBK£¨É¾³ıÁËÖ®Ç°µÄ SetConsoleOutputCP£©
+            // ï¿½ï¿½ ï¿½ï¿½ï¿½Ş¸Ä¿ï¿½ï¿½ï¿½Ì¨ï¿½ï¿½ï¿½ë£¬ï¿½ï¿½ï¿½ï¿½ GBKï¿½ï¿½É¾ï¿½ï¿½ï¿½ï¿½Ö®Ç°ï¿½ï¿½ SetConsoleOutputCPï¿½ï¿½
 
-            // 1. ´´½¨ÈÕÖ¾Ä¿Â¼
+            // 1. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¾Ä¿Â¼
             std::filesystem::path dir_path(log_dir);
             if (!std::filesystem::exists(dir_path)) {
                 std::filesystem::create_directories(dir_path);
             }
 
-            // 2. ½Ù³Ö cout£¨Ë«»º³å£ºÍ¬Ê±Êä³öµ½¿ØÖÆÌ¨ºÍ buffer£©
+            // 2. ï¿½Ù³ï¿½ coutï¿½ï¿½Ë«ï¿½ï¿½ï¿½å£ºÍ¬Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì¨ï¿½ï¿½ bufferï¿½ï¿½
             old_cout_buf = std::cout.rdbuf();
             tee_cout = new TeeBuf(old_cout_buf, buffer.rdbuf());
             std::cout.rdbuf(tee_cout);
 
-            // 3. ½Ù³Ö cerr£¨ÈÃ´íÎóĞÅÏ¢Ò²½øÈÕÖ¾£©
+            // 3. ï¿½Ù³ï¿½ cerrï¿½ï¿½ï¿½Ã´ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢Ò²ï¿½ï¿½ï¿½ï¿½Ö¾ï¿½ï¿½
             old_cerr_buf = std::cerr.rdbuf();
             tee_cerr = new TeeBuf(old_cerr_buf, buffer.rdbuf());
             std::cerr.rdbuf(tee_cerr);
         }
 
         ~AutoLogger() {
-            // 4. »Ö¸´½Ù³Ö£¨±ØĞëÔÚĞ´ÎÄ¼şÇ°»Ö¸´£¬·ñÔòÊä³ö»áµİ¹é£©
+            // 4. ï¿½Ö¸ï¿½ï¿½Ù³Ö£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ´ï¿½Ä¼ï¿½Ç°ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½İ¹é£©
             std::cout.rdbuf(old_cout_buf);
             std::cerr.rdbuf(old_cerr_buf);
             delete tee_cout;
             delete tee_cerr;
 
-            // 5. Ğ´ÈëÎÄ¼ş
+            // 5. Ğ´ï¿½ï¿½ï¿½Ä¼ï¿½
             try {
                 std::filesystem::path full_path = std::filesystem::path(log_dir) / log_file;
 
-                // »ñÈ¡»º³åÇøÄÚÈİ£¨GBK ±àÂë£©
+                // ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½İ£ï¿½GBK ï¿½ï¿½ï¿½ë£©
                 std::string log_content = buffer.str();
 
-                // ÒÔ¶ş½øÖÆÄ£Ê½´ò¿ªÎÄ¼ş£¨×·¼Ó£©
+                // ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½ï¿½Ä£Ê½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½×·ï¿½Ó£ï¿½
                 std::ofstream file(full_path, std::ios::binary | std::ios::app);
                 if (file.is_open()) {
-                    // Èç¹ûÊÇĞÂÎÄ¼ş£¬Ğ´Èë UTF-8 BOM
+                    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Ğ´ï¿½ï¿½ UTF-8 BOM
                     file.seekp(0, std::ios::end);
                     if (file.tellp() == 0) {
                         const char bom[] = "\xEF\xBB\xBF";  // UTF-8 BOM
                         file.write(bom, 3);
                     }
 
-                    // Éú³ÉÊ±¼ä´Á
+                    // ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ï¿½
                     auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
                     struct tm local_tm;
 #ifdef _WIN32
@@ -128,7 +139,7 @@ namespace Tools {
                     localtime_r(&now, &local_tm);
 #endif
 
-                    // ¹¹½¨Í·²¿ĞÅÏ¢
+                    // ï¿½ï¿½ï¿½ï¿½Í·ï¿½ï¿½ï¿½ï¿½Ï¢
                     std::ostringstream header;
                     header << "\n============================================================\n";
                     header << "[RUN RECORD] " << std::put_time(&local_tm, "%Y-%m-%d %H:%M:%S") << "\n";
@@ -137,16 +148,16 @@ namespace Tools {
                     std::string header_str = header.str();
 
 #ifdef _WIN32
-                    // ¡ï Ö»ÔÚĞ´ÎÄ¼şÊ±×ª»»Îª UTF-8
+                    // ï¿½ï¿½ Ö»ï¿½ï¿½Ğ´ï¿½Ä¼ï¿½Ê±×ªï¿½ï¿½Îª UTF-8
                     header_str = GBKToUTF8(header_str);
                     log_content = GBKToUTF8(log_content);
 #endif
 
-                    // Ğ´ÈëÎÄ¼ş
+                    // Ğ´ï¿½ï¿½ï¿½Ä¼ï¿½
                     file << header_str;
                     file << log_content;
 
-                    // »Ö¸´Ô­Ê¼µÄ cout ºó´òÓ¡ÌáÊ¾
+                    // ï¿½Ö¸ï¿½Ô­Ê¼ï¿½ï¿½ cout ï¿½ï¿½ï¿½Ó¡ï¿½ï¿½Ê¾
                     std::cout << "\n[System] Log saved to " << full_path.string() << std::endl;
                 }
             }
@@ -159,7 +170,7 @@ namespace Tools {
         }
     };
 
-    // ¸¨Öú¹¤¾ß£º»ñÈ¡¾ø¶ÔÂ·¾¶
+    // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ß£ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Â·ï¿½ï¿½
     inline std::string GetAbsPath(const std::string& path) {
         try {
             if (std::filesystem::exists(path))

@@ -13,18 +13,19 @@ using namespace breptorch;
 namespace breptorch {
 namespace nn {
 
-// 一个简单的 UV-Net 推理器,基于 Torch Tensor 操作
-// 这样你就不用手写 conv2d 了，直接用 PyTorch C++ API
+// Simple UV-Net encoder using Torch Tensor operations
+// We don't manually implement conv2d, just use PyTorch C++ API
 class UVNetSurfaceEncoderImpl : public breptorch::nn::Module {
 private:
-    // 为了灵活性，我们在这里手动管理权重
-    // Key 是 Python 导出时的名字，Value 是 Tensor
+    // For simplicity, manually manage weights
+    // Key is the parameter name from Python training, Value is Tensor
     std::map<std::string, breptorch::Tensor> params;
-    std::map<std::string, breptorch::Tensor> buffers; // 存 BatchNorm 的 running_mean/var
+    std::map<std::string, breptorch::Tensor> buffers; // For BatchNorm running_mean/var
 
 public:
-    // 从 npz 加载权重
+    // Load weights from npz file
     void load_weights(const std::map<std::string, breptorch::Tensor>& weight_dict) {
+        std::cout << "[UVNetSurfaceEncoder] Loading " << weight_dict.size() << " weights..." << std::endl;
         for (auto const& [key, val] : weight_dict) {
             if (key.find("running") != std::string::npos) {
                 buffers[key] = val;
@@ -33,24 +34,25 @@ public:
                 params[key] = val;
             }
         }
+        std::cout << "[UVNetSurfaceEncoder] Loaded " << params.size() << " params, " << buffers.size() << " buffers" << std::endl;
     }
-    // 辅助函数：模拟 Conv2d + BN + LeakyReLU
+    // Basic building block: Conv2d + BN + LeakyReLU
     breptorch::Tensor conv2d_block(breptorch::Tensor x, std::string prefix) {
         // 1. Conv2d
-        // 修正：LibTorch functional::conv2d 接受 3 个参数: (input, weight, options)
-        // Bias 需要在 options 中设置。因为 Python 端 bias=False，所以这里不设置 bias。
+        std::string weight_key = prefix + ".0.weight";
+        if (params.find(weight_key) == params.end()) {
+            std::cerr << "[Error] Weight not found: " << weight_key << std::endl;
+            return breptorch::Tensor();
+        }
 
-        auto w = params[prefix + ".0.weight"];
-
+        auto w = params[weight_key];
         auto conv_opts = breptorch::nn::functional::Conv2dFuncOptions()
             .stride(1)
             .padding(1);
-        // .bias(tensor)  <-- 如果有偏置，在这里设置
 
         x = breptorch::nn::functional::conv2d(x, w, conv_opts);
 
         // 2. BatchNorm
-        // 保持不变，使用 Options 传递参数
         auto bn_mean = buffers[prefix + ".1.running_mean"];
         auto bn_var = buffers[prefix + ".1.running_var"];
         auto bn_w = params[prefix + ".1.weight"];
@@ -70,19 +72,19 @@ public:
         return x;
     }
 
-    // 辅助函数：全连接层 FC Block
+    // Basic fully connected block: FC Block
     breptorch::Tensor fc_block(breptorch::Tensor x, std::string prefix) {
         // 1. Linear
-        // functional::linear 接受 3 个参数: (input, weight, bias)
-        // 如果没有 bias，可以传一个空的 Tensor，即 {} 或 Tensor()
+        // functional::linear takes 3 params: (input, weight, bias)
+        // If no bias, pass an empty Tensor, like {} or Tensor()
 
         auto w = params[prefix + ".0.weight"];
 
-        // 修正：这里传入空 Tensor 作为 bias
+        // Note: passing empty Tensor as bias here
         x = breptorch::nn::functional::linear(x, w, breptorch::Tensor());
 
         // 2. BatchNorm1d
-        // functional::batch_norm 对 1D 和 2D 都可以使用
+        // functional::batch_norm works for both 1D and 2D
         auto bn_mean = buffers[prefix + ".1.running_mean"];
         auto bn_var = buffers[prefix + ".1.running_var"];
         auto bn_w = params[prefix + ".1.weight"];
@@ -103,12 +105,16 @@ public:
     }
 
     breptorch::Tensor forward(breptorch::Tensor x) {
-        // Layer 1
+        if (params.find("surface_encoder.conv1.0.weight") == params.end()) {
+            std::cerr << "[Error] Weight not found: surface_encoder.conv1.0.weight" << std::endl;
+            return breptorch::Tensor();
+        }
+
+        // Conv1: 9 -> 64
         x = conv2d_block(x, "surface_encoder.conv1");
-        // Layer 2
+
+        // Conv2: 64 -> 128
         x = conv2d_block(x, "surface_encoder.conv2");
-        // Layer 3
-        x = conv2d_block(x, "surface_encoder.conv3");
 
         // Global Pool: [N, C, H, W] -> [N, C, 1, 1]
         x = breptorch::adaptive_avg_pool2d(x, { 1, 1 });
@@ -116,7 +122,7 @@ public:
         // Flatten: [N, C, 1, 1] -> [N, C]
         x = x.view({ x.size(0), -1 });
 
-        // FC
+        // FC: 128 -> 64
         x = fc_block(x, "surface_encoder.fc");
 
         return x;
@@ -125,7 +131,7 @@ public:
 TORCH_MODULE(UVNetSurfaceEncoder)
 
 
-// 在 UVNet.h 中新增
+// Curve encoder in UVNet.h
 class UVNetCurveEncoderImpl : public breptorch::nn::Module {
 private:
     std::map<std::string, breptorch::Tensor> params;
@@ -133,13 +139,15 @@ private:
 
 public:
     void load_weights(const std::map<std::string, breptorch::Tensor>& weight_dict) {
+        std::cout << "[UVNetCurveEncoder] Loading " << weight_dict.size() << " weights..." << std::endl;
         for (auto const& [key, val] : weight_dict) {
             if (key.find("running") != std::string::npos) buffers[key] = val;
             else params[key] = val;
         }
+        std::cout << "[UVNetCurveEncoder] Loaded " << params.size() << " params, " << buffers.size() << " buffers" << std::endl;
     }
 
-    // 1D 卷积块
+    // 1D convolution block
     breptorch::Tensor conv1d_block(breptorch::Tensor x, std::string prefix) {
         // Conv1d(in, out, kernel=3, padding=1)
         auto w = params[prefix + ".0.weight"];
@@ -157,7 +165,7 @@ public:
         return x;
     }
 
-    // FC 块 (和 Surface Encoder 一样)
+    // FC block (same as Surface Encoder)
     breptorch::Tensor fc_block(breptorch::Tensor x, std::string prefix) {
         auto w = params[prefix + ".0.weight"];
         x = breptorch::linear(x, w, {});
@@ -173,10 +181,19 @@ public:
     }
 
     breptorch::Tensor forward(breptorch::Tensor x) {
-        // x: [N, 12, 10]
+        // x: [N, 13, 10]
+        // Check if weights are loaded
+        if (params.find("curve_encoder.conv1.0.weight") == params.end()) {
+            std::cerr << "[Error] curve_encoder weights not loaded!" << std::endl;
+            return breptorch::Tensor();
+        }
+
         x = conv1d_block(x, "curve_encoder.conv1");
         x = conv1d_block(x, "curve_encoder.conv2");
-        x = conv1d_block(x, "curve_encoder.conv3");
+        // Note: Check if conv3 exists
+        if (params.find("curve_encoder.conv3.0.weight") != params.end()) {
+            x = conv1d_block(x, "curve_encoder.conv3");
+        }
 
         // Global Pool 1D: [N, C, L] -> [N, C, 1]
         x = breptorch::adaptive_avg_pool1d(x, { 1 });
