@@ -5,6 +5,8 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include <iomanip>
+#include <iostream>
 
 // BRepTorch already defines the breptorch namespace
 using Tensor = breptorch::Tensor;
@@ -25,13 +27,32 @@ private:
 public:
     // Load weights from npz file
     void load_weights(const std::map<std::string, breptorch::Tensor>& weight_dict) {
+        std::cout << std::fixed << std::setprecision(10);  // 设置输出精度
         std::cout << "[UVNetSurfaceEncoder] Loading " << weight_dict.size() << " weights..." << std::endl;
+
         for (auto const& [key, val] : weight_dict) {
             if (key.find("running") != std::string::npos) {
                 buffers[key] = val;
             }
             else {
                 params[key] = val;
+            }
+
+            // 打印权重信息（仅打印第一个卷积层的权重）
+            if (key == "conv_layers.0.0.weight") {
+                std::cout << "[Debug Weight] " << key << " shape: [";
+                for (size_t i = 0; i < val.sizes().size(); ++i) {
+                    std::cout << val.sizes()[i];
+                    if (i < val.sizes().size() - 1) std::cout << ", ";
+                }
+                std::cout << "]" << std::endl;
+                std::cout << "  First 10 values: ";
+                // 创建非const副本来访问data_ptr
+                breptorch::Tensor val_copy = val.clone();
+                for (int i = 0; i < std::min(10, (int)val.numel()); ++i) {
+                    std::cout << val_copy.data_ptr<float>()[i] << " ";
+                }
+                std::cout << std::endl;
             }
         }
         std::cout << "[UVNetSurfaceEncoder] Loaded " << params.size() << " params, " << buffers.size() << " buffers" << std::endl;
@@ -139,10 +160,29 @@ private:
 
 public:
     void load_weights(const std::map<std::string, breptorch::Tensor>& weight_dict) {
+        std::cout << std::fixed << std::setprecision(10);  // 设置输出精度
         std::cout << "[UVNetCurveEncoder] Loading " << weight_dict.size() << " weights..." << std::endl;
+
         for (auto const& [key, val] : weight_dict) {
             if (key.find("running") != std::string::npos) buffers[key] = val;
             else params[key] = val;
+
+            // 打印权重信息（仅打印第一个卷积层的权重）
+            if (key == "conv_layers.0.0.weight") {
+                std::cout << "[Debug Weight] " << key << " shape: [";
+                for (size_t i = 0; i < val.sizes().size(); ++i) {
+                    std::cout << val.sizes()[i];
+                    if (i < val.sizes().size() - 1) std::cout << ", ";
+                }
+                std::cout << "]" << std::endl;
+                std::cout << "  First 10 values: ";
+                // 创建非const副本来访问data_ptr
+                breptorch::Tensor val_copy = val.clone();
+                for (int i = 0; i < std::min(10, (int)val.numel()); ++i) {
+                    std::cout << val_copy.data_ptr<float>()[i] << " ";
+                }
+                std::cout << std::endl;
+            }
         }
         std::cout << "[UVNetCurveEncoder] Loaded " << params.size() << " params, " << buffers.size() << " buffers" << std::endl;
     }

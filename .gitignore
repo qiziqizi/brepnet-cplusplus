@@ -16,3 +16,12 @@ python端的代码/
 *.txt
 *.png
 *.pdf
+
+# 忽略Python分析脚本
+*.py
+
+# 忽略输出文件夹
+cpp_logits/
+cpp_loss/
+python_loss/
+python_logits/

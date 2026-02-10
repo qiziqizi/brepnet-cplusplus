@@ -586,14 +586,21 @@ namespace breptorch {
             const float* adata = a.storage_->dataf_.data();
             const float* bdata = b.storage_->dataf_.data();
             float* cdata = c.storage_->dataf_.data();
-            
+
             for(int64_t i=0; i<M; ++i) {
                 for(int64_t j=0; j<N; ++j) {
-                    float sum = 0;
+                    // 使用Kahan求和算法提高精度
+                    double sum = 0.0;
+                    double c_compensation = 0.0;  // 补偿值
+
                     for(int64_t k=0; k<K; ++k) {
-                        sum += adata[i*K + k] * bdata[k*N + j];
+                        double product = static_cast<double>(adata[i*K + k]) * static_cast<double>(bdata[k*N + j]);
+                        double y = product - c_compensation;
+                        double t = sum + y;
+                        c_compensation = (t - sum) - y;
+                        sum = t;
                     }
-                    cdata[i*N + j] = sum;
+                    cdata[i*N + j] = static_cast<float>(sum);
                 }
             }
         }
@@ -956,17 +963,17 @@ namespace breptorch {
                     max_val = std::max(max_val, out.at({n, c}));
                 }
 
-                // Compute exp(x - max) and sum
-                float sum = 0.0f;
+                // Compute exp(x - max) and sum using double for precision
+                double sum = 0.0;
                 for (int64_t c = 0; c < C; ++c) {
-                    float val = std::exp(out.at({n, c}) - max_val);
-                    out.at({n, c}) = val;
+                    double val = std::exp(static_cast<double>(out.at({n, c})) - static_cast<double>(max_val));
+                    out.at({n, c}) = static_cast<float>(val);
                     sum += val;
                 }
 
                 // Normalize
                 for (int64_t c = 0; c < C; ++c) {
-                    out.at({n, c}) /= sum;
+                    out.at({n, c}) = static_cast<float>(static_cast<double>(out.at({n, c})) / sum);
                 }
             }
         }
@@ -987,13 +994,13 @@ namespace breptorch {
         
         for(int64_t n=0; n<N; ++n) {
             for(int64_t c=0; c<C; ++c) {
-                float sum = 0;
+                double sum = 0.0;  // 使用 double 提高精度
                 for(int64_t h=0; h<H; ++h) {
                     for(int64_t w=0; w<W; ++w) {
-                        sum += x.at({n, c, h, w});
+                        sum += static_cast<double>(x.at({n, c, h, w}));
                     }
                 }
-                out.at({n, c, 0, 0}) = sum / (H * W);
+                out.at({n, c, 0, 0}) = static_cast<float>(sum / (H * W));
             }
         }
         return out;
@@ -1011,11 +1018,11 @@ namespace breptorch {
         
         for(int64_t n=0; n<N; ++n) {
             for(int64_t c=0; c<C; ++c) {
-                float sum = 0;
+                double sum = 0.0;  // 使用 double 提高精度
                 for(int64_t l=0; l<L; ++l) {
-                    sum += x.at({n, c, l});
+                    sum += static_cast<double>(x.at({n, c, l}));
                 }
-                out.at({n, c, 0}) = sum / L;
+                out.at({n, c, 0}) = static_cast<float>(sum / L);
             }
         }
         return out;
@@ -1060,25 +1067,34 @@ namespace breptorch {
             for(int64_t cout=0; cout<Cout; ++cout) {
                 for(int64_t h_out=0; h_out<H_out; ++h_out) {
                     for(int64_t w_out=0; w_out<W_out; ++w_out) {
-                        
-                        float sum = 0;
-                        if (b_ptr) sum = b_ptr[cout];
-                        
+
+                        // 使用Kahan求和算法提高精度
+                        double sum = 0.0;
+                        double c_compensation = 0.0;
+
+                        if (b_ptr) {
+                            sum = static_cast<double>(b_ptr[cout]);
+                        }
+
                         for(int64_t cin=0; cin<Cin; ++cin) {
                             for(int64_t kh=0; kh<kH; ++kh) {
                                 for(int64_t kw=0; kw<kW; ++kw) {
                                     int64_t h_in = h_out * sH - pH + kh * dH;
                                     int64_t w_in = w_out * sW - pW + kw * dW;
-                                    
+
                                     if (h_in >= 0 && h_in < H && w_in >= 0 && w_in < W) {
-                                        float val = in_ptr[n*Cin*H*W + cin*H*W + h_in*W + w_in];
-                                        float w_val = w_ptr[cout*Cin*kH*kW + cin*kH*kW + kh*kW + kw];
-                                        sum += val * w_val;
+                                        double val = static_cast<double>(in_ptr[n*Cin*H*W + cin*H*W + h_in*W + w_in]);
+                                        double w_val = static_cast<double>(w_ptr[cout*Cin*kH*kW + cin*kH*kW + kh*kW + kw]);
+                                        double product = val * w_val;
+                                        double y = product - c_compensation;
+                                        double t = sum + y;
+                                        c_compensation = (t - sum) - y;
+                                        sum = t;
                                     }
                                 }
                             }
                         }
-                        out_ptr[n*Cout*H_out*W_out + cout*H_out*W_out + h_out*W_out + w_out] = sum;
+                        out_ptr[n*Cout*H_out*W_out + cout*H_out*W_out + h_out*W_out + w_out] = static_cast<float>(sum);
                     }
                 }
             }
@@ -1115,22 +1131,31 @@ namespace breptorch {
         for(int64_t n=0; n<N; ++n) {
             for(int64_t cout=0; cout<Cout; ++cout) {
                 for(int64_t l_out=0; l_out<L_out; ++l_out) {
-                    
-                    float sum = 0;
-                    if (b_ptr) sum = b_ptr[cout];
-                    
+
+                    // 使用Kahan求和算法提高精度
+                    double sum = 0.0;
+                    double c_compensation = 0.0;
+
+                    if (b_ptr) {
+                        sum = static_cast<double>(b_ptr[cout]);
+                    }
+
                     for(int64_t cin=0; cin<Cin; ++cin) {
                         for(int64_t kl=0; kl<kL; ++kl) {
                             int64_t l_in = l_out * sL - pL + kl * dL;
-                            
+
                             if (l_in >= 0 && l_in < L) {
-                                float val = in_ptr[n*Cin*L + cin*L + l_in];
-                                float w_val = w_ptr[cout*Cin*kL + cin*kL + kl];
-                                sum += val * w_val;
+                                double val = static_cast<double>(in_ptr[n*Cin*L + cin*L + l_in]);
+                                double w_val = static_cast<double>(w_ptr[cout*Cin*kL + cin*kL + kl]);
+                                double product = val * w_val;
+                                double y = product - c_compensation;
+                                double t = sum + y;
+                                c_compensation = (t - sum) - y;
+                                sum = t;
                             }
                         }
                     }
-                    out_ptr[n*Cout*L_out + cout*L_out + l_out] = sum;
+                    out_ptr[n*Cout*L_out + cout*L_out + l_out] = static_cast<float>(sum);
                 }
             }
         }
@@ -1156,20 +1181,20 @@ namespace breptorch {
         float* out_data = out.storage_->dataf_.data();
         
         for(int64_t c=0; c<C; ++c) {
-            float mean = rm[c];
-            float var = rv[c];
-            float inv_std = 1.0f / std::sqrt(var + (float)eps);
-            float gamma = w ? w[c] : 1.0f;
-            float beta = b ? b[c] : 0.0f;
-            
+            double mean = static_cast<double>(rm[c]);
+            double var = static_cast<double>(rv[c]);
+            double inv_std = 1.0 / std::sqrt(var + eps);  // 使用 double 提高精度
+            double gamma = w ? static_cast<double>(w[c]) : 1.0;
+            double beta = b ? static_cast<double>(b[c]) : 0.0;
+
             // Precompute scale and shift
-            float scale = gamma * inv_std;
-            float shift = beta - mean * scale;
-            
+            double scale = gamma * inv_std;
+            double shift = beta - mean * scale;
+
             for(int64_t n=0; n<N; ++n) {
                 for(int64_t s=0; s<spatial_size; ++s) {
                     int64_t idx = n * C * spatial_size + c * spatial_size + s;
-                    out_data[idx] = out_data[idx] * scale + shift;
+                    out_data[idx] = static_cast<float>(static_cast<double>(out_data[idx]) * scale + shift);
                 }
             }
         }
@@ -1295,7 +1320,7 @@ namespace breptorch {
                 return out;
             }
             
-            std::map<std::string, Tensor*> named_buffers() { 
+            std::map<std::string, Tensor*> named_buffers() {
                 std::map<std::string, Tensor*> out;
                 _get_buffers("", out);
                 return out;
@@ -1324,17 +1349,31 @@ namespace breptorch {
             }
         };
         
-        struct ReLUImpl : Module { 
-            Tensor forward(Tensor x) override { 
+        struct ReLUImpl : Module {
+            Tensor forward(Tensor x) override {
                 // Simple ReLU: max(0, x)
                 Tensor out = x.clone();
                 if (out.dtype_ == kFloat32) {
                     for(auto& v : out.storage_->dataf_) if(v < 0) v = 0;
                 }
                 return out;
-            } 
+            }
         };
-        
+
+        struct DropoutImpl : Module {
+            float p;
+            bool training;
+
+            // 默认为eval模式（推理模式），因为这是纯推理项目
+            DropoutImpl(float p_) : p(p_), training(false) {}
+
+            Tensor forward(Tensor x) override {
+                // 在推理模式下(training=false),Dropout是恒等变换
+                // 由于我们只做推理，所以总是返回输入
+                return x;
+            }
+        };
+
         struct SequentialImpl : Module {
             std::vector<std::shared_ptr<Module>> ordered_modules;
             
@@ -1388,12 +1427,14 @@ namespace breptorch {
         // Factory
         inline std::shared_ptr<LinearImpl> Linear(LinearOptions o) { return std::make_shared<LinearImpl>(o); }
         inline std::shared_ptr<ReLUImpl> ReLU() { return std::make_shared<ReLUImpl>(); }
+        inline std::shared_ptr<DropoutImpl> Dropout(float p) { return std::make_shared<DropoutImpl>(p); }
         inline std::shared_ptr<SequentialImpl> Sequential() { return std::make_shared<SequentialImpl>(); }
         inline std::shared_ptr<BatchNorm1dImpl> BatchNorm1d(BatchNorm1dOptions o) { return std::make_shared<BatchNorm1dImpl>(o); }
 
         // Aliases
         using LinearPtr = std::shared_ptr<LinearImpl>;
         using ReLUPtr = std::shared_ptr<ReLUImpl>;
+        using DropoutPtr = std::shared_ptr<DropoutImpl>;
         using SequentialPtr = std::shared_ptr<SequentialImpl>;
         using BatchNorm1dPtr = std::shared_ptr<BatchNorm1dImpl>;
 

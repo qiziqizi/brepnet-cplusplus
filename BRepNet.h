@@ -4,6 +4,7 @@
 #include "cnpy.h"
 #include <vector>
 #include <map>
+#include <iomanip>
 
 using Tensor = breptorch::Tensor;
 using namespace breptorch::nn;
@@ -17,17 +18,24 @@ using namespace breptorch::nn;
 // 1. 简单的 MLP
 struct BRepNetMLPImpl : Module {
     SequentialPtr mlp{ nullptr };
+    float dropout_p;
 
-    BRepNetMLPImpl(int input_size, int hidden_size, int output_size, bool final_layer) {
+    BRepNetMLPImpl(int input_size, int hidden_size, int output_size, bool final_layer, float dropout = 0.3f)
+        : dropout_p(dropout) {
         mlp = register_module("mlp", Sequential());
 
-        // 第一层：linear_0 + ReLU（总是有ReLU）
+        // 第一层：linear_0 + dropout_0 + relu_0
         mlp->push_back("linear_0", Linear(LinearOptions(input_size, hidden_size).bias(true)));
+        if (dropout_p > 0.0f) {
+            mlp->push_back("dropout_0", Dropout(dropout_p));
+        }
         mlp->push_back("relu_0", ReLU());
 
-        // 第二层：linear_1 + 可选的ReLU
-        // 只有当final_layer=true时，linear_1才没有bias和ReLU
+        // 第二层：linear_1 + dropout_1 + relu_1（可选）
         mlp->push_back("linear_1", Linear(LinearOptions(hidden_size, output_size).bias(!final_layer)));
+        if (dropout_p > 0.0f && !final_layer) {
+            mlp->push_back("dropout_1", Dropout(dropout_p));
+        }
         if (!final_layer) {
             mlp->push_back("relu_1", ReLU());
         }
@@ -146,6 +154,9 @@ struct BRepNetImpl : Module {
         std::vector<CoedgeData>& coedges,
         std::vector<FaceData>& faces,
         std::vector<EdgeData>& edges) {
+
+        // 设置输出精度为10位小数，方便与Python对比
+        std::cout << std::fixed << std::setprecision(10);
 
         std::cout << "\n================================================================================\n";
         std::cout << "Forward Propagation Started\n";
