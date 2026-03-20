@@ -701,6 +701,43 @@ private:
     // �޸� compute_coedge_lcs (ʹ�þ�ȷ�е�)
 
     
+    double compute_arc_length_midpoint(Handle(Geom_Curve) curve, double u0, double u1) {
+        int num_samples = 100;
+        std::vector<gp_Pnt> sampled_points;
+        std::vector<double> arc_length_vals;
+
+        gp_Pnt p_first = curve->Value(u0);
+        sampled_points.push_back(p_first);
+        arc_length_vals.push_back(0.0);
+
+        for (int i = 1; i < num_samples; ++i) {
+            double u_sample = u0 + (u1 - u0) * i / (num_samples - 1);
+            gp_Pnt p_sample = curve->Value(u_sample);
+            sampled_points.push_back(p_sample);
+            double dist = sampled_points[i - 1].Distance(p_sample);
+            arc_length_vals.push_back(arc_length_vals.back() + dist);
+        }
+
+        double total_length = arc_length_vals.back();
+        double mid_length = total_length / 2.0;
+
+        int idx_left = 0;
+        for (int i = 0; i < (int)arc_length_vals.size() - 1; ++i) {
+            if (arc_length_vals[i] <= mid_length && mid_length <= arc_length_vals[i + 1]) {
+                idx_left = i;
+                break;
+            }
+        }
+
+        double denom = arc_length_vals[idx_left + 1] - arc_length_vals[idx_left];
+        double ratio = (denom > 1e-10) ? (mid_length - arc_length_vals[idx_left]) / denom : 0.5;
+        ratio = std::max(0.0, std::min(1.0, ratio));
+
+        double u_left = u0 + (u1 - u0) * idx_left / (num_samples - 1);
+        double u_right = u0 + (u1 - u0) * (idx_left + 1) / (num_samples - 1);
+        return u_left + (u_right - u_left) * ratio;
+    }
+
     Tensor compute_coedge_lcs(int coedge_idx) {
         const CoedgeInfo& c_info = coedges[coedge_idx];
         TopoDS_Edge edge = TopoDS::Edge(unique_edges.FindKey(c_info.edge_idx + 1));
@@ -709,7 +746,7 @@ private:
         // 1. ��ȡ���е㡢���ߡ�����
         double u0, u1;
         Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, u0, u1);
-        double u_mid = (u0 + u1) / 2.0;
+        double u_mid = compute_arc_length_midpoint(curve, u0, u1);  // Arc-length midpoint instead of parameter midpoint
         gp_Pnt p;
         gp_Vec tangent;
         curve->D1(u_mid, p, tangent);
