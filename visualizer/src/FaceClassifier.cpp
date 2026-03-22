@@ -1,0 +1,135 @@
+#include "FaceClassifier.h"
+#include "BRepNet.h"
+#include "BRepNetAdapter.h"
+#include "BRepPipeline.h"
+#include "cnpy.h"
+#include <iostream>
+
+FaceClassifier::FaceClassifier()
+    : modelLoaded_(false) {
+}
+
+FaceClassifier::~FaceClassifier() {
+}
+
+bool FaceClassifier::loadModel(const std::string& weightsPath) {
+    try {
+        std::cout << "[FaceClassifier] 正在加载模型权重: " << weightsPath << std::endl;
+
+        // 创建模型（27个类别）
+        model_ = std::make_shared<BRepNetImpl>(27);
+
+        // 加载NPZ权重文件
+        cnpy::npz_t npz = cnpy::npz_load(weightsPath);
+
+        // 加载 UV-Net 权重（Surface Encoder）
+        std::map<std::string, breptorch::Tensor> surf_weights;
+        for (auto& item : npz) {
+            if (item.first.find("surface_encoder") != std::string::npos) {
+                auto arr = item.second;
+                std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
+                surf_weights[item.first] = breptorch::from_blob(
+                    arr.data<float>(), shape, breptorch::kFloat32).clone();
+            }
+        }
+        model_->surf_enc->load_weights(surf_weights);
+
+        // 加载 UV-Net 权重（Curve Encoder）
+        std::map<std::string, breptorch::Tensor> curve_weights;
+        for (auto& item : npz) {
+            if (item.first.find("curve_encoder") != std::string::npos) {
+                auto arr = item.second;
+                std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
+                curve_weights[item.first] = breptorch::from_blob(
+                    arr.data<float>(), shape, breptorch::kFloat32).clone();
+            }
+        }
+        model_->curve_enc->load_weights(curve_weights);
+
+        // 加载 BRepNet 权重
+        auto params = model_->named_parameters();
+        for (auto& item : npz) {
+            std::string key = item.first;
+
+            // 转换参数名（Python风格 → C++风格）
+            if (key.find("layers.0.mlp") != std::string::npos) {
+                key = "layer_0.mlp" + key.substr(key.find(".mlp") + 4);
+            } else if (key.find("layers.1.mlp") != std::string::npos) {
+                key = "layer_1.mlp" + key.substr(key.find(".mlp") + 4);
+            }
+
+            if (params.find(key) != params.end()) {
+                auto arr = item.second;
+                std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
+                *params[key] = breptorch::from_blob(
+                    arr.data<float>(), shape, breptorch::kFloat32).clone();
+            }
+        }
+
+        modelLoaded_ = true;
+        std::cout << "[FaceClassifier] 模型加载成功" << std::endl;
+        return true;
+
+    } catch (const std::exception& e) {
+        std::cerr << "[FaceClassifier] 模型加载失败: " << e.what() << std::endl;
+        modelLoaded_ = false;
+        return false;
+    }
+}
+
+std::vector<int> FaceClassifier::predict(const std::string& stepFilePath) {
+    std::vector<int> predictions;
+
+    if (!modelLoaded_) {
+        std::cerr << "[FaceClassifier] 模型未加载，无法预测" << std::endl;
+        return predictions;
+    }
+
+    try {
+        // 1. 使用BRepPipeline处理STEP文件
+        BRepPipeline pipeline;
+        if (!pipeline.process(stepFilePath)) {
+            std::cerr << "[FaceClassifier] 处理STEP文件失败" << std::endl;
+            return predictions;
+        }
+
+        int num_faces = pipeline.unique_faces.Extent();
+        std::cout << "[FaceClassifier] 处理文件: " << stepFilePath
+                  << " (" << num_faces << " 个面)" << std::endl;
+
+        // 2. 转换数据格式
+        auto coedges = BRepNetAdapter::extract_coedges(pipeline, model_->surf_enc, model_->curve_enc);
+        auto faces = BRepNetAdapter::extract_faces(pipeline);
+        auto edges = BRepNetAdapter::extract_edges(pipeline);
+
+        // 3. 前向推理
+        breptorch::Tensor logits = model_->forward(coedges, faces, edges);
+
+        // 4. 计算Softmax并获取预测类别
+        breptorch::Tensor probs = breptorch::softmax(logits, 1);
+        int num_classes = logits.size(1);
+
+        for (int f = 0; f < num_faces; ++f) {
+            float max_prob = -1e9f;
+            int pred_class = 0;
+
+            for (int c = 0; c < num_classes; ++c) {
+                float p = probs.at({f, c});
+                if (p > max_prob) {
+                    max_prob = p;
+                    pred_class = c;
+                }
+            }
+
+            predictions.push_back(pred_class);
+        }
+
+        std::cout << "[FaceClassifier] 预测完成: " << predictions.size() << " 个面" << std::endl;
+
+    } catch (const std::exception& e) {
+        std::cerr << "[FaceClassifier] 预测失败: " << e.what() << std::endl;
+        predictions.clear();
+    }
+
+    return predictions;
+}

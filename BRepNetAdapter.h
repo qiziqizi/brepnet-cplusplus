@@ -22,7 +22,8 @@ public:
         // 1. 提取所有面特征
         Tensor face_grids_cloned = pipeline.FaceGridsLocal.clone();
         Tensor all_face_grids = face_grids_cloned.view({num_coedges * 2, 9, 10, 10});
-        Tensor all_face_features = surf_enc->forward(all_face_grids);  // (num_coedges * 2, 64)
+        // 必须clone()！forward()会修改输入张量
+        Tensor all_face_features = surf_enc->forward(all_face_grids.clone());  // (num_coedges * 2, 64)
         Tensor Xf = all_face_features.view({num_coedges, 128});
 
         std::cout << "\n[UV-Net] Face features Xf: [" << num_coedges << ", 128]" << std::endl;
@@ -31,7 +32,8 @@ public:
         std::cout << std::endl;
 
         // 2. 提取所有边特征
-        Tensor all_edge_features = curve_enc->forward(pipeline.EdgeGridsLocal);  // (num_edges, 64)
+        // 必须clone()！forward()可能会修改输入张量
+        Tensor all_edge_features = curve_enc->forward(pipeline.EdgeGridsLocal.clone());  // (num_edges, 64)
 
         std::cout << "\n[UV-Net] Edge features Xe: [" << num_edges << ", 64]" << std::endl;
         std::cout << "[Verify] Xe[0, :10]: ";

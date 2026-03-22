@@ -1,0 +1,220 @@
+#include "OCCTViewer.h"
+#include <QMouseEvent>
+#include <QWheelEvent>
+#include <iostream>
+
+#include <Aspect_DisplayConnection.hxx>
+#include <OpenGl_GraphicDriver.hxx>
+#include <AIS_Shape.hxx>
+#include <Prs3d_Drawer.hxx>
+#include <Graphic3d_MaterialAspect.hxx>
+#include <Prs3d_LineAspect.hxx>
+
+OCCTViewer::OCCTViewer(QWidget* parent)
+    : QWidget(parent)
+    , currentMode_(None)
+    , selectedFaceIndex_(-1) {
+
+    setAttribute(Qt::WA_PaintOnScreen, true);
+    setAttribute(Qt::WA_NoSystemBackground, true);
+    setAttribute(Qt::WA_NativeWindow, true);
+    setAutoFillBackground(false);
+    setFocusPolicy(Qt::StrongFocus);
+    setMouseTracking(true);
+
+    winId();  // Force native window creation
+    initOCCT();
+}
+
+OCCTViewer::~OCCTViewer() {
+    if (!context_.IsNull()) {
+        for (auto& pair : faceObjects_) {
+            context_->Remove(pair.second, Standard_False);
+        }
+    }
+}
+
+void OCCTViewer::initOCCT() {
+    Handle(Aspect_DisplayConnection) aDispConnection = new Aspect_DisplayConnection();
+    Handle(OpenGl_GraphicDriver) aGraphicDriver = new OpenGl_GraphicDriver(aDispConnection);
+
+    viewer_ = new V3d_Viewer(aGraphicDriver);
+    viewer_->SetDefaultLights();
+    viewer_->SetLightOn();
+
+    view_ = viewer_->CreateView();
+
+#ifdef _WIN32
+    hWnd_ = new WNT_Window((Aspect_Handle)winId());
+    view_->SetWindow(hWnd_);
+    if (!hWnd_->IsMapped()) hWnd_->Map();
+#endif
+
+    context_ = new AIS_InteractiveContext(viewer_);
+    view_->SetBackgroundColor(Quantity_NOC_WHITE);
+    view_->SetProj(V3d_XposYnegZpos);
+    view_->TriedronDisplay(Aspect_TOTP_LEFT_LOWER, Quantity_NOC_GOLD, 0.08);
+    view_->MustBeResized();
+}
+
+void OCCTViewer::paintEvent(QPaintEvent*) {
+    if (!view_.IsNull()) view_->Redraw();
+}
+
+void OCCTViewer::resizeEvent(QResizeEvent*) {
+    if (!view_.IsNull()) view_->MustBeResized();
+}
+
+void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces) {
+    if (context_.IsNull()) return;
+    clearAll();
+
+    for (size_t i = 0; i < faces.size(); ++i) {
+        Handle(AIS_Shape) aisShape = new AIS_Shape(faces[i]);
+        aisShape->SetColor(Quantity_NOC_GRAY70);
+        aisShape->SetMaterial(Graphic3d_NOM_PLASTIC);
+        aisShape->SetDisplayMode(AIS_Shaded);
+        aisShape->Attributes()->SetFaceBoundaryDraw(true);
+        context_->Display(aisShape, Standard_False);
+        faceObjects_[static_cast<int>(i)] = aisShape;
+    }
+
+    context_->UpdateCurrentViewer();
+    fitAll();
+}
+
+void OCCTViewer::updateFaceColor(int faceIndex, const Quantity_Color& color) {
+    auto it = faceObjects_.find(faceIndex);
+    if (it != faceObjects_.end()) {
+        context_->SetColor(it->second, color, Standard_True);
+    }
+}
+
+void OCCTViewer::updateAllFaceColors(const std::vector<Quantity_Color>& colors) {
+    if (colors.size() != faceObjects_.size()) return;
+
+    for (size_t i = 0; i < colors.size(); ++i) {
+        auto it = faceObjects_.find(static_cast<int>(i));
+        if (it != faceObjects_.end()) {
+            context_->SetColor(it->second, colors[i], Standard_False);
+        }
+    }
+    context_->UpdateCurrentViewer();
+}
+
+void OCCTViewer::highlightErrorFaces(const std::vector<int>& errorIndices, bool highlight) {
+    if (context_.IsNull()) return;
+
+    Quantity_Color errorBoundaryColor(1.0, 0.0, 0.0, Quantity_TOC_RGB);  // Red
+
+    for (int idx : errorIndices) {
+        auto it = faceObjects_.find(idx);
+        if (it != faceObjects_.end()) {
+            Handle(Prs3d_Drawer) drawer = it->second->Attributes();
+            if (highlight) {
+                drawer->SetFaceBoundaryDraw(true);
+                Handle(Prs3d_LineAspect) lineAspect = new Prs3d_LineAspect(
+                    errorBoundaryColor, Aspect_TOL_SOLID, 3.0);
+                drawer->SetFaceBoundaryAspect(lineAspect);
+            } else {
+                drawer->SetFaceBoundaryDraw(true);
+                Handle(Prs3d_LineAspect) lineAspect = new Prs3d_LineAspect(
+                    Quantity_NOC_BLACK, Aspect_TOL_SOLID, 1.0);
+                drawer->SetFaceBoundaryAspect(lineAspect);
+            }
+            context_->Redisplay(it->second, Standard_False);
+        }
+    }
+    context_->UpdateCurrentViewer();
+}
+
+void OCCTViewer::clearErrorHighlights() {
+    if (context_.IsNull()) return;
+
+    for (auto& pair : faceObjects_) {
+        Handle(Prs3d_Drawer) drawer = pair.second->Attributes();
+        drawer->SetFaceBoundaryDraw(true);
+        Handle(Prs3d_LineAspect) lineAspect = new Prs3d_LineAspect(
+            Quantity_NOC_BLACK, Aspect_TOL_SOLID, 1.0);
+        drawer->SetFaceBoundaryAspect(lineAspect);
+        context_->Redisplay(pair.second, Standard_False);
+    }
+    context_->UpdateCurrentViewer();
+}
+
+void OCCTViewer::clearAll() {
+    if (context_.IsNull()) return;
+    for (auto& pair : faceObjects_) {
+        context_->Remove(pair.second, Standard_False);
+    }
+    faceObjects_.clear();
+    context_->UpdateCurrentViewer();
+}
+
+void OCCTViewer::fitAll() {
+    if (view_.IsNull()) return;
+    view_->FitAll();
+    view_->ZFitAll();
+    view_->Redraw();
+}
+
+void OCCTViewer::mousePressEvent(QMouseEvent* event) {
+    lastMousePos_ = event->pos();
+
+    if (event->button() == Qt::LeftButton) {
+        currentMode_ = None;
+        handleSelection();
+    } else if (event->button() == Qt::RightButton) {
+        currentMode_ = Rotate;
+        view_->StartRotation(lastMousePos_.x(), lastMousePos_.y());
+    } else if (event->button() == Qt::MiddleButton) {
+        currentMode_ = Pan;
+    }
+}
+
+void OCCTViewer::mouseDoubleClickEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton) {
+        fitAll();  // Double-click to reset view
+    }
+}
+
+void OCCTViewer::mouseMoveEvent(QMouseEvent* event) {
+    if (currentMode_ == None || view_.IsNull()) return;
+
+    QPoint pos = event->pos();
+    if (currentMode_ == Rotate) {
+        view_->Rotation(pos.x(), pos.y());
+    } else if (currentMode_ == Pan) {
+        view_->Pan(pos.x() - lastMousePos_.x(), lastMousePos_.y() - pos.y());
+        lastMousePos_ = pos;
+    }
+    view_->Redraw();
+}
+
+void OCCTViewer::mouseReleaseEvent(QMouseEvent*) {
+    currentMode_ = None;
+}
+
+void OCCTViewer::wheelEvent(QWheelEvent* event) {
+    if (view_.IsNull()) return;
+    view_->SetZoom(event->angleDelta().y() > 0 ? 1.1 : 0.9);
+    view_->Redraw();
+}
+
+void OCCTViewer::handleSelection() {
+    if (context_.IsNull() || view_.IsNull()) return;
+
+    context_->MoveTo(lastMousePos_.x(), lastMousePos_.y(), view_, Standard_False);
+    context_->Select(Standard_True);
+
+    if (context_->HasDetected()) {
+        Handle(AIS_InteractiveObject) obj = context_->DetectedInteractive();
+        for (auto& pair : faceObjects_) {
+            if (pair.second == obj) {
+                selectedFaceIndex_ = pair.first;
+                emit faceSelected(selectedFaceIndex_);
+                return;
+            }
+        }
+    }
+}

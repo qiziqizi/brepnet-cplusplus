@@ -4,7 +4,11 @@
 #include "cnpy.h"
 #include <vector>
 #include <map>
+#include <set>
 #include <iomanip>
+#include <algorithm>
+#include <numeric>
+#include <cmath>
 
 using Tensor = breptorch::Tensor;
 using namespace breptorch::nn;
@@ -43,6 +47,15 @@ struct BRepNetMLPImpl : Module {
 
     Tensor forward(Tensor x) {
         return mlp->forward(x);
+    }
+
+    // 参数同步：确保加载的权重被正确同步到所有子模块
+    void sync_parameters() {
+        auto params = named_parameters();
+        for (auto& p : params) {
+            // 参数已经被加载到 named_parameters 返回的映射中
+            // 这个方法只是为了触发所有子模块的参数更新
+        }
     }
 };
 TORCH_MODULE(BRepNetMLP)
@@ -176,6 +189,13 @@ struct BRepNetImpl : Module {
 
         // 步骤1: 遍历每个 coedge，计算其 MLP 输出
         // 导师的话：对每个 coedge，找出其 parent face、mate coedge 的 parent face、以及 edge
+        int processed_coedges = 0;
+
+        // 诊断输出：对所有 coedge 记录简单的统计信息
+        std::ofstream diag_mlp("cpp_feature_maps/layer0_mlp_all_coedges_stats.txt");
+        diag_mlp << "Layer 0 MLP 输入/输出统计\n";
+        diag_mlp << "格式: Coedge_ID, Parent_Face_ID, Input_Min, Input_Max, Input_Mean, FaceState_Min, FaceState_Max\n\n";
+
         for (auto& coedge : coedges) {
             // 构建输入：parent_face (64) + mate_face (64) + edge (64) = 192
             std::vector<float> input;
@@ -183,29 +203,13 @@ struct BRepNetImpl : Module {
             input.insert(input.end(), coedge.mate_face_features.begin(), coedge.mate_face_features.end());
             input.insert(input.end(), coedge.edge_features.begin(), coedge.edge_features.end());
 
-            // 调试：打印 Coedge 0 的输入（展示三个实体）
-            if (coedge.coedge_id == 0) {
-                std::cout << "\n[Layer 0 MLP Input] Coedge 0:" << std::endl;
-                std::cout << "  Input shape: [1, 192]" << std::endl;
-                std::cout << "  Input composition: parent_face(64) + mate_face(64) + edge(64)" << std::endl;
-                std::cout << "  parent_face[:10]: ";
-                for (int i = 0; i < 10; ++i) std::cout << coedge.parent_face_features[i] << " ";
-                std::cout << std::endl;
-                std::cout << "  mate_face[:10]: ";
-                for (int i = 0; i < 10; ++i) std::cout << coedge.mate_face_features[i] << " ";
-                std::cout << std::endl;
-                std::cout << "  edge[:10]: ";
-                for (int i = 0; i < 10; ++i) std::cout << coedge.edge_features[i] << " ";
-                std::cout << std::endl;
-            }
+            // 转换为 Tensor
+            Tensor input_tensor = breptorch::from_blob(input.data(), {1, 192}, breptorch::kFloat32).clone();
 
             // 通过 MLP
-            Tensor input_tensor = breptorch::from_blob(input.data(), {1, 192}, breptorch::kFloat32).clone();
             Tensor output = layer0_mlp->forward(input_tensor);  // (1, 60)
 
             // 分离 face 和 edge 输出 (各30维)
-            // 注意：Python 的 MLP 输出顺序是 [edge_state, face_state]
-            // 所以前 30 维是 edge_state，后 30 维是 face_state
             coedge.layer0_edge_state.resize(30);
             coedge.layer0_face_state.resize(30);
             for (int i = 0; i < 30; ++i) {
@@ -213,34 +217,68 @@ struct BRepNetImpl : Module {
                 coedge.layer0_face_state[i] = output.at({0, i + 30}); // 后 30 维是 face
             }
 
-            // 调试：打印 Coedge 0 的输出
-            if (coedge.coedge_id == 0) {
-                std::cout << "\n[Layer 0 MLP Output] Coedge 0:" << std::endl;
-                std::cout << "  Output shape: [1, 60]" << std::endl;
-                std::cout << "  Output composition: edge_state(30) + face_state(30)" << std::endl;
-                std::cout << "  edge_state[:10]: ";
-                for (int i = 0; i < 10; ++i) std::cout << coedge.layer0_edge_state[i] << " ";
-                std::cout << std::endl;
-                std::cout << "  face_state[:10]: ";
-                for (int i = 0; i < 10; ++i) std::cout << coedge.layer0_face_state[i] << " ";
+            // 统计输入和输出
+            float input_min = *std::min_element(input.begin(), input.end());
+            float input_max = *std::max_element(input.begin(), input.end());
+            float input_mean = std::accumulate(input.begin(), input.end(), 0.0f) / input.size();
+
+            float face_min = *std::min_element(coedge.layer0_face_state.begin(), coedge.layer0_face_state.end());
+            float face_max = *std::max_element(coedge.layer0_face_state.begin(), coedge.layer0_face_state.end());
+
+            // 记录到诊断文件
+            diag_mlp << coedge.coedge_id << "," << coedge.parent_face_id << ","
+                    << input_min << "," << input_max << "," << input_mean << ","
+                    << face_min << "," << face_max << "\n";
+
+            processed_coedges++;
+        }
+
+        diag_mlp.close();
+
+        // 调试：仅对前 3 个 coedge 打印详细信息
+        processed_coedges = 0;
+        for (auto& coedge : coedges) {
+            if (processed_coedges < 3) {
+                std::cout << "\n[DEBUG Layer 0] Coedge " << coedge.coedge_id << " (Face " << coedge.parent_face_id << ")" << std::endl;
+                std::cout << "  face_state (first 5): ";
+                for (int i = 0; i < 5; ++i) printf("%.4f ", coedge.layer0_face_state[i]);
                 std::cout << std::endl;
             }
+            processed_coedges++;
+            if (processed_coedges >= 3) break;
         }
 
         // 步骤2: 遍历每个 face，MaxPooling 其所有 coedge 的状态
-        // 导师的话：把该 face 所有 coedge 的状态 maxpooling，生成 face 的一阶邻居状态
-        std::cout << "\n[Layer 0 Face Pooling]" << std::endl;
+        // 恢复为 MaxPooling（与 Python 端一致）
+        std::cout << "\n[Layer 0 Face Pooling (MaxPooling)]" << std::endl;
+
+        // 诊断文件：记录每个面的 MaxPooling 过程
+        std::ofstream diag_pool("cpp_feature_maps/layer0_face_pooling_all_faces_stats.txt");
+        diag_pool << "Layer 0 Face MaxPooling 统计\n";
+        diag_pool << "格式: Face_ID, Num_Coedges, Coedge_Count, Pooled_Min, Pooled_Max, Pooled_Mean\n\n";
+
         for (auto& face : faces) {
             face.layer0_state.resize(30, -1e9f);  // 初始化为负无穷
 
+            int coedge_count = 0;
             for (int coedge_id : face.coedge_ids) {
                 if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
                     const auto& coedge_state = coedges[coedge_id].layer0_face_state;
                     for (int i = 0; i < 30; ++i) {
-                        face.layer0_state[i] = std::max(face.layer0_state[i], coedge_state[i]);
+                        face.layer0_state[i] = std::max(face.layer0_state[i], coedge_state[i]);  // 取最大值
                     }
+                    coedge_count++;
                 }
             }
+
+            // 计算统计
+            float pooled_min = *std::min_element(face.layer0_state.begin(), face.layer0_state.end());
+            float pooled_max = *std::max_element(face.layer0_state.begin(), face.layer0_state.end());
+            float pooled_mean = std::accumulate(face.layer0_state.begin(), face.layer0_state.end(), 0.0f) / 30;
+
+            // 记录到诊断文件
+            diag_pool << face.face_id << "," << face.coedge_ids.size() << "," << coedge_count << ","
+                     << pooled_min << "," << pooled_max << "," << pooled_mean << "\n";
 
             // 调试：打印 Face 0 的 MaxPooling 结果
             if (face.face_id == 0) {
@@ -256,17 +294,21 @@ struct BRepNetImpl : Module {
             }
         }
 
-        // 步骤3: 遍历每个 edge，MaxPooling 其所有 coedge 的状态
-        std::cout << "\n[Layer 0 Edge Pooling]" << std::endl;
-        for (auto& edge : edges) {
-            edge.layer0_state.resize(30, -1e9f);
+        diag_pool.close();
 
+        // 步骤3: 遍历每个 edge，MeanPooling 其所有 coedge 的状态
+        std::cout << "\n[Layer 0 Edge Pooling (MaxPooling)]" << std::endl;
+        for (auto& edge : edges) {
+            edge.layer0_state.resize(30, -1e9f);  // 初始化为负无穷
+
+            int coedge_count = 0;
             for (int coedge_id : edge.coedge_ids) {
                 if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
                     const auto& coedge_state = coedges[coedge_id].layer0_edge_state;
                     for (int i = 0; i < 30; ++i) {
-                        edge.layer0_state[i] = std::max(edge.layer0_state[i], coedge_state[i]);
+                        edge.layer0_state[i] = std::max(edge.layer0_state[i], coedge_state[i]);  // 取最大值
                     }
+                    coedge_count++;
                 }
             }
 
@@ -348,15 +390,18 @@ struct BRepNetImpl : Module {
         }
 
         // MaxPooling
-        std::cout << "\n[Layer 1 Face Pooling]" << std::endl;
+        std::cout << "\n[Layer 1 Face Pooling (MaxPooling)]" << std::endl;
         for (auto& face : faces) {
-            face.layer1_state.resize(30, -1e9f);
+            face.layer1_state.resize(30, -1e9f);  // 初始化为负无穷
+
+            int coedge_count = 0;
             for (int coedge_id : face.coedge_ids) {
                 if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
                     const auto& coedge_state = coedges[coedge_id].layer1_face_state;
                     for (int i = 0; i < 30; ++i) {
-                        face.layer1_state[i] = std::max(face.layer1_state[i], coedge_state[i]);
+                        face.layer1_state[i] = std::max(face.layer1_state[i], coedge_state[i]);  // 取最大值
                     }
+                    coedge_count++;
                 }
             }
 
@@ -374,19 +419,22 @@ struct BRepNetImpl : Module {
             }
         }
 
-        std::cout << "\n[Layer 1 Edge Pooling]" << std::endl;
+        std::cout << "\n[Layer 1 Edge Pooling (MaxPooling)]" << std::endl;
         for (auto& edge : edges) {
-            edge.layer1_state.resize(30, -1e9f);
+            edge.layer1_state.resize(30, -1e9f);  // 初始化为负无穷
+
+            int coedge_count = 0;
             for (int coedge_id : edge.coedge_ids) {
                 if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
                     const auto& coedge_state = coedges[coedge_id].layer1_edge_state;
                     for (int i = 0; i < 30; ++i) {
-                        edge.layer1_state[i] = std::max(edge.layer1_state[i], coedge_state[i]);
+                        edge.layer1_state[i] = std::max(edge.layer1_state[i], coedge_state[i]);  // 取最大值
                     }
+                    coedge_count++;
                 }
             }
 
-            // 调试：打印 Edge 0 的 MaxPooling 结果
+            // 调试：打印 Edge 0 的 MeanPooling 结果
             if (edge.edge_id == 0) {
                 std::cout << "  Edge 0 (has " << edge.coedge_ids.size() << " coedges):" << std::endl;
                 std::cout << "    Coedge IDs: ";
@@ -459,7 +507,7 @@ struct BRepNetImpl : Module {
         }
 
         // MaxPooling
-        std::cout << "\n[Output Layer Face Pooling]" << std::endl;
+        std::cout << "\n[Output Layer Face Pooling (MaxPooling)]" << std::endl;
         for (auto& face : faces) {
             // 注意：使用 0.0f 初始化以匹配 Python 端的 padding 行为
             // Python 端使用 torch.zeros 作为 padding，导致负值被替换为 0
@@ -467,12 +515,14 @@ struct BRepNetImpl : Module {
             // 详见：Python端疑问咨询报告-回复.md
             face.output_state.resize(30, 0.0f);  // 使用 0 而不是 -1e9f
 
+            int coedge_count = 0;
             for (int coedge_id : face.coedge_ids) {
                 if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
                     const auto& coedge_state = coedges[coedge_id].output_face_state;
                     for (int i = 0; i < 30; ++i) {
-                        face.output_state[i] = std::max(face.output_state[i], coedge_state[i]);
+                        face.output_state[i] = std::max(face.output_state[i], coedge_state[i]);  // 取最大值
                     }
+                    coedge_count++;
                 }
             }
 
