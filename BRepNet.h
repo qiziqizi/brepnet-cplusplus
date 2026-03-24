@@ -509,11 +509,21 @@ struct BRepNetImpl : Module {
         // MaxPooling
         std::cout << "\n[Output Layer Face Pooling (MaxPooling)]" << std::endl;
         for (auto& face : faces) {
-            // 注意：使用 0.0f 初始化以匹配 Python 端的 padding 行为
-            // Python 端使用 torch.zeros 作为 padding，导致负值被替换为 0
-            // 这是 Python 端的一个 bug，但为了与训练模型一致，C++ 端需要复现这个行为
-            // 详见：Python端疑问咨询报告-回复.md
-            face.output_state.resize(30, 0.0f);  // 使用 0 而不是 -1e9f
+            // 关键修复：Big faces vs Small faces 的初始化差异
+            // Python 端的行为：
+            // - Small faces (<=30 coedges): 使用 Cf 矩阵，有 padding (zeros)，所以 max(actual, 0) = 0 for negative
+            // - Big faces (>30 coedges): 使用 Csf 列表，无 padding，所以保留所有负值
+            // 详见：重排序分析报告.md 和 Python端疑问咨询报告-回复.md
+            const int MAX_COEDGES_PER_FACE = 30;
+            bool is_big_face = (int)face.coedge_ids.size() > MAX_COEDGES_PER_FACE;
+            float init_value = is_big_face ? -1e9f : 0.0f;  // Big face: -inf, Small face: 0
+            face.output_state.assign(30, init_value);  // 使用 assign 确保覆盖所有元素
+
+            // 调试输出 big face
+            if (is_big_face) {
+                std::cout << "[Debug] Face " << face.face_id << " is BIG FACE with "
+                          << face.coedge_ids.size() << " coedges, init_value=" << init_value << std::endl;
+            }
 
             int coedge_count = 0;
             for (int coedge_id : face.coedge_ids) {

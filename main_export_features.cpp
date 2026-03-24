@@ -908,7 +908,25 @@ void run_inference_with_export(const std::string& step_file,
     std::vector<std::vector<float>> output_layer_face_embedding_data;
     for (size_t inference_id = 0; inference_id < faces.size(); ++inference_id) {
         auto& face = faces[inference_id];
-        face.output_state.resize(30, 0.0f);  // 初始化为0，与Python一致
+
+        // === 关键修复：Big faces vs Small faces 的初始化差异 ===
+        // Python 端的行为：
+        // - Small faces (< 30 coedges): 使用 Cf 矩阵，有 padding (zeros)
+        // - Big faces (>= 30 coedges): 使用 Csf 列表，无 padding
+        // 初始化时：
+        // - Small faces: 用 0.0f（padding 行为）
+        // - Big faces: 用 -1e9f（保留所有负值）
+        const int max_coedges_per_face = 30;
+        bool is_small_face = (int)face.coedge_ids.size() < max_coedges_per_face;
+        float init_value = is_small_face ? 0.0f : -1e9f;
+        face.output_state.assign(30, init_value);
+
+        // 调试输出
+        if (!is_small_face) {
+            std::cout << "[Debug] Face " << face.face_id << " is BIG FACE with "
+                      << face.coedge_ids.size() << " coedges, init=" << init_value << std::endl;
+        }
+
         for (int coedge_id : face.coedge_ids) {
             if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
                 const auto& coedge_state = coedges[coedge_id].output_face_state;
@@ -918,21 +936,8 @@ void run_inference_with_export(const std::string& step_file,
             }
         }
 
-        // === 重要：只对小面应用ReLU ===
-        // 根据验证结果，暂时使用< 30以匹配现有的Python logits文件
-        // Python代码使用<= 30，但提供的logits文件似乎是用< 30生成的
-        // 可能原因：训练模型时使用了旧版本代码（< 30）
-        // 等待Python端重新生成logits后再调整
-        const int max_coedges_per_face = 30;
-        bool is_small_face = (int)face.coedge_ids.size() < max_coedges_per_face;
-
-        if (is_small_face) {
-            // 小面：应用ReLU
-            for (int i = 0; i < 30; ++i) {
-                face.output_state[i] = std::max(0.0f, face.output_state[i]);
-            }
-        }
-        // 大面：不应用ReLU，保留负值
+        // === 只对小面应用 padding 的 ReLU 效果（已经通过初始化 0.0f 实现）===
+        // 大面不需要额外处理，因为已经正确初始化为 -1e9f
 
         output_layer_face_embedding_data.push_back(face.output_state);
     }
