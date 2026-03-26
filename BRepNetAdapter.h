@@ -22,23 +22,44 @@ public:
         // 1. 提取所有面特征
         Tensor face_grids_cloned = pipeline.FaceGridsLocal.clone();
         Tensor all_face_grids = face_grids_cloned.view({num_coedges * 2, 9, 10, 10});
+
+        // DEBUG: Print Face 6 related grids for Coedges 27-30 (all 9 channels)
+        // Print point 0 (u=0,v=0, boundary), point 11 (u=1,v=1, interior), point 12 (u=1,v=2, interior)
+        for (int c = 27; c <= 30; ++c) {
+            int row = c * 2;  // parent face row
+            std::cerr << "\n>>> UVNet Input: Coedge " << c << " Parent Face (row " << row << "):" << std::endl;
+            std::cerr << "    Point[0] (u=0,v=0, boundary), Point[11] (u=1,v=1, interior), Point[12] (u=1,v=2, interior)" << std::endl;
+            float* data = all_face_grids.data_ptr<float>();
+            int N = 100;  // 10x10 grid
+            int test_points[3] = {0, 11, 12};  // boundary + 2 interior points
+            for (int ch = 0; ch < 9; ++ch) {
+                std::cerr << "  Channel " << ch << ": ";
+                for (int i = 0; i < 3; ++i) {
+                    int pt = test_points[i];
+                    int idx = (row * 9 + ch) * N + pt;
+                    std::cerr << data[idx] << " ";
+                }
+                std::cerr << std::endl;
+            }
+        }
+
         // 必须clone()！forward()会修改输入张量
         Tensor all_face_features = surf_enc->forward(all_face_grids.clone());  // (num_coedges * 2, 64)
         Tensor Xf = all_face_features.view({num_coedges, 128});
 
-        std::cout << "\n[UV-Net] Face features Xf: [" << num_coedges << ", 128]" << std::endl;
-        std::cout << "[Verify] Xf[0, :10]: ";
-        for (int j = 0; j < 10; ++j) printf("%.6f ", Xf.at({0, j}));
-        std::cout << std::endl;
+        // std::cout << "\n[UV-Net] Face features Xf: [" << num_coedges << ", 128]" << std::endl;
+        // std::cout << "[Verify] Xf[0, :10]: ";
+        // for (int j = 0; j < 10; ++j) printf("%.6f ", Xf.at({0, j}));
+        // std::cout << std::endl;
 
         // 2. 提取所有边特征
         // 必须clone()！forward()可能会修改输入张量
         Tensor all_edge_features = curve_enc->forward(pipeline.EdgeGridsLocal.clone());  // (num_edges, 64)
 
-        std::cout << "\n[UV-Net] Edge features Xe: [" << num_edges << ", 64]" << std::endl;
-        std::cout << "[Verify] Xe[0, :10]: ";
-        for (int j = 0; j < 10; ++j) printf("%.6f ", all_edge_features.at({0, j}));
-        std::cout << std::endl;
+        // std::cout << "\n[UV-Net] Edge features Xe: [" << num_edges << ", 64]" << std::endl;
+        // std::cout << "[Verify] Xe[0, :10]: ";
+        // for (int j = 0; j < 10; ++j) printf("%.6f ", all_edge_features.at({0, j}));
+        // std::cout << std::endl;
 
         // 3. 构建 CoedgeData（从 pipeline.coedges 获取拓扑信息）
         for (size_t c = 0; c < pipeline.coedges.size(); ++c) {
@@ -104,8 +125,8 @@ public:
             faces.push_back(face);
         }
 
-        std::cout << "\n[Topology] Extracted " << faces.size() << " faces" << std::endl;
-        std::cout << "[Debug] Face 0 has " << faces[0].coedge_ids.size() << " coedges" << std::endl;
+        // std::cout << "\n[Topology] Extracted " << faces.size() << " faces" << std::endl;
+        // std::cout << "[Debug] Face 0 has " << faces[0].coedge_ids.size() << " coedges" << std::endl;
 
         return faces;
     }
@@ -131,7 +152,7 @@ public:
             edges.push_back(edge);
         }
 
-        std::cout << "[Topology] Extracted " << edges.size() << " edges" << std::endl;
+        // std::cout << "[Topology] Extracted " << edges.size() << " edges" << std::endl;
 
         return edges;
     }
