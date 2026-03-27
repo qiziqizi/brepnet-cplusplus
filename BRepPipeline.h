@@ -564,11 +564,16 @@ private:
                 gp_Vec d1u, d1v;
                 surf.D1(u, v, p, d1u, d1v);
 
-                gp_Vec n = d1u ^ d1v;
-                if (n.Magnitude() > Precision::Confusion()) {
-                    n.Normalize();
-                }
-                else {
+                // 使用 GeomLProp_SLProps 计算法线（与Python一致）
+                // Python端使用：GeomLProp_SLProps(surf, uv[0], uv[1], 1, 1e-9)
+                Handle(Geom_Surface) geom_surf = BRep_Tool::Surface(face);
+                GeomLProp_SLProps props(geom_surf, u, v, 1, 1e-9);
+                
+                gp_Vec n;
+                if (props.IsNormalDefined()) {
+                    gp_Dir normal = props.Normal();
+                    n = gp_Vec(normal.XYZ());
+                } else {
                     n = gp_Vec(0, 0, 0);
                 }
 
@@ -607,6 +612,7 @@ private:
     }
 
     Tensor generate_global_coedge_grid(int coedge_idx) {
+        std::cerr << "[DEBUG ArcLength] generate_global_coedge_grid() called for coedge " << coedge_idx << std::endl;
         const CoedgeInfo& c_info = coedges[coedge_idx];
         
         // 1. ��ȡ����ʵ��
@@ -646,59 +652,97 @@ private:
         double last = curve_adaptor.LastParameter();
         double len = last - first;
 
-        // 4. �Ȼ������� (Uniform Abscissa) - ģ�� Python use_arclength_params=True
-        // �������̫�̻��˻������˵���������
-        bool use_uniform = true;
-        GCPnts_UniformAbscissa uniform_sampler;
-        try {
-            uniform_sampler.Initialize(curve_adaptor, num_u, -1); // -1 tol
-            if (!uniform_sampler.IsDone()) use_uniform = false;
-        } catch(...) { use_uniform = false; }
+        // 4. 弧长参数化（与Python一致）
+        // Python使用直线距离近似弧长，我们需要完全一致
+        std::cerr << "[DEBUG ArcLength] Coedge " << coedge_idx << ": Using NEW arc-length parameterization (100 samples, line distance)" << std::endl;
+        
+        // 步骤1：在边上采样100个点
+        std::vector<gp_Pnt> sample_points;
+        std::vector<double> sample_params;
+        for (int j = 0; j < 100; ++j) {
+            double u = first + (len * j) / 99.0;
+            gp_Pnt p = curve_adaptor.Value(u);
+            sample_points.push_back(p);
+            sample_params.push_back(u);
+        }
 
-        // 5. ѭ������
+        // 步骤2：计算直线距离近似弧长
+        std::vector<double> lengths;
+        double total_length = 0;
+        for (int j = 1; j < 100; ++j) {
+            double length = sample_points[j].Distance(sample_points[j-1]);
+            lengths.push_back(length);
+            total_length += length;
+        }
+
+        // 步骤3：计算累积弧长比例
+        std::vector<double> arc_length_fraction;
+        arc_length_fraction.push_back(0.0);
+        double cumulative_length = 0;
+        for (int j = 0; j < lengths.size(); ++j) {
+            cumulative_length += lengths[j];
+            arc_length_fraction.push_back(cumulative_length / total_length);
+        }
+
+        // 步骤4：对于每个目标采样点，使用线性插值计算参数
+        std::vector<double> target_params;
+        for (int i = 0; i < num_u; ++i) {
+            double desired_arc_length_fraction = i / (double)(num_u - 1);
+            // 找到对应的参数区间
+            int arc_length_index = 0;
+            while (arc_length_fraction[arc_length_index] < desired_arc_length_fraction) {
+                arc_length_index++;
+                if (arc_length_index >= (int)arc_length_fraction.size() - 1) break;
+            }
+            // 使用线性插值计算参数
+            double frac_low, frac_high, u_low, u_high;
+            if (arc_length_index == 0) {
+                // 特殊处理：第一个点
+                u_low = sample_params[0];
+                frac_low = arc_length_fraction[0];
+            } else {
+                u_low = sample_params[arc_length_index - 1];
+                frac_low = arc_length_fraction[arc_length_index - 1];
+            }
+            u_high = sample_params[arc_length_index];
+            frac_high = arc_length_fraction[arc_length_index];
+            double d_frac = frac_high - frac_low;
+            double param;
+            if (d_frac <= 0.0) {
+                param = u_low;
+            } else {
+                double t = (desired_arc_length_fraction - frac_low) / d_frac;
+                param = u_low + t * (u_high - u_low);
+            }
+            target_params.push_back(param);
+        }
+
+        // 5. 循环采样
         float* data = grid.data_ptr<float>();
         int64_t stride_c = num_u;
 
-
         for (int i = 0; i < num_u; ++i) {
-
-            double param;
-            if (use_uniform && uniform_sampler.NbPoints() >= num_u) {
-                // GCPnts ���ɵ��ǵ�����������1��ʼ
-                // ������Ҫ����ӳ��һ�£����߼򵥾��ȷֲ�����
-                // Ϊ�˼����Ƚ������������ü򵥵Ĳ����ռ���Ȳ�����
-                // ����ϸ�׷�󾫶ȣ������� GCPnts_UniformAbscissa �� Parameter(i+1)
-                // ��Ҫע�� GCPnts �ĵ������ܲ���ȫ���� num_u
-                 param = uniform_sampler.Parameter(i + 1);
-            } else {
-                // ���ˣ������ռ���Ȳ���
-                param = first + (len * i) / (double)(num_u - 1);
-            }
+            double param = target_params[i];
 
             gp_Pnt p;
             gp_Vec tangent;
             curve_adaptor.D1(param, p, tangent);
             
-            // ��һ��������
+            // 归一化切线向量
             if (tangent.Magnitude() > 1e-7) tangent.Normalize();
 
-            // �������߷��� (Orientation)
-            // ��� Coedge �� Reversed��˵�������� Edge �ķ�������
-            // ���ġ���������Ӧ��ȡ��
+            // 处理切线方向 (Orientation)
+            // 如果 Coedge 是 Reversed，说明沿着 Edge 的反方向
+            // 所以切线应该取反
             if (!c_info.orientation) { // orientation == false means REVERSED
                 tangent.Reverse();
             }
-            // ע�⣺Python����������� Reversed�������б���Ҳ�Ƿ�����
-            // ͨ�� Grid �ǰ�����˳���ģ��� Tangent ����� Coedge ���������
-            // ��� Python ������ coedge_data �ƺ�������������⡣
-            // �������Ǽ��� Grid ���ǰ����� U �����棬�� Tangent ���� Coedge��
 
-            // ���㷨��
+            // 计算法线
             gp_Vec n_left = BRepUtils::GetNormalAtPoint(face_left, p);
             gp_Vec n_right = (has_mate) ? BRepUtils::GetNormalAtPoint(face_right, p) : gp_Vec(0,0,0);
-            // ��������Edge �ı�ԵĨ��
 
-            // ���� Tensor
+            // 写入 Tensor
             // Points (0-2)
             data[0 * stride_c + i] = (float)p.X();
             data[1 * stride_c + i] = (float)p.Y();
@@ -719,13 +763,13 @@ private:
             data[10 * stride_c + i] = (float)n_right.Y();
             data[11 * stride_c + i] = (float)n_right.Z();
 
-            // �޸ģ����������12ͨ������ӦPython��u_params��
+            // 第12通道（u参数）对应Python的u_params
             data[12 * stride_c + i] = (float)param; 
         }
         
-        // ��� Coedge �Ƿ���ģ�Python �� EdgeDataExtractor ���ܻ�ѵ�����Ҳ��ת
-        // (��: grid[][0] ���յ㣬grid[][9] �����)
-        // Ϊ�˺� Python ����һ�£���� orientation �� false��������Ҫ flip dim 1
+        // 检查 Coedge 是否是模：Python 的 EdgeDataExtractor 可能会把边也反转
+        // (例: grid[][0] 是终点，grid[][9] 是起点)
+        // 为了和 Python 一致，如果 orientation 是 false（REVERSED），则需要 flip dim 1
         if (!c_info.orientation) {
             grid = breptorch::flip(grid, {1});
         }
@@ -1068,7 +1112,9 @@ private:
         c_list.reserve(num_c);
 
         // �����ɵ�CoedgeGridsGlobal����û��Ҫ����
+        std::cerr << "[DEBUG] generate_coedge_local_grids() called, processing " << num_c << " coedges" << std::endl;
         for (int i = 0; i < num_c; ++i) {
+            std::cerr << "[DEBUG] Processing coedge " << i << "..." << std::endl;
             Tensor g_global = generate_global_coedge_grid(i);
             Tensor g_local = transform_grid_to_local(g_global, lcs_invs[i], false);
             c_list.push_back(g_local);
@@ -1154,6 +1200,7 @@ private:
         if (num_c == 0) return;
 
         std::cout << "Generating local coordinate system features (LCS Transformation)..." << std::endl;
+        std::cerr << "[DEBUG] generate_local_grids() called for file with " << coedges.size() << " coedges" << std::endl;
 
         // 2. ����LCS�任����
         std::vector<Tensor> lcs_invs;
