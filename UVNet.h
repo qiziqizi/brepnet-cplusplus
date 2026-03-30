@@ -37,6 +37,9 @@ private:
     std::map<std::string, breptorch::Tensor> buffers; // For BatchNorm running_mean/var
 
 public:
+    // Default constructor
+    UVNetSurfaceEncoderImpl() = default;
+    
     // Load weights from npz file
     void load_weights(const std::map<std::string, breptorch::Tensor>& weight_dict) {
         // std::cout << std::fixed << std::setprecision(10);  // 设置输出精度
@@ -286,6 +289,9 @@ private:
     std::map<std::string, breptorch::Tensor> buffers;
 
 public:
+    // Default constructor
+    UVNetCurveEncoderImpl() = default;
+    
     void load_weights(const std::map<std::string, breptorch::Tensor>& weight_dict) {
         // std::cout << std::fixed << std::setprecision(10);  // 设置输出精度
         // std::cout << "[UVNetCurveEncoder] Loading " << weight_dict.size() << " weights..." << std::endl;

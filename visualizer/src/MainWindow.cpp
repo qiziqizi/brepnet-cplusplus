@@ -22,18 +22,36 @@ MainWindow::MainWindow(QWidget* parent)
     setupUI();
     setupConnections();
 
-    // 自动加载模型
-    QString weightsPath = "inference_data/state_dict.npz";
-    QFileInfo weightsInfo(weightsPath);
-    if (weightsInfo.exists()) {
+    // 自动加载模型 - 尝试多个可能路径
+    QString weightsPath;
+    QStringList possiblePaths = {
+        "test_data/state_dict.npz",
+        "inference_data/state_dict.npz",
+        "../test_data/state_dict.npz",
+        "../inference_data/state_dict.npz"
+    };
+    
+    for (const QString& path : possiblePaths) {
+        QFileInfo info(path);
+        if (info.exists()) {
+            weightsPath = path;
+            break;
+        }
+    }
+    
+    if (!weightsPath.isEmpty()) {
+        std::cout << "[MainWindow] 尝试加载模型: " << weightsPath.toStdString() << std::endl;
         if (classifier_->loadModel(weightsPath.toStdString())) {
             modelLoaded_ = true;
             lblStatus_->setText("状态: 模型已加载");
+            std::cout << "[MainWindow] 模型加载成功" << std::endl;
         } else {
             lblStatus_->setText("状态: 模型加载失败");
+            std::cerr << "[MainWindow] 模型加载失败" << std::endl;
         }
     } else {
         lblStatus_->setText("状态: 未找到模型权重文件");
+        std::cerr << "[MainWindow] 未找到模型权重文件" << std::endl;
     }
 }
 

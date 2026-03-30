@@ -1149,6 +1149,16 @@ int main() {
             std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
             *params[key] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
 
+            // 调试：打印所有 classification_layer 的加载
+            if (key.find("classification_layer") != std::string::npos) {
+                std::cout << "  [LOADED] " << original_key << " (shape: ";
+                for (size_t i = 0; i < shape.size(); i++) {
+                    std::cout << shape[i];
+                    if (i < shape.size() - 1) std::cout << ", ";
+                }
+                std::cout << ")" << std::endl;
+            }
+
             // Debug: print when loading layer 1 linear_1 bias
             if (key.find("layer_1.mlp") != std::string::npos && key.find("linear_1.bias") != std::string::npos) {
                 std::cout << "  [LOADED] " << original_key << " -> " << key << " (shape: ";
@@ -1160,6 +1170,9 @@ int main() {
             }
         } else {
             // Debug: print when NOT found
+            if (original_key.find("classification_layer") != std::string::npos) {
+                std::cout << "  [NOT FOUND] " << original_key << " -> " << key << std::endl;
+            }
             if (original_key.find("layer_1") != std::string::npos && original_key.find("linear_1.bias") != std::string::npos) {
                 std::cout << "  [NOT FOUND] " << original_key << " -> " << key << std::endl;
             }

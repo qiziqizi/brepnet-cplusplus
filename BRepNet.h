@@ -120,8 +120,8 @@ struct EdgeData {
 // 5. BRepNet 主网络
 struct BRepNetImpl : Module {
     bool use_uvnet = false;
-    UVNetSurfaceEncoder surf_enc{ nullptr };
-    UVNetCurveEncoder curve_enc{ nullptr };
+    UVNetSurfaceEncoder surf_enc;
+    UVNetCurveEncoder curve_enc;
 
     // Layer 0 MLP (一阶邻居，MLP-G-surface/edge)
     BRepNetMLP layer0_mlp{ nullptr };
@@ -139,8 +139,15 @@ struct BRepNetImpl : Module {
 
     BRepNetImpl(int n_classes) : num_classes(n_classes) {
         // UV-Net encoders (output 64-dim features)
-        surf_enc = register_module("surface_encoder", std::make_shared<UVNetSurfaceEncoderImpl>());
-        curve_enc = register_module("curve_encoder", std::make_shared<UVNetCurveEncoderImpl>());
+        // 直接创建 shared_ptr 并使用基类赋值运算符
+        std::shared_ptr<UVNetSurfaceEncoderImpl> surf_enc_ptr(new UVNetSurfaceEncoderImpl());
+        std::shared_ptr<UVNetCurveEncoderImpl> curve_enc_ptr(new UVNetCurveEncoderImpl());
+        
+        // 使用 std::shared_ptr 的基类赋值，避免触发 TORCH_MODULE 的模板构造函数
+        static_cast<std::shared_ptr<UVNetSurfaceEncoderImpl>&>(surf_enc) = surf_enc_ptr;
+        static_cast<std::shared_ptr<UVNetCurveEncoderImpl>&>(curve_enc) = curve_enc_ptr;
+        modules_["surface_encoder"] = surf_enc_ptr;
+        modules_["curve_encoder"] = curve_enc_ptr;
 
         // Layer 0: input 192 -> output 60
         // Input: parent_face (64) + mate_face (64) + edge (64) = 192
@@ -585,7 +592,27 @@ struct BRepNetImpl : Module {
                                                       {(int64_t)faces.size(), 30},
                                                       breptorch::kFloat32).clone();
 
+        // 调试：检查 Face 2 和 Face 26 的 embedding
+        if (faces.size() > 26) {
+            std::cout << "\n[DEBUG Classification] Face 2 embedding (first 10): ";
+            for (int i = 0; i < 10; ++i) {
+                std::cout << face_embeddings.at({2, (int64_t)i}) << " ";
+            }
+            std::cout << std::endl;
+
+            std::cout << "[DEBUG Classification] Face 26 embedding (first 10): ";
+            for (int i = 0; i < 10; ++i) {
+                std::cout << face_embeddings.at({26, (int64_t)i}) << " ";
+            }
+            std::cout << std::endl;
+        }
+
         Tensor logits = classification_layer->forward(face_embeddings);
+
+        // 调试：检查 Classification Layer 的权重
+        std::cout << "\n[DEBUG Classification] Weight info: shape [" << classification_layer->weight.size(0)
+                  << ", " << classification_layer->weight.size(1) << "]" << std::endl;
+        std::cout << "[DEBUG Classification] Bias info: shape [" << classification_layer->bias.size(0) << "]" << std::endl;
 
         std::cout << "[Classification] Output logits shape: [" << logits.size(0) << ", " << logits.size(1) << "]" << std::endl;
 

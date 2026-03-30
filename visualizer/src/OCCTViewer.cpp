@@ -160,6 +160,13 @@ void OCCTViewer::fitAll() {
 
 void OCCTViewer::mousePressEvent(QMouseEvent* event) {
     lastMousePos_ = event->pos();
+    
+    // 检查是否左右键同时按下（平移模式）
+    Qt::MouseButtons buttons = event->buttons();
+    if ((buttons & Qt::LeftButton) && (buttons & Qt::RightButton)) {
+        currentMode_ = Pan;
+        return;
+    }
 
     if (event->button() == Qt::LeftButton) {
         currentMode_ = None;
@@ -191,8 +198,23 @@ void OCCTViewer::mouseMoveEvent(QMouseEvent* event) {
     view_->Redraw();
 }
 
-void OCCTViewer::mouseReleaseEvent(QMouseEvent*) {
-    currentMode_ = None;
+void OCCTViewer::mouseReleaseEvent(QMouseEvent* event) {
+    // 检查是否还保持有其他按键
+    Qt::MouseButtons buttons = event->buttons();
+    if ((buttons & Qt::LeftButton) && (buttons & Qt::RightButton)) {
+        // 仍然左右键同时按下，保持平移模式
+        return;
+    } else if (buttons & Qt::RightButton) {
+        // 只按住右键，切换到旋转模式
+        currentMode_ = Rotate;
+        view_->StartRotation(lastMousePos_.x(), lastMousePos_.y());
+    } else if (buttons & Qt::LeftButton) {
+        // 只按住左键，切换到选择模式
+        currentMode_ = None;
+    } else {
+        // 没有按键按下
+        currentMode_ = None;
+    }
 }
 
 void OCCTViewer::wheelEvent(QWheelEvent* event) {

@@ -13,7 +13,7 @@
 #include "cnpy.h"
 #include "BRepUtils.h"
 
-// OpenCascade ͷ�ļ�
+// OpenCascade 头文件
 #include <STEPControl_Reader.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Shape.hxx>
@@ -41,8 +41,10 @@
 #include <BRepBuilderAPI_Transform.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
+#include <gp_Pnt2d.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <BRepLProp_SLProps.hxx>
+#include <Geom2d_Curve.hxx>
 
 // extract_face_point_grids ���
 #include <BRepTools.hxx>
@@ -717,7 +719,18 @@ private:
             target_params.push_back(param);
         }
 
-        // 5. 循环采样
+        // 5. 获取pcurve（用于获取UV参数，与Python一致）
+        Handle(Geom2d_Curve) left_pcurve;
+        double left_u0, left_u1;
+        left_pcurve = BRep_Tool::CurveOnSurface(edge, face_left, left_u0, left_u1);
+        
+        Handle(Geom2d_Curve) right_pcurve;
+        double right_u0, right_u1;
+        if (has_mate) {
+            right_pcurve = BRep_Tool::CurveOnSurface(edge, face_right, right_u0, right_u1);
+        }
+
+        // 6. 循环采样
         float* data = grid.data_ptr<float>();
         int64_t stride_c = num_u;
 
@@ -738,9 +751,55 @@ private:
                 tangent.Reverse();
             }
 
-            // 计算法线
-            gp_Vec n_left = BRepUtils::GetNormalAtPoint(face_left, p);
-            gp_Vec n_right = (has_mate) ? BRepUtils::GetNormalAtPoint(face_right, p) : gp_Vec(0,0,0);
+            // 【关键修复】使用pcurve获取UV参数，与Python一致
+            // Python: uv = pcurve.D0(u); normal = face.normal(uv)
+            // C++应该使用相同的方法
+            
+            // 计算左面法线
+            gp_Vec n_left;
+            if (!left_pcurve.IsNull()) {
+                // 使用pcurve获取UV参数
+                gp_Pnt2d uv_left_2d;
+                left_pcurve->D0(param, uv_left_2d);
+                double u_left = uv_left_2d.X();
+                double v_left = uv_left_2d.Y();
+                
+                // 使用UV参数计算法线（与Python的face.normal(uv)一致）
+                BRepLProp_SLProps props_left(BRepAdaptor_Surface(face_left), u_left, v_left, 1, 1e-6);
+                if (props_left.IsNormalDefined()) {
+                    n_left = props_left.Normal();
+                    // 应用face的orientation
+                    if (face_left.Orientation() == TopAbs_REVERSED) n_left.Reverse();
+                    if (n_left.Magnitude() > 1e-7) n_left.Normalize();
+                }
+            }
+            // 如果pcurve获取失败，回退到投影方法
+            if (n_left.Magnitude() < 1e-7) {
+                n_left = BRepUtils::GetNormalAtPoint(face_left, p);
+            }
+
+            // 计算右面法线
+            gp_Vec n_right;
+            if (has_mate && !right_pcurve.IsNull()) {
+                // 使用pcurve获取UV参数
+                gp_Pnt2d uv_right_2d;
+                right_pcurve->D0(param, uv_right_2d);
+                double u_right = uv_right_2d.X();
+                double v_right = uv_right_2d.Y();
+                
+                // 使用UV参数计算法线
+                BRepLProp_SLProps props_right(BRepAdaptor_Surface(face_right), u_right, v_right, 1, 1e-6);
+                if (props_right.IsNormalDefined()) {
+                    n_right = props_right.Normal();
+                    // 应用face的orientation
+                    if (face_right.Orientation() == TopAbs_REVERSED) n_right.Reverse();
+                    if (n_right.Magnitude() > 1e-7) n_right.Normalize();
+                }
+            }
+            // 如果pcurve获取失败，回退到投影方法
+            if (has_mate && n_right.Magnitude() < 1e-7) {
+                n_right = BRepUtils::GetNormalAtPoint(face_right, p);
+            }
 
             // 写入 Tensor
             // Points (0-2)
@@ -1156,36 +1215,94 @@ private:
         FaceGridsLocal = breptorch::stack(f_list);
     }
 
-    // ����Edge�ֲ�����
+    // 生成Edge局部坐标系网格（修正版：使用Python的"左coedge"选择逻辑）
     void generate_edge_local_grids() {
         int num_e = unique_edges.Extent();
-        if (num_e == 0 || !CoedgeGridsLocal.defined()) return;
+        std::cout << "[DEBUG EdgeGrids] generate_edge_local_grids() called, num_e=" << num_e 
+                  << ", CoedgeGridsLocal.defined()=" << CoedgeGridsLocal.defined() << std::endl;
+        if (num_e == 0 || !CoedgeGridsLocal.defined()) {
+            std::cout << "[DEBUG EdgeGrids] Early return due to num_e==0 or CoedgeGridsLocal not defined" << std::endl;
+            return;
+        }
 
-        // ����Edge��Coedgeӳ���
-        std::vector<int> edge_representatives(num_e, -1);
+        std::cout << "[DEBUG EdgeGrids] generate_edge_local_grids() starting..." << std::endl;
+        std::cout << "[DEBUG EdgeGrids] num_edges = " << num_e << std::endl;
+
+        // 步骤1：按Edge索引收集Coedges（与Python的Ce矩阵逻辑一致）
+        std::vector<std::vector<int>> coedges_of_edges(num_e);
         for (const auto& c : coedges) {
             int eid = c.edge_idx;
             if (eid >= 0 && eid < num_e) {
-                if (edge_representatives[eid] == -1 || c.orientation == true) {
-                    edge_representatives[eid] = c.id;
-                }
+                coedges_of_edges[eid].push_back(c.id);
             }
         }
 
-        // ����Edge����
+        // 步骤2：处理特殊情况（球面等只有1个coedge的edge）
+        for (int i = 0; i < num_e; ++i) {
+            if (coedges_of_edges[i].size() == 1) {
+                // 复制同一个coedge两次
+                coedges_of_edges[i].push_back(coedges_of_edges[i][0]);
+            }
+        }
+
+        // 步骤3：应用Python逻辑选择"左coedge"
+        // Python逻辑：检查second_coedge的orientation
+        // if reverse_flags[second_coedge]==1 (REVERSED) → select first_coedge
+        // else → select second_coedge
         std::vector<Tensor> e_list;
         e_list.reserve(num_e);
-        for (int i = 0; i < num_e; ++i) {
-            int cid = edge_representatives[i];
-            if (cid != -1) {
-                e_list.push_back(get_slice(CoedgeGridsLocal, cid));
+
+        // 调试：记录前几条edge的选择
+        static bool first_print = true;
+
+        for (int edge_idx = 0; edge_idx < num_e; ++edge_idx) {
+            int selected_coedge = -1;
+
+            const auto& edge_coedges = coedges_of_edges[edge_idx];
+
+            if (edge_coedges.size() >= 2) {
+                int first_coedge_id = edge_coedges[0];
+                int second_coedge_id = edge_coedges[1];
+
+                // 【关键修复】按Python逻辑选择coedge
+                // C++中：orientation==false ↔ REVERSED ↔ reverse_flags==1
+                // Python: if reverse_flags[second]==1 → select first
+                // C++等价: if !coedges[second].orientation → select first
+                if (!coedges[second_coedge_id].orientation) {  // second coedge是REVERSED
+                    selected_coedge = first_coedge_id;
+                } else {  // second coedge是FORWARD
+                    selected_coedge = second_coedge_id;
+                }
+
+                // 调试输出（仅前10条edge）
+                if (first_print && edge_idx < 10) {
+                    fprintf(stdout, "[DEBUG EdgeGrids] Edge %d: "
+                            "first=%d(orient=%s), second=%d(orient=%s), selected=%d\n",
+                            edge_idx,
+                            first_coedge_id, coedges[first_coedge_id].orientation ? "FORWARD" : "REVERSED",
+                            second_coedge_id, coedges[second_coedge_id].orientation ? "FORWARD" : "REVERSED",
+                            selected_coedge);
+                    fflush(stdout);
+                }
+            } else if (edge_coedges.size() == 1) {
+                // 球面情况（只有1个coedge，已复制）
+                selected_coedge = edge_coedges[0];
             }
-            else {
+
+            if (selected_coedge != -1 && selected_coedge < CoedgeGridsLocal.size(0)) {
+                e_list.push_back(get_slice(CoedgeGridsLocal, selected_coedge));
+            } else {
+                // 边界情况：返回零grid
                 e_list.push_back(breptorch::zeros({ 13, 10 }, CoedgeGridsLocal.options()));
             }
         }
 
+        first_print = false;
+
         EdgeGridsLocal = breptorch::stack(e_list);
+
+        std::cout << "[DEBUG EdgeGrids] Generated EdgeGridsLocal with shape "
+                  << EdgeGridsLocal.sizes() << std::endl;
     }
 
     // ���������������оֲ�����

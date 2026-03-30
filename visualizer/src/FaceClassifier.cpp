@@ -18,9 +18,23 @@ bool FaceClassifier::loadModel(const std::string& weightsPath) {
 
         // 创建模型（27个类别）
         model_ = std::make_shared<BRepNetImpl>(27);
+        
+        // 检查 surf_enc 和 curve_enc 是否有效
+        std::cout << "[FaceClassifier] surf_enc 有效: " << (model_->surf_enc ? "yes" : "NO!") << std::endl;
+        std::cout << "[FaceClassifier] curve_enc 有效: " << (model_->curve_enc ? "yes" : "NO!") << std::endl;
 
         // 加载NPZ权重文件
         cnpy::npz_t npz = cnpy::npz_load(weightsPath);
+        
+        // 打印 npz 文件中的键
+        std::cout << "[FaceClassifier] NPZ 文件中的键数量: " << npz.size() << std::endl;
+        int surf_count = 0, curve_count = 0;
+        for (auto& item : npz) {
+            if (item.first.find("surface_encoder") != std::string::npos) surf_count++;
+            if (item.first.find("curve_encoder") != std::string::npos) curve_count++;
+        }
+        std::cout << "[FaceClassifier] surface_encoder 权重数量: " << surf_count << std::endl;
+        std::cout << "[FaceClassifier] curve_encoder 权重数量: " << curve_count << std::endl;
 
         // 加载 UV-Net 权重（Surface Encoder）
         std::map<std::string, breptorch::Tensor> surf_weights;
@@ -32,6 +46,7 @@ bool FaceClassifier::loadModel(const std::string& weightsPath) {
                     arr.data<float>(), shape, breptorch::kFloat32).clone();
             }
         }
+        std::cout << "[FaceClassifier] 加载 surface_encoder 权重: " << surf_weights.size() << std::endl;
         model_->surf_enc->load_weights(surf_weights);
 
         // 加载 UV-Net 权重（Curve Encoder）
@@ -44,10 +59,14 @@ bool FaceClassifier::loadModel(const std::string& weightsPath) {
                     arr.data<float>(), shape, breptorch::kFloat32).clone();
             }
         }
+        std::cout << "[FaceClassifier] 加载 curve_encoder 权重: " << curve_weights.size() << std::endl;
         model_->curve_enc->load_weights(curve_weights);
 
         // 加载 BRepNet 权重
         auto params = model_->named_parameters();
+        std::cout << "[FaceClassifier] 模型参数数量: " << params.size() << std::endl;
+        
+        int loaded_count = 0;
         for (auto& item : npz) {
             std::string key = item.first;
 
@@ -63,8 +82,10 @@ bool FaceClassifier::loadModel(const std::string& weightsPath) {
                 std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
                 *params[key] = breptorch::from_blob(
                     arr.data<float>(), shape, breptorch::kFloat32).clone();
+                loaded_count++;
             }
         }
+        std::cout << "[FaceClassifier] 加载 BRepNet 权重: " << loaded_count << std::endl;
 
         modelLoaded_ = true;
         std::cout << "[FaceClassifier] 模型加载成功" << std::endl;

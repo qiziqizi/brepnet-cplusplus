@@ -1,0 +1,180 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{41635C4F-A64C-4014-A94D-10F58F1F9DD3}</ProjectGuid>
+    <Keyword>QtVS_v304</Keyword>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">10.0</WindowsTargetPlatformVersion>
+    <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt_defaults.props')">
+    <Import Project="$(QtMsBuild)\qt_defaults.props" />
+  </ImportGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
+    <QtInstall>anaconda3_Library</QtInstall>
+    <QtModules>core;gui;widgets</QtModules>
+    <QtBuildConfig>debug</QtBuildConfig>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
+    <QtInstall>anaconda3_Library</QtInstall>
+    <QtModules>core;gui;widgets</QtModules>
+    <QtBuildConfig>release</QtBuildConfig>
+  </PropertyGroup>
+  <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
+    <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  </Target>
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>D:\brepnet-cplusplus;D:\brepnet-cplusplus\visualizer\src;D:\anaconda3\envs\brepnet\Library\include\opencascade;D:\cnpy;$(QTDIR)\include;$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_WINDOWS;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>D:\anaconda3\envs\brepnet\Library\lib;D:\cnpy;$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Qt5Core_conda.lib;Qt5Gui_conda.lib;Qt5Widgets_conda.lib;TKernel.lib;TKMath.lib;TKBRep.lib;TKG2d.lib;TKG3d.lib;TKGeomBase.lib;TKGeomAlgo.lib;TKTopAlgo.lib;TKPrim.lib;TKBO.lib;TKBool.lib;TKShHealing.lib;TKSTEP.lib;TKSTEPBase.lib;TKSTEPAttr.lib;TKSTEP209.lib;TKXSBase.lib;TKService.lib;TKV3d.lib;TKOpenGl.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>D:\brepnet-cplusplus;D:\brepnet-cplusplus\visualizer\src;D:\anaconda3\envs\brepnet\Library\include\opencascade;D:\cnpy;$(QTDIR)\include;$(QTDIR)\include\QtCore;$(QTDIR)\include\QtGui;$(QTDIR)\include\QtWidgets;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_WINDOWS;_UNICODE;UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>D:\anaconda3\envs\brepnet\Library\lib;D:\cnpy;$(QTDIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Qt5Core_conda.lib;Qt5Gui_conda.lib;Qt5Widgets_conda.lib;TKernel.lib;TKMath.lib;TKBRep.lib;TKG2d.lib;TKG3d.lib;TKGeomBase.lib;TKGeomAlgo.lib;TKTopAlgo.lib;TKPrim.lib;TKBO.lib;TKBool.lib;TKShHealing.lib;TKSTEP.lib;TKSTEPBase.lib;TKSTEPAttr.lib;TKSTEP209.lib;TKXSBase.lib;TKService.lib;TKV3d.lib;TKOpenGl.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
+    <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+echo [1/3] 复制 OpenCASCADE 和依赖 DLL...
+xcopy /Y /Q "D:\anaconda3\envs\brepnet\Library\bin\*.dll" "$(OutDir)" 2&gt;nul
+echo [2/3] 复制 Qt DLL...
+xcopy /Y /Q "D:\anaconda3\Library\bin\Qt5Core*.dll" "$(OutDir)" 2&gt;nul
+xcopy /Y /Q "D:\anaconda3\Library\bin\Qt5Gui*.dll" "$(OutDir)" 2&gt;nul
+xcopy /Y /Q "D:\anaconda3\Library\bin\Qt5Widgets*.dll" "$(OutDir)" 2&gt;nul
+xcopy /Y /Q "D:\anaconda3\Library\bin\libEGL*.dll" "$(OutDir)" 2&gt;nul
+xcopy /Y /Q "D:\anaconda3\Library\bin\libGLESv2*.dll" "$(OutDir)" 2&gt;nul
+echo [3/3] 复制 Qt 插件...
+if not exist "$(OutDir)platforms" mkdir "$(OutDir)platforms"
+xcopy /Y /Q "D:\anaconda3\Library\plugins\platforms\*.dll" "$(OutDir)platforms\" 2&gt;nul
+if not exist "$(OutDir)styles" mkdir "$(OutDir)styles"
+xcopy /Y /Q "D:\anaconda3\Library\plugins\styles\*.dll" "$(OutDir)styles\" 2&gt;nul
+echo DLL 复制完成！
+      </Command>
+      <Message>复制运行时 DLL 文件...</Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
+    <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+echo [1/3] 复制 OpenCASCADE 和依赖 DLL...
+xcopy /Y /Q "D:\anaconda3\envs\brepnet\Library\bin\*.dll" "$(OutDir)" 2&gt;nul
+echo [2/3] 复制 Qt DLL...
+xcopy /Y /Q "D:\anaconda3\Library\bin\Qt5Core*.dll" "$(OutDir)" 2&gt;nul
+xcopy /Y /Q "D:\anaconda3\Library\bin\Qt5Gui*.dll" "$(OutDir)" 2&gt;nul
+xcopy /Y /Q "D:\anaconda3\Library\bin\Qt5Widgets*.dll" "$(OutDir)" 2&gt;nul
+xcopy /Y /Q "D:\anaconda3\Library\bin\libEGL*.dll" "$(OutDir)" 2&gt;nul
+xcopy /Y /Q "D:\anaconda3\Library\bin\libGLESv2*.dll" "$(OutDir)" 2&gt;nul
+echo [3/3] 复制 Qt 插件...
+if not exist "$(OutDir)platforms" mkdir "$(OutDir)platforms"
+xcopy /Y /Q "D:\anaconda3\Library\plugins\platforms\*.dll" "$(OutDir)platforms\" 2&gt;nul
+if not exist "$(OutDir)styles" mkdir "$(OutDir)styles"
+xcopy /Y /Q "D:\anaconda3\Library\plugins\styles\*.dll" "$(OutDir)styles\" 2&gt;nul
+echo DLL 复制完成！
+      </Command>
+      <Message>复制运行时 DLL 文件...</Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <QtRcc Include="BRepNetVisualizer.qrc" />
+    <ClCompile Include="..\..\..\cnpy\cnpy.cpp" />
+    <ClCompile Include="..\..\BRepUtils.cpp" />
+    <ClCompile Include="..\..\visualizer\src\ColorMapper.cpp" />
+    <ClCompile Include="..\..\visualizer\src\FaceClassifier.cpp" />
+    <ClCompile Include="..\..\visualizer\src\main.cpp" />
+    <ClCompile Include="..\..\visualizer\src\MainWindow.cpp" />
+    <ClCompile Include="..\..\visualizer\src\OCCTViewer.cpp" />
+    <ClCompile Include="..\..\visualizer\src\StepLoader.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\visualizer\src\ColorMapper.h" />
+    <ClInclude Include="..\..\visualizer\src\FaceClassifier.h" />
+    <ClInclude Include="..\..\visualizer\src\StepLoader.h" />
+    <QtMoc Include="..\..\visualizer\src\OCCTViewer.h" />
+    <QtMoc Include="..\..\visualizer\src\MainWindow.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
+    <Import Project="$(QtMsBuild)\qt.targets" />
+  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
