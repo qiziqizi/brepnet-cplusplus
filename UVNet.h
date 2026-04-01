@@ -78,7 +78,7 @@ public:
         // 1. Conv2d
         std::string weight_key = prefix + ".0.weight";
         if (params.find(weight_key) == params.end()) {
-            ERR_LOG("[Error] Weight not found: " << weight_key);
+            ERR_LOG << "[Error] Weight not found: " << weight_key << std::endl;
             return breptorch::Tensor();
         }
 
@@ -222,7 +222,7 @@ public:
 
     breptorch::Tensor forward(breptorch::Tensor x) {
         if (params.find("surface_encoder.conv1.0.weight") == params.end()) {
-            ERR_LOG("[Error] Weight not found: surface_encoder.conv1.0.weight");
+            ERR_LOG << "[Error] Weight not found: surface_encoder.conv1.0.weight" << std::endl;
             return breptorch::Tensor();
         }
 
@@ -400,7 +400,7 @@ public:
         // x: [N, 13, 10]
         // Check if weights are loaded
         if (params.find("curve_encoder.conv1.0.weight") == params.end()) {
-            ERR_LOG("[Error] curve_encoder weights not loaded!");
+            ERR_LOG << "[Error] curve_encoder weights not loaded!" << std::endl;
             return breptorch::Tensor();
         }
 

@@ -51,7 +51,7 @@ public:
             fs::create_directories(output_dir);
         }
 
-        DBG_LOG("\n[Topology Export] Exporting to " << output_dir);
+        DBG_LOG << "\n[Topology Export] Exporting to " << output_dir << std::endl;
 
         // 1. 导出共边详细信息
         export_coedge_info(pipeline, output_dir + "/" + file_name + "_coedge_info.csv");
@@ -65,7 +65,7 @@ public:
         // 4. 导出拓扑摘要
         export_summary(pipeline, output_dir + "/" + file_name + "_summary.txt");
 
-        DBG_LOG("[Topology Export] Done!");
+        DBG_LOG << "[Topology Export] Done!" << std::endl;
     }
 
 private:
@@ -98,7 +98,7 @@ private:
         }
 
         file.close();
-        DBG_LOG("  [OK] Coedge info: " << path);
+        DBG_LOG << "  [OK] Coedge info: " << path << std::endl;
     }
 
     /**
@@ -137,7 +137,7 @@ private:
         }
 
         file.close();
-        DBG_LOG("  [OK] Face-Coedges mapping: " << path);
+        DBG_LOG << "  [OK] Face-Coedges mapping: " << path << std::endl;
     }
 
     /**
@@ -155,7 +155,7 @@ private:
         }
 
         file.close();
-        DBG_LOG("  [OK] Mate array: " << path);
+        DBG_LOG << "  [OK] Mate array: " << path << std::endl;
     }
 
     /**
@@ -238,7 +238,7 @@ private:
         }
 
         file.close();
-        DBG_LOG("  [OK] Summary: " << path);
+        DBG_LOG << "  [OK] Summary: " << path << std::endl;
     }
 };
 

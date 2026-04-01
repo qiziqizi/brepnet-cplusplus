@@ -42,7 +42,7 @@ public:
         std::string filepath = output_dir_ + "/" + file_name + "_" + layer_name + ".txt";
         std::ofstream file(filepath);
         if (!file.is_open()) {
-            ERR_LOG("[FeatureMapDebugger] 无法创建文件: " << filepath);
+            ERR_LOG << "[FeatureMapDebugger] 无法创建文件: " << filepath << std::endl;
             return;
         }
 
@@ -102,7 +102,7 @@ public:
         }
 
         file.close();
-        DBG_LOG("[FeatureMapDebugger] 已保存: " << filepath);
+        DBG_LOG << "[FeatureMapDebugger] 已保存: " << filepath << std::endl;
     }
 
     /**
@@ -117,7 +117,7 @@ public:
         std::string filepath = output_dir_ + "/" + file_name + "_" + layer_name + "_labeled.txt";
         std::ofstream file(filepath);
         if (!file.is_open()) {
-            ERR_LOG("[FeatureMapDebugger] 无法创建文件: " << filepath);
+            ERR_LOG << "[FeatureMapDebugger] 无法创建文件: " << filepath << std::endl;
             return;
         }
 
@@ -141,7 +141,7 @@ public:
         }
 
         file.close();
-        DBG_LOG("[FeatureMapDebugger] 已保存（带标签）: " << filepath);
+        DBG_LOG << "[FeatureMapDebugger] 已保存（带标签）: " << filepath << std::endl;
     }
 
     /**
@@ -224,10 +224,10 @@ public:
         }
 
         if (nan_count > 0 || inf_count > 0 || large_count > 0) {
-            ERR_LOG("[警告] " << layer_name << " 包含异常值:");
-            ERR_LOG("  NaN: " << nan_count);
-            ERR_LOG("  Inf: " << inf_count);
-            ERR_LOG("  超大值(>" << threshold << "): " << large_count);
+            ERR_LOG << "[警告] " << layer_name << " 包含异常值:" << std::endl;
+            ERR_LOG << "  NaN: " << nan_count << std::endl;
+            ERR_LOG << "  Inf: " << inf_count << std::endl;
+            ERR_LOG << "  超大值(>" << threshold << "): " << large_count << std::endl;
             return true;
         }
         return false;

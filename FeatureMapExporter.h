@@ -26,7 +26,7 @@ public:
         if (EXPORT_ENABLED) {
             if (!fs::exists(base_dir_)) {
                 fs::create_directory(base_dir_);
-                DBG_LOG("  Creating directory: " << base_dir_);
+                DBG_LOG << "  Creating directory: " << base_dir_ << std::endl;
             }
         }
     }
@@ -50,7 +50,7 @@ public:
         std::ofstream file(filename, std::ios::out);
 
         if (!file.is_open()) {
-            ERR_LOG("  [错误] 无法创建文件: " << filename);
+            ERR_LOG << "  [错误] 无法创建文件: " << filename << std::endl;
             return;
         }
 
@@ -140,7 +140,7 @@ public:
         std::ofstream file(filename, std::ios::out);
 
         if (!file.is_open()) {
-            ERR_LOG("  [错误] 无法创建文件: " << filename);
+            ERR_LOG << "  [错误] 无法创建文件: " << filename << std::endl;
             return;
         }
 
@@ -165,9 +165,9 @@ public:
     void printExportSummary() const {
         if (!EXPORT_ENABLED) return;
 
-        DBG_LOG("\n=== Feature Map Export Summary ===");
-        DBG_LOG("Base directory: " << base_dir_);
-        DBG_LOG("\nExported layers:");
+        DBG_LOG << "\n=== Feature Map Export Summary ===" << std::endl;
+        DBG_LOG << "Base directory: " << base_dir_ << std::endl;
+        DBG_LOG << "\nExported layers:" << std::endl;
 
         const std::vector<std::string> layers = {
             "uvnet_surface", "uvnet_curve",
@@ -186,7 +186,7 @@ public:
                 for (const auto& entry : fs::directory_iterator(layer_dir)) {
                     if (entry.is_regular_file()) file_count++;
                 }
-                DBG_LOG("  OK " << layer << " (" << file_count << " files)");
+                DBG_LOG << "  OK " << layer << " (" << file_count << " files)" << std::endl;
             }
         }
     }

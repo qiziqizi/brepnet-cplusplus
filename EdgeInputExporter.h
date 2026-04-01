@@ -26,7 +26,7 @@ public:
         std::ofstream file(filename, std::ios::out);
 
         if (!file.is_open()) {
-            ERR_LOG("[Error] Cannot create file: " << filename);
+            ERR_LOG << "[Error] Cannot create file: " << filename << std::endl;
             return;
         }
 
@@ -37,7 +37,7 @@ public:
         auto& edge_grids = pipeline.EdgeGridsLocal;
 
         if (!edge_grids.defined()) {
-            ERR_LOG("[Error] EdgeGridsLocal not defined");
+            ERR_LOG << "[Error] EdgeGridsLocal not defined" << std::endl;
             return;
         }
 
@@ -45,8 +45,8 @@ public:
         int num_channels = edge_grids.sizes_[1];  // Should be 13
         int num_points = edge_grids.sizes_[2];    // Should be 10
 
-        DBG_LOG("[EdgeInputExporter] Exporting " << num_edges << " edges");
-        DBG_LOG("  Shape: [" << num_edges << ", " << num_channels << ", " << num_points << "]");
+        DBG_LOG << "[EdgeInputExporter] Exporting " << num_edges << " edges" << std::endl;
+        DBG_LOG << "  Shape: [" << num_edges << ", " << num_channels << ", " << num_points << "]" << std::endl;
 
         // Export each edge as one row (flattened)
         for (int e = 0; e < num_edges; ++e) {
@@ -60,7 +60,7 @@ public:
         }
 
         file.close();
-        DBG_LOG("[EdgeInputExporter] Saved to: " << filename);
+        DBG_LOG << "[EdgeInputExporter] Saved to: " << filename << std::endl;
     }
 
     static void export_edge_representatives(BRepPipeline& pipeline, const std::string& step_file_name) {
@@ -76,7 +76,7 @@ public:
         std::ofstream file(filename, std::ios::out);
 
         if (!file.is_open()) {
-            ERR_LOG("[Error] Cannot create file: " << filename);
+            ERR_LOG << "[Error] Cannot create file: " << filename << std::endl;
             return;
         }
 
@@ -108,7 +108,7 @@ public:
         }
 
         file.close();
-        DBG_LOG("[EdgeInputExporter] Saved edge representatives to: " << filename);
+        DBG_LOG << "[EdgeInputExporter] Saved edge representatives to: " << filename << std::endl;
 
         // Print Edge 38 specifically
         if (DebugControl::instance().shouldDebug() && 38 < num_edges) {
@@ -118,7 +118,7 @@ public:
             if (cid >= 0 && cid < (int)pipeline.coedges.size()) {
                 oss << " (orientation=" << (pipeline.coedges[cid].orientation ? "true" : "false") << ")";
             }
-            DBG_LOG(oss.str());
+            DBG_LOG << oss.str() << std::endl;
         }
     }
 
@@ -135,7 +135,7 @@ public:
         std::ofstream file(filename, std::ios::out);
 
         if (!file.is_open()) {
-            ERR_LOG("[Error] Cannot create file: " << filename);
+            ERR_LOG << "[Error] Cannot create file: " << filename << std::endl;
             return;
         }
 
@@ -146,7 +146,7 @@ public:
         auto& coedge_grids = pipeline.CoedgeGridsLocal;
 
         if (!coedge_grids.defined()) {
-            ERR_LOG("[Error] CoedgeGridsLocal not defined");
+            ERR_LOG << "[Error] CoedgeGridsLocal not defined" << std::endl;
             return;
         }
 
@@ -154,7 +154,7 @@ public:
         int num_channels = coedge_grids.sizes_[1];
         int num_points = coedge_grids.sizes_[2];
 
-        DBG_LOG("[EdgeInputExporter] Exporting all " << num_coedges << " coedge grids");
+        DBG_LOG << "[EdgeInputExporter] Exporting all " << num_coedges << " coedge grids" << std::endl;
 
         // Export each coedge as one row
         for (int c = 0; c < num_coedges; ++c) {
@@ -168,7 +168,7 @@ public:
         }
 
         file.close();
-        DBG_LOG("[EdgeInputExporter] Saved all coedge grids to: " << filename);
+        DBG_LOG << "[EdgeInputExporter] Saved all coedge grids to: " << filename << std::endl;
     }
 };
 

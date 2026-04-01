@@ -13,7 +13,7 @@ public:
         std::vector<CoedgeData> coedges;
 
         if (!pipeline.FaceGridsLocal.defined() || !pipeline.EdgeGridsLocal.defined()) {
-            ERR_LOG("[Error] FaceGridsLocal or EdgeGridsLocal not defined!");
+            ERR_LOG << "[Error] FaceGridsLocal or EdgeGridsLocal not defined!" << std::endl;
             return coedges;
         }
 
@@ -28,8 +28,8 @@ public:
         if (DebugControl::instance().shouldDebug()) {
             for (int c = 27; c <= 30; ++c) {
                 int row = c * 2;  // parent face row
-                DBG_CERR("\n>>> UVNet Input: Coedge " << c << " Parent Face (row " << row << "):");
-                DBG_CERR("    Point[0] (u=0,v=0, boundary), Point[11] (u=1,v=1, interior), Point[12] (u=1,v=2, interior)");
+                DBG_CERR << "\n>>> UVNet Input: Coedge " << c << " Parent Face (row " << row << "):" << std::endl;
+                DBG_CERR << "    Point[0] (u=0,v=0, boundary), Point[11] (u=1,v=1, interior), Point[12] (u=1,v=2, interior)" << std::endl;
                 float* data = all_face_grids.data_ptr<float>();
                 int N = 100;  // 10x10 grid
                 int test_points[3] = {0, 11, 12};  // boundary + 2 interior points
@@ -41,7 +41,7 @@ public:
                         int idx = (row * 9 + ch) * N + pt;
                         oss << data[idx] << " ";
                     }
-                    DBG_CERR(oss.str());
+                    DBG_CERR << oss.str() << std::endl;
                 }
             }
         }
