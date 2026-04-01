@@ -717,11 +717,13 @@ private:
                 TopLoc_Location loc_left;
                 Handle(Geom_Surface) geom_surf_left = BRep_Tool::Surface(face_left, loc_left);
                 GeomLProp_SLProps props_left(geom_surf_left, u_left, v_left, 1, 1e-9);
+
                 if (props_left.IsNormalDefined()) {
                     n_left = gp_Vec(props_left.Normal());
                     if (!loc_left.IsIdentity()) {
                         n_left.Transform(loc_left.Transformation());
                     }
+
                     if (face_left.Orientation() == TopAbs_REVERSED) n_left.Reverse();
                     if (n_left.Magnitude() > 1e-7) n_left.Normalize();
                 }
@@ -742,11 +744,14 @@ private:
                 TopLoc_Location loc_right;
                 Handle(Geom_Surface) geom_surf_right = BRep_Tool::Surface(face_right, loc_right);
                 GeomLProp_SLProps props_right(geom_surf_right, u_right, v_right, 1, 1e-9);
+
                 if (props_right.IsNormalDefined()) {
                     n_right = gp_Vec(props_right.Normal());
                     if (!loc_right.IsIdentity()) {
                         n_right.Transform(loc_right.Transformation());
                     }
+
+
                     if (face_right.Orientation() == TopAbs_REVERSED) n_right.Reverse();
                     if (n_right.Magnitude() > 1e-7) n_right.Normalize();
                 }
@@ -874,14 +879,15 @@ private:
         }
 
         double u_mid = compute_arc_length_midpoint(curve, u0, u1);
-        // 【步骤5】使用 BRepAdaptor_Curve 获取切线（自动处理edge orientation，与Python一致）
-        BRepAdaptor_Curve lcs_curve_adaptor(edge);
+
         gp_Pnt p;
         gp_Vec tangent;
-        lcs_curve_adaptor.D1(u_mid, p, tangent);
+
+        curve->D1(u_mid, p, tangent);
 
         // 【步骤2】使用 pcurve + GeomLProp_SLProps 计算法线（与Python一致）
         gp_Vec normal;
+
         bool normal_found = false;
 
         // 方法1: 通过 pcurve 获取 UV，再用 GeomLProp_SLProps 计算法线
@@ -940,10 +946,12 @@ private:
             normal = BRepUtils::GetNormalAtPoint(face, p);
         }
 
-
-        // 【步骤5】BRepAdaptor_Curve 已自动处理 edge orientation，无需手动反转切线
         gp_Vec t_vec = tangent;
         gp_Vec n_vec = normal;
+
+        if (!c_info.orientation) {
+            t_vec.Reverse();
+        }
 
         float p_arr[3] = { (float)p.X(), (float)p.Y(), (float)p.Z() };
         float t_arr[3] = { (float)t_vec.X(), (float)t_vec.Y(), (float)t_vec.Z() };
@@ -952,6 +960,7 @@ private:
         // 【步骤6】W 轴归一化（与Python numpy.linalg.norm一致，不加epsilon）
         float w_norm = sqrt(n_arr[0] * n_arr[0] + n_arr[1] * n_arr[1] + n_arr[2] * n_arr[2]);
         if (w_norm < 1e-10f) w_norm = 1e-10f;  // 仅防除零
+
         float w_vec[3] = {
             n_arr[0] / w_norm,
             n_arr[1] / w_norm,

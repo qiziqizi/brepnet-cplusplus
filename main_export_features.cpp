@@ -66,6 +66,12 @@ void run_inference_with_export(const std::string& step_file,
     // 设置当前文件（控制调试开关）
     DebugControl::instance().setCurrentFile(base_name);
 
+    // 如果指定了 target，跳过不匹配的文件
+    const auto& dc = DebugControl::instance();
+    if (!dc.targets.empty() && std::find(dc.targets.begin(), dc.targets.end(), base_name) == dc.targets.end()) {
+        return;  // 静默跳过非目标文件
+    }
+
     // 检查是否已经处理过
     if (is_file_already_processed(base_name)) {
         INFO_LOG << base_name << " [SKIPPED]" << std::flush;

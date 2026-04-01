@@ -22,12 +22,9 @@ class FeatureMapExporter {
 public:
     FeatureMapExporter(const std::string& base_dir = "cpp_feature_maps")
         : base_dir_(base_dir) {
-        // 仅在 export 模式下创建目录
-        if (EXPORT_ENABLED) {
-            if (!fs::exists(base_dir_)) {
-                fs::create_directory(base_dir_);
-                DBG_LOG << "  Creating directory: " << base_dir_ << std::endl;
-            }
+        // 使用 export_mode 而非 shouldExport()，因为构造时 current_file 还未设置
+        if (DebugControl::instance().export_mode) {
+            fs::create_directories(base_dir_);
         }
     }
 
@@ -41,9 +38,7 @@ public:
 
         // 创建子文件夹
         std::string layer_dir = base_dir_ + "/" + layer_name;
-        if (!fs::exists(layer_dir)) {
-            fs::create_directory(layer_dir);
-        }
+        fs::create_directories(layer_dir);
 
         // 生成文件路径
         std::string filename = layer_dir + "/" + step_file_name + "_result.txt";
@@ -131,9 +126,7 @@ public:
 
         // 创建子文件夹
         std::string layer_dir = base_dir_ + "/" + layer_name;
-        if (!fs::exists(layer_dir)) {
-            fs::create_directory(layer_dir);
-        }
+        fs::create_directories(layer_dir);
 
         // 生成文件路径
         std::string filename = layer_dir + "/" + step_file_name + "_result.txt";

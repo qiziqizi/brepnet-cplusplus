@@ -26,22 +26,24 @@ public:
 
         // DEBUG: Print Face 6 related grids for Coedges 27-30 (all 9 channels)
         if (DebugControl::instance().shouldDebug()) {
-            for (int c = 27; c <= 30; ++c) {
-                int row = c * 2;  // parent face row
-                DBG_CERR << "\n>>> UVNet Input: Coedge " << c << " Parent Face (row " << row << "):" << std::endl;
-                DBG_CERR << "    Point[0] (u=0,v=0, boundary), Point[11] (u=1,v=1, interior), Point[12] (u=1,v=2, interior)" << std::endl;
-                float* data = all_face_grids.data_ptr<float>();
-                int N = 100;  // 10x10 grid
-                int test_points[3] = {0, 11, 12};  // boundary + 2 interior points
-                for (int ch = 0; ch < 9; ++ch) {
-                    std::ostringstream oss;
-                    oss << "  Channel " << ch << ": ";
-                    for (int i = 0; i < 3; ++i) {
-                        int pt = test_points[i];
-                        int idx = (row * 9 + ch) * N + pt;
-                        oss << data[idx] << " ";
+            if (num_coedges > 27) {
+                for (int c = 27; c <= 30; ++c) {
+                    int row = c * 2;  // parent face row
+                    DBG_CERR << "\n>>> UVNet Input: Coedge " << c << " Parent Face (row " << row << "):" << std::endl;
+                    DBG_CERR << "    Point[0] (u=0,v=0, boundary), Point[11] (u=1,v=1, interior), Point[12] (u=1,v=2, interior)" << std::endl;
+                    float* data = all_face_grids.data_ptr<float>();
+                    int N = 100;  // 10x10 grid
+                    int test_points[3] = {0, 11, 12};  // boundary + 2 interior points
+                    for (int ch = 0; ch < 9; ++ch) {
+                        std::ostringstream oss;
+                        oss << "  Channel " << ch << ": ";
+                        for (int i = 0; i < 3; ++i) {
+                            int pt = test_points[i];
+                            int idx = (row * 9 + ch) * N + pt;
+                            oss << data[idx] << " ";
+                        }
+                        DBG_CERR << oss.str() << std::endl;
                     }
-                    DBG_CERR << oss.str() << std::endl;
                 }
             }
         }
