@@ -713,9 +713,15 @@ private:
                 double u_left = uv_left_2d.X();
                 double v_left = uv_left_2d.Y();
 
-                BRepLProp_SLProps props_left(BRepAdaptor_Surface(face_left), u_left, v_left, 1, 1e-6);
+                // 【步骤3】使用 GeomLProp_SLProps + BRep_Tool::Surface（与Python一致）
+                TopLoc_Location loc_left;
+                Handle(Geom_Surface) geom_surf_left = BRep_Tool::Surface(face_left, loc_left);
+                GeomLProp_SLProps props_left(geom_surf_left, u_left, v_left, 1, 1e-9);
                 if (props_left.IsNormalDefined()) {
-                    n_left = props_left.Normal();
+                    n_left = gp_Vec(props_left.Normal());
+                    if (!loc_left.IsIdentity()) {
+                        n_left.Transform(loc_left.Transformation());
+                    }
                     if (face_left.Orientation() == TopAbs_REVERSED) n_left.Reverse();
                     if (n_left.Magnitude() > 1e-7) n_left.Normalize();
                 }
@@ -732,9 +738,15 @@ private:
                 double u_right = uv_right_2d.X();
                 double v_right = uv_right_2d.Y();
 
-                BRepLProp_SLProps props_right(BRepAdaptor_Surface(face_right), u_right, v_right, 1, 1e-6);
+                // 【步骤3】使用 GeomLProp_SLProps + BRep_Tool::Surface（与Python一致）
+                TopLoc_Location loc_right;
+                Handle(Geom_Surface) geom_surf_right = BRep_Tool::Surface(face_right, loc_right);
+                GeomLProp_SLProps props_right(geom_surf_right, u_right, v_right, 1, 1e-9);
                 if (props_right.IsNormalDefined()) {
-                    n_right = props_right.Normal();
+                    n_right = gp_Vec(props_right.Normal());
+                    if (!loc_right.IsIdentity()) {
+                        n_right.Transform(loc_right.Transformation());
+                    }
                     if (face_right.Orientation() == TopAbs_REVERSED) n_right.Reverse();
                     if (n_right.Magnitude() > 1e-7) n_right.Normalize();
                 }
@@ -777,9 +789,10 @@ private:
     }
 
     double compute_arc_length_midpoint(Handle(Geom_Curve) curve, double u0, double u1) {
-        // 混合采样策略
+        // 与 Python ArcLengthParamFinder(num_arc_length_samples=100) 保持一致
+        // Python 源码: D:\occwl\src\occwl\geometry\arc_length_param_finder.py 第12行默认值
         double param_span = u1 - u0;
-        int num_samples = (param_span < 3.0) ? 100 : 200;
+        int num_samples = 100;
 
         std::vector<gp_Pnt> sampled_points;
         std::vector<double> arc_length_vals;
@@ -861,32 +874,84 @@ private:
         }
 
         double u_mid = compute_arc_length_midpoint(curve, u0, u1);
+        // 【步骤5】使用 BRepAdaptor_Curve 获取切线（自动处理edge orientation，与Python一致）
+        BRepAdaptor_Curve lcs_curve_adaptor(edge);
         gp_Pnt p;
         gp_Vec tangent;
-        curve->D1(u_mid, p, tangent);
+        lcs_curve_adaptor.D1(u_mid, p, tangent);
 
+        // 【步骤2】使用 pcurve + GeomLProp_SLProps 计算法线（与Python一致）
         gp_Vec normal;
-        BRepGProp_Face face_prop(face);
-        gp_Pnt p_face;
-        gp_Vec du, dv;
-        Standard_Real uu, vv;
-        GeomAPI_ProjectPointOnSurf proj(p, BRep_Tool::Surface(face));
-        proj.LowerDistanceParameters(uu, vv);
-        face_prop.Normal(uu, vv, p_face, normal);
+        bool normal_found = false;
+
+        // 方法1: 通过 pcurve 获取 UV，再用 GeomLProp_SLProps 计算法线
+        Handle(Geom2d_Curve) pcurve_lcs;
+        double pc_u0, pc_u1;
+        pcurve_lcs = BRep_Tool::CurveOnSurface(edge, face, pc_u0, pc_u1);
+        if (!pcurve_lcs.IsNull()) {
+            gp_Pnt2d uv_mid;
+            pcurve_lcs->D0(u_mid, uv_mid);
+            double uu = uv_mid.X();
+            double vv = uv_mid.Y();
+
+            TopLoc_Location loc;
+            Handle(Geom_Surface) geom_surf = BRep_Tool::Surface(face, loc);
+            GeomLProp_SLProps props(geom_surf, uu, vv, 1, 1e-9);
+            if (props.IsNormalDefined()) {
+                gp_Dir n_dir = props.Normal();
+                normal = gp_Vec(n_dir);
+                // 将法线从几何表面坐标系变换到全局坐标系
+                if (!loc.IsIdentity()) {
+                    normal.Transform(loc.Transformation());
+                }
+                // orientation 翻转（与 Python face.normal(uv) 一致）
+                if (face.Orientation() == TopAbs_REVERSED) {
+                    normal.Reverse();
+                }
+                normal_found = true;
+            }
+        }
+
+        // 方法2: fallback - 使用 GeomAPI_ProjectPointOnSurf
+        if (!normal_found) {
+            TopLoc_Location loc2;
+            Handle(Geom_Surface) geom_surf2 = BRep_Tool::Surface(face, loc2);
+            GeomAPI_ProjectPointOnSurf proj(p, geom_surf2);
+            if (proj.NbPoints() > 0) {
+                double uu2, vv2;
+                proj.LowerDistanceParameters(uu2, vv2);
+                GeomLProp_SLProps props2(geom_surf2, uu2, vv2, 1, 1e-9);
+                if (props2.IsNormalDefined()) {
+                    gp_Dir n_dir2 = props2.Normal();
+                    normal = gp_Vec(n_dir2);
+                    if (!loc2.IsIdentity()) {
+                        normal.Transform(loc2.Transformation());
+                    }
+                    if (face.Orientation() == TopAbs_REVERSED) {
+                        normal.Reverse();
+                    }
+                    normal_found = true;
+                }
+            }
+        }
+
+        // 方法3: 最终 fallback - 使用 BRepUtils::GetNormalAtPoint
+        if (!normal_found) {
+            normal = BRepUtils::GetNormalAtPoint(face, p);
+        }
 
 
+        // 【步骤5】BRepAdaptor_Curve 已自动处理 edge orientation，无需手动反转切线
         gp_Vec t_vec = tangent;
         gp_Vec n_vec = normal;
-        if (!c_info.orientation) {
-            t_vec.Reverse();
-        }
 
         float p_arr[3] = { (float)p.X(), (float)p.Y(), (float)p.Z() };
         float t_arr[3] = { (float)t_vec.X(), (float)t_vec.Y(), (float)t_vec.Z() };
         float n_arr[3] = { (float)n_vec.X(), (float)n_vec.Y(), (float)n_vec.Z() };
 
-        // 1. W 轴 (法线方向归一化)
-        float w_norm = sqrt(n_arr[0] * n_arr[0] + n_arr[1] * n_arr[1] + n_arr[2] * n_arr[2]) + 1e-7f;
+        // 【步骤6】W 轴归一化（与Python numpy.linalg.norm一致，不加epsilon）
+        float w_norm = sqrt(n_arr[0] * n_arr[0] + n_arr[1] * n_arr[1] + n_arr[2] * n_arr[2]);
+        if (w_norm < 1e-10f) w_norm = 1e-10f;  // 仅防除零
         float w_vec[3] = {
             n_arr[0] / w_norm,
             n_arr[1] / w_norm,
@@ -920,9 +985,11 @@ private:
             v_norm = sqrt(v_vec[0] * v_vec[0] + v_vec[1] * v_vec[1] + v_vec[2] * v_vec[2]);
         }
 
-        v_vec[0] /= (v_norm + 1e-7f);
-        v_vec[1] /= (v_norm + 1e-7f);
-        v_vec[2] /= (v_norm + 1e-7f);
+        // 【步骤6】V 轴归一化（与Python numpy.linalg.norm一致，不加epsilon）
+        if (v_norm < 1e-10f) v_norm = 1e-10f;  // 仅防除零
+        v_vec[0] /= v_norm;
+        v_vec[1] /= v_norm;
+        v_vec[2] /= v_norm;
 
         // 3. U 轴 (V × W)
         float u_vec[3] = {
