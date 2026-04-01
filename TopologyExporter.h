@@ -1,12 +1,12 @@
 /**
  * TopologyExporter.h
- * 
+ *
  * 导出拓扑信息用于与 Python 端对比
  * 功能：
  * 1. 导出 coedge 基本信息 (id, face, mate, edge)
  * 2. 导出 face -> coedges 映射
  * 3. 导出 mate 数组
- * 
+ *
  * 用法：
  *   // 在需要的地方添加以下代码：
  *   TopologyExporter exporter("cpp_topology");
@@ -18,6 +18,7 @@
 #define TOPOLOGY_EXPORTER_H
 
 #include "BRepPipeline.h"
+#include "DebugControl.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -32,8 +33,10 @@ class TopologyExporter {
 public:
     TopologyExporter(const std::string& base_dir = "cpp_topology")
         : base_dir_(base_dir) {
-        if (!fs::exists(base_dir_)) {
-            fs::create_directories(base_dir_);
+        if (EXPORT_ENABLED) {
+            if (!fs::exists(base_dir_)) {
+                fs::create_directories(base_dir_);
+            }
         }
     }
 
@@ -41,12 +44,14 @@ public:
      * 导出拓扑信息
      */
     void export_topology(BRepPipeline& pipeline, const std::string& file_name) {
+        if (!EXPORT_ENABLED) return;
+
         std::string output_dir = base_dir_ + "/" + file_name;
         if (!fs::exists(output_dir)) {
             fs::create_directories(output_dir);
         }
 
-        std::cout << "\n[Topology Export] Exporting to " << output_dir << std::endl;
+        DBG_LOG("\n[Topology Export] Exporting to " << output_dir);
 
         // 1. 导出共边详细信息
         export_coedge_info(pipeline, output_dir + "/" + file_name + "_coedge_info.csv");
@@ -60,7 +65,7 @@ public:
         // 4. 导出拓扑摘要
         export_summary(pipeline, output_dir + "/" + file_name + "_summary.txt");
 
-        std::cout << "[Topology Export] Done!" << std::endl;
+        DBG_LOG("[Topology Export] Done!");
     }
 
 private:
@@ -80,8 +85,8 @@ private:
         for (int i = 0; i < num_coedges; ++i) {
             const auto& coedge = pipeline.coedges[i];
             int mate_coedge_id = coedge.mate_idx;
-            int mate_face_id = (mate_coedge_id >= 0 && mate_coedge_id < num_coedges) 
-                ? pipeline.coedges[mate_coedge_id].face_idx 
+            int mate_face_id = (mate_coedge_id >= 0 && mate_coedge_id < num_coedges)
+                ? pipeline.coedges[mate_coedge_id].face_idx
                 : -1;
 
             file << i << ","
@@ -93,7 +98,7 @@ private:
         }
 
         file.close();
-        std::cout << "  [OK] Coedge info: " << path << std::endl;
+        DBG_LOG("  [OK] Coedge info: " << path);
     }
 
     /**
@@ -132,7 +137,7 @@ private:
         }
 
         file.close();
-        std::cout << "  [OK] Face-Coedges mapping: " << path << std::endl;
+        DBG_LOG("  [OK] Face-Coedges mapping: " << path);
     }
 
     /**
@@ -150,7 +155,7 @@ private:
         }
 
         file.close();
-        std::cout << "  [OK] Mate array: " << path << std::endl;
+        DBG_LOG("  [OK] Mate array: " << path);
     }
 
     /**
@@ -187,10 +192,10 @@ private:
             coedge_counts.push_back((int)pair.second.size());
         }
 
-        file << "每个面的共边数统计:\n";
+        file << "每个面的共边数��计:\n";
         file << "  最小: " << *std::min_element(coedge_counts.begin(), coedge_counts.end()) << "\n";
         file << "  最大: " << *std::max_element(coedge_counts.begin(), coedge_counts.end()) << "\n";
-        file << "  平均: " << std::fixed << std::setprecision(2) 
+        file << "  平均: " << std::fixed << std::setprecision(2)
              << (double)std::accumulate(coedge_counts.begin(), coedge_counts.end(), 0) / coedge_counts.size() << "\n\n";
 
         // 大面列表 (>30 coedges)
@@ -233,7 +238,7 @@ private:
         }
 
         file.close();
-        std::cout << "  [OK] Summary: " << path << std::endl;
+        DBG_LOG("  [OK] Summary: " << path);
     }
 };
 

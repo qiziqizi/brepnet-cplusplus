@@ -69,6 +69,38 @@ public:
         return std::find(targets.begin(), targets.end(), current_file) != targets.end();
     }
 
+    static bool alwaysOn() { return true; }
+
 private:
     DebugControl() = default;
 };
+
+// ============================================================================
+// 便捷宏
+// ============================================================================
+
+// DBG_LOG: 受调试开关控制的终端输出
+// 用法: DBG_LOG << "[Layer 0] ..." << std::endl;
+#define DBG_LOG if (DebugControl::instance().shouldDebug()) std::cout
+
+// DBG_CERR: 受调试开关控制的stderr输出
+#define DBG_CERR if (DebugControl::instance().shouldDebug()) std::cerr
+
+// DBG_PRINTF: 受调试开关控制的printf
+// 用法: DBG_PRINTF("[DEBUG] value=%d\n", val);
+#define DBG_PRINTF(...) do { if (DebugControl::instance().shouldDebug()) printf(__VA_ARGS__); } while(0)
+
+// DBG_FPRINTF: 受调试开关控制的fprintf
+// 用法: DBG_FPRINTF(stderr, "[DEBUG] value=%d\n", val);
+#define DBG_FPRINTF(fp, ...) do { if (DebugControl::instance().shouldDebug()) fprintf(fp, __VA_ARGS__); } while(0)
+
+// EXPORT_ENABLED: 判断是否应该导出中间文件
+#define EXPORT_ENABLED (DebugControl::instance().shouldExport())
+
+// ERR_LOG: 错误输出，始终开启（不受调试开关控制）
+// 用于 "[Error] Processing failed" 等关键错误
+#define ERR_LOG std::cerr
+
+// INFO_LOG: 进度信息，始终开启
+// 用于 "step0001 -> [✓] F:12 E:18" 等进度信息
+#define INFO_LOG std::cout

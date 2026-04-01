@@ -42,7 +42,7 @@ std::vector<std::string> get_step_files(const std::string& dir_path) {
             }
         }
     } catch (const fs::filesystem_error& e) {
-        std::cerr << "[Error] Cannot read directory: " << e.what() << std::endl;
+        ERR_LOG << "[Error] Cannot read directory: " << e.what() << std::endl;
     }
     std::sort(step_files.begin(), step_files.end());
     return step_files;
@@ -52,7 +52,7 @@ std::vector<std::string> get_step_files(const std::string& dir_path) {
 bool is_file_already_processed(const std::string& base_name) {
     fs::path logits_file = fs::path("cpp_logits") / (base_name + ".logits");
     bool exists = fs::exists(logits_file);
-    std::cerr << "[DEBUG] Checking: " << logits_file.string() << " -> " << (exists ? "EXISTS" : "NOT FOUND") << std::endl;
+    DBG_CERR << "[DEBUG] Checking: " << logits_file.string() << " -> " << (exists ? "EXISTS" : "NOT FOUND") << std::endl;
     return exists;
 }
 
@@ -63,20 +63,23 @@ void run_inference_with_export(const std::string& step_file,
     fs::path step_path(step_file);
     std::string base_name = step_path.stem().string();
 
+    // 设置当前文件（控制调试开关）
+    DebugControl::instance().setCurrentFile(base_name);
+
     // 检查是否已经处理过
     if (is_file_already_processed(base_name)) {
-        std::cout << base_name << " [SKIPPED]" << std::flush;
+        INFO_LOG << base_name << " [SKIPPED]" << std::flush;
         return;
     }
 
-    std::cout << base_name << std::flush;
+    INFO_LOG << base_name << std::flush;
 
     // ========================================================================
     // 1. 数据预处理
     // ========================================================================
     BRepPipeline pipeline;
     if (!pipeline.process(step_file)) {
-        std::cerr << "[Error] Processing failed: " << base_name << std::endl;
+        ERR_LOG << "[Error] Processing failed: " << base_name << std::endl;
         return;
     }
 
@@ -84,212 +87,218 @@ void run_inference_with_export(const std::string& step_file,
     int num_faces = (int)pipeline.unique_faces.Extent();
     int num_edges = (int)pipeline.unique_edges.Extent();
 
-    // std::cout << "[Topology] " << num_coedges << " coedges, "
-    //           << num_faces << " faces, "
-    //           << num_edges << " edges" << std::endl;
+    DBG_LOG << "[Topology] " << num_coedges << " coedges, "
+            << num_faces << " faces, "
+            << num_edges << " edges" << std::endl;
 
     // ========================================================================
     // [TOPOLOGY EXPORT] 导出拓扑信息用于调试
     // ========================================================================
-    // fs::create_directories("cpp_topology");
-    // std::string topology_file = "cpp_topology/" + base_name + "_topology.txt";
-    // std::ofstream topo_out(topology_file);
+    if (EXPORT_ENABLED) {
+        fs::create_directories("cpp_topology");
+        std::string topology_file = "cpp_topology/" + base_name + "_topology.txt";
+        std::ofstream topo_out(topology_file);
 
-    // if (topo_out.is_open()) {
-    //     topo_out << "=== TOPOLOGY INFORMATION ===" << std::endl;
-    //     topo_out << "Num Coedges: " << num_coedges << std::endl;
-    //     topo_out << "Num Faces: " << num_faces << std::endl;
-    //     topo_out << "Num Edges: " << num_edges << std::endl;
-    //     topo_out << std::endl;
+        if (topo_out.is_open()) {
+            topo_out << "=== TOPOLOGY INFORMATION ===" << std::endl;
+            topo_out << "Num Coedges: " << num_coedges << std::endl;
+            topo_out << "Num Faces: " << num_faces << std::endl;
+            topo_out << "Num Edges: " << num_edges << std::endl;
+            topo_out << std::endl;
 
-    //     // 导出每个coedge的基本信息
-    //     topo_out << "=== COEDGE INFO ===" << std::endl;
-    //     topo_out << "coedge_id, parent_face_id, edge_id, mate_coedge_id, mate_face_id, orientation" << std::endl;
-    //     for (int i = 0; i < num_coedges; ++i) {
-    //         const auto& c = pipeline.coedges[i];
-    //         int mate_face = (c.mate_idx >= 0) ? pipeline.coedges[c.mate_idx].face_idx : -1;
-    //         topo_out << c.id << ", " << c.face_idx << ", " << c.edge_idx << ", "
-    //                  << c.mate_idx << ", " << mate_face << ", " << c.orientation << std::endl;
-    //     }
-    //     topo_out << std::endl;
+            // 导出每个coedge的基本信息
+            topo_out << "=== COEDGE INFO ===" << std::endl;
+            topo_out << "coedge_id, parent_face_id, edge_id, mate_coedge_id, mate_face_id, orientation" << std::endl;
+            for (int i = 0; i < num_coedges; ++i) {
+                const auto& c = pipeline.coedges[i];
+                int mate_face = (c.mate_idx >= 0) ? pipeline.coedges[c.mate_idx].face_idx : -1;
+                topo_out << c.id << ", " << c.face_idx << ", " << c.edge_idx << ", "
+                         << c.mate_idx << ", " << mate_face << ", " << c.orientation << std::endl;
+            }
+            topo_out << std::endl;
 
-    //     topo_out.close();
-    //     std::cout << "[Topology] Exported to " << topology_file << std::endl;
-    // }
+            topo_out.close();
+            DBG_LOG << "[Topology] Exported to " << topology_file << std::endl;
+        }
+    }
 
     // ========================================================================
     // 2. 导出UV Grid（送入UVNet之前的原始数据）
     // ========================================================================
-    // std::cout << "[UV Grid Export] Exporting raw UV grids before UVNet..." << std::endl;
+    DBG_LOG << "[UV Grid Export] Exporting raw UV grids before UVNet..." << std::endl;
 
     if (!pipeline.FaceGridsLocal.defined()) {
-        std::cerr << "[Error] FaceGridsLocal not defined!" << std::endl;
+        ERR_LOG << "[Error] FaceGridsLocal not defined!" << std::endl;
         return;
     }
-
-    // 创建输出目录
-    fs::create_directories("cpp_uv_grids");
 
     // 提取Face UV Grids (Coedge格式: [num_coedges*2, 9, 10, 10])
     int num_coedges_topo = (int)pipeline.coedges.size();
     // 必须clone()，避免数据污染。后续操作可能修改张量，影响原始数据
     Tensor all_face_grids = pipeline.FaceGridsLocal.clone().view({num_coedges_topo * 2, 9, 10, 10});  // [380, 9, 10, 10]
 
-    // std::cout << "  all_face_grids shape: [" << all_face_grids.size(0) << ", "
-    //           << all_face_grids.size(1) << ", " << all_face_grids.size(2) << ", "
-    //           << all_face_grids.size(3) << "]" << std::endl;
-
     // 展平为 [380, 900]
     Tensor flattened_face_grids = all_face_grids.view({num_coedges_topo * 2, 9 * 10 * 10});
 
-    // 导出Coedge格式的Face UV Grids
-    std::string coedge_uv_file = "cpp_uv_grids/coedge_face_uv_grids_" + base_name + ".txt";
-    std::ofstream coedge_uv_out(coedge_uv_file, std::ios::out);
-    coedge_uv_out << std::scientific << std::setprecision(20);
+    if (EXPORT_ENABLED) {
+        // 创建输出目录
+        fs::create_directories("cpp_uv_grids");
 
-    for (int i = 0; i < flattened_face_grids.size(0); ++i) {
-        for (int j = 0; j < flattened_face_grids.size(1); ++j) {
-            if (j > 0) coedge_uv_out << " ";
-            coedge_uv_out << flattened_face_grids.at({i, j});
-        }
-        coedge_uv_out << "\n";
-    }
-    coedge_uv_out.close();
-    // std::cout << "  Exported: " << coedge_uv_file << " (" << flattened_face_grids.size(0) << " rows)" << std::endl;
+        DBG_LOG << "  all_face_grids shape: [" << all_face_grids.size(0) << ", "
+                << all_face_grids.size(1) << ", " << all_face_grids.size(2) << ", "
+                << all_face_grids.size(3) << "]" << std::endl;
 
-    // 还需要导出Edge UV Grids
-    if (pipeline.EdgeGridsLocal.defined()) {
-        int num_edges_topo = (int)pipeline.EdgeGridsLocal.size(0);
-        // 必须clone()，避免数据污染
-        Tensor flattened_edge_grids = pipeline.EdgeGridsLocal.clone().view({num_edges_topo, 13 * 10});
+        // 导出Coedge格式的Face UV Grids
+        std::string coedge_uv_file = "cpp_uv_grids/coedge_face_uv_grids_" + base_name + ".txt";
+        std::ofstream coedge_uv_out(coedge_uv_file, std::ios::out);
+        coedge_uv_out << std::scientific << std::setprecision(20);
 
-        std::string edge_uv_file = "cpp_uv_grids/edge_uv_grids_" + base_name + ".txt";
-        std::ofstream edge_uv_out(edge_uv_file, std::ios::out);
-        edge_uv_out << std::scientific << std::setprecision(20);
-
-        for (int i = 0; i < flattened_edge_grids.size(0); ++i) {
-            for (int j = 0; j < flattened_edge_grids.size(1); ++j) {
-                if (j > 0) edge_uv_out << " ";
-                edge_uv_out << flattened_edge_grids.at({i, j});
+        for (int i = 0; i < flattened_face_grids.size(0); ++i) {
+            for (int j = 0; j < flattened_face_grids.size(1); ++j) {
+                if (j > 0) coedge_uv_out << " ";
+                coedge_uv_out << flattened_face_grids.at({i, j});
             }
-            edge_uv_out << "\n";
+            coedge_uv_out << "\n";
         }
-        edge_uv_out.close();
-        // std::cout << "  Exported: " << edge_uv_file << " (" << flattened_edge_grids.size(0) << " rows)" << std::endl;
+        coedge_uv_out.close();
+        DBG_LOG << "  Exported: " << coedge_uv_file << " (" << flattened_face_grids.size(0) << " rows)" << std::endl;
+
+        // 还需要导出Edge UV Grids
+        if (pipeline.EdgeGridsLocal.defined()) {
+            int num_edges_topo = (int)pipeline.EdgeGridsLocal.size(0);
+            // 必须clone()，避免数据污染
+            Tensor flattened_edge_grids = pipeline.EdgeGridsLocal.clone().view({num_edges_topo, 13 * 10});
+
+            std::string edge_uv_file = "cpp_uv_grids/edge_uv_grids_" + base_name + ".txt";
+            std::ofstream edge_uv_out(edge_uv_file, std::ios::out);
+            edge_uv_out << std::scientific << std::setprecision(20);
+
+            for (int i = 0; i < flattened_edge_grids.size(0); ++i) {
+                for (int j = 0; j < flattened_edge_grids.size(1); ++j) {
+                    if (j > 0) edge_uv_out << " ";
+                    edge_uv_out << flattened_edge_grids.at({i, j});
+                }
+                edge_uv_out << "\n";
+            }
+            edge_uv_out.close();
+            DBG_LOG << "  Exported: " << edge_uv_file << " (" << flattened_edge_grids.size(0) << " rows)" << std::endl;
+        }
     }
 
     // ========================================================================
     // 3. 提取 UVNet 特征（使用BRepNetAdapter）
     // ========================================================================
-    // std::cout << "[Feature Extraction] Running UVNet..." << std::endl;
+    DBG_LOG << "[Feature Extraction] Running UVNet..." << std::endl;
 
     auto coedges = BRepNetAdapter::extract_coedges(pipeline, model->surf_enc, model->curve_enc);
     auto faces = BRepNetAdapter::extract_faces(pipeline);
     auto edges = BRepNetAdapter::extract_edges(pipeline);
 
     // ========================================================================
-    // 导出 Coedge 拼接后的特征（用于调试 GNN 层）— 已注释
+    // 导出 Coedge 拼接后的特征（用于调试 GNN 层）
     // ========================================================================
-    // if (base_name == "20240116_231044_0_result") {
-    //     std::cout << "\n[DEBUG] Coedge Feature Concatenation for " << base_name << std::endl;
-    //     std::cout << "[DEBUG] Total coedges: " << coedges.size() << std::endl;
-    //     for (size_t c = 0; c < std::min(size_t(5), coedges.size()); ++c) {
-    //         const auto& ce = coedges[c];
-    //         std::cout << "\n[DEBUG] Coedge " << c << ":" << std::endl;
-    //         std::cout << "  parent_face_features (first 10): ";
-    //         for (int i = 0; i < std::min(10, (int)ce.parent_face_features.size()); ++i) {
-    //             printf("%.6f ", ce.parent_face_features[i]);
-    //         }
-    //         std::cout << std::endl;
-    //         std::cout << "  mate_face_features (first 10): ";
-    //         for (int i = 0; i < std::min(10, (int)ce.mate_face_features.size()); ++i) {
-    //             printf("%.6f ", ce.mate_face_features[i]);
-    //         }
-    //         std::cout << std::endl;
-    //         std::cout << "  edge_features (first 10): ";
-    //         for (int i = 0; i < std::min(10, (int)ce.edge_features.size()); ++i) {
-    //             printf("%.6f ", ce.edge_features[i]);
-    //         }
-    //         std::cout << std::endl;
-    //     }
-    // }
+    if (DebugControl::instance().shouldDebug()) {
+        DBG_LOG << "\n[DEBUG] Coedge Feature Concatenation for " << base_name << std::endl;
+        DBG_LOG << "[DEBUG] Total coedges: " << coedges.size() << std::endl;
+        for (size_t c = 0; c < std::min(size_t(5), coedges.size()); ++c) {
+            const auto& ce = coedges[c];
+            DBG_LOG << "\n[DEBUG] Coedge " << c << ":" << std::endl;
+            DBG_LOG << "  parent_face_features (first 10): ";
+            for (int i = 0; i < std::min(10, (int)ce.parent_face_features.size()); ++i) {
+                DBG_PRINTF("%.6f ", ce.parent_face_features[i]);
+            }
+            DBG_LOG << std::endl;
+            DBG_LOG << "  mate_face_features (first 10): ";
+            for (int i = 0; i < std::min(10, (int)ce.mate_face_features.size()); ++i) {
+                DBG_PRINTF("%.6f ", ce.mate_face_features[i]);
+            }
+            DBG_LOG << std::endl;
+            DBG_LOG << "  edge_features (first 10): ";
+            for (int i = 0; i < std::min(10, (int)ce.edge_features.size()); ++i) {
+                DBG_PRINTF("%.6f ", ce.edge_features[i]);
+            }
+            DBG_LOG << std::endl;
+        }
+    }
 
     // ========================================================================
     // 导出按原始Face ID组织的UV Grid（方便直接对比Face 25）
     // ========================================================================
-    // std::cout << "[UV Grid Export] Creating per-face UV grids..." << std::endl;
+    if (EXPORT_ENABLED) {
+        DBG_LOG << "[UV Grid Export] Creating per-face UV grids..." << std::endl;
 
-    // 为每个Face收集其所有coedges的UV Grid并取平均/第一个
-    // 这里使用第一个coedge的parent_face grid作为该face的代表
-    std::vector<std::vector<float>> face_uv_grids(num_faces);
+        // 为每个Face收集其所有coedges的UV Grid并取平均/第一个
+        // 这里使用第一个coedge的parent_face grid作为该face的代表
+        std::vector<std::vector<float>> face_uv_grids(num_faces);
 
-    for (const auto& coedge_info : pipeline.coedges) {
-        int face_id = coedge_info.face_idx;
-        int coedge_id = coedge_info.id;
+        for (const auto& coedge_info : pipeline.coedges) {
+            int face_id = coedge_info.face_idx;
+            int coedge_id = coedge_info.id;
 
-        if (face_id >= 0 && face_id < num_faces && face_uv_grids[face_id].empty()) {
-            // 该face还没有记录UV grid，使用这个coedge的parent_face
-            int row_idx = coedge_id * 2;  // parent_face行索引
+            if (face_id >= 0 && face_id < num_faces && face_uv_grids[face_id].empty()) {
+                // 该face还没有记录UV grid，使用这个coedge的parent_face
+                int row_idx = coedge_id * 2;  // parent_face行索引
 
-            for (int c = 0; c < 9; ++c) {
-                for (int i = 0; i < 10; ++i) {
-                    for (int j = 0; j < 10; ++j) {
-                        face_uv_grids[face_id].push_back(all_face_grids.at({row_idx, c, i, j}));
+                for (int c = 0; c < 9; ++c) {
+                    for (int i = 0; i < 10; ++i) {
+                        for (int j = 0; j < 10; ++j) {
+                            face_uv_grids[face_id].push_back(all_face_grids.at({row_idx, c, i, j}));
+                        }
                     }
                 }
             }
         }
-    }
 
-    // 导出按Face ID组织的UV Grid
-    std::string face_uv_file = "cpp_uv_grids/face_uv_grids_" + base_name + ".txt";
-    std::ofstream face_uv_out(face_uv_file, std::ios::out);
-    face_uv_out << std::scientific << std::setprecision(20);
+        // 导出按Face ID组织的UV Grid
+        std::string face_uv_file = "cpp_uv_grids/face_uv_grids_" + base_name + ".txt";
+        std::ofstream face_uv_out(face_uv_file, std::ios::out);
+        face_uv_out << std::scientific << std::setprecision(20);
 
-    for (int f = 0; f < num_faces; ++f) {
-        if (face_uv_grids[f].empty()) {
-            // 该face没有coedge，填充0
-            for (int i = 0; i < 900; ++i) {
-                if (i > 0) face_uv_out << " ";
-                face_uv_out << 0.0f;
+        for (int f = 0; f < num_faces; ++f) {
+            if (face_uv_grids[f].empty()) {
+                // 该face没有coedge，填充0
+                for (int i = 0; i < 900; ++i) {
+                    if (i > 0) face_uv_out << " ";
+                    face_uv_out << 0.0f;
+                }
+            } else {
+                for (size_t i = 0; i < face_uv_grids[f].size(); ++i) {
+                    if (i > 0) face_uv_out << " ";
+                    face_uv_out << face_uv_grids[f][i];
+                }
             }
-        } else {
-            for (size_t i = 0; i < face_uv_grids[f].size(); ++i) {
-                if (i > 0) face_uv_out << " ";
-                face_uv_out << face_uv_grids[f][i];
-            }
+            face_uv_out << "\n";
         }
-        face_uv_out << "\n";
+        face_uv_out.close();
+        DBG_LOG << "  Exported: " << face_uv_file << " (" << num_faces << " faces)" << std::endl;
+
+        // 输出Face 25的统计信息
+        if (num_faces > 25 && !face_uv_grids[25].empty()) {
+            double sum = 0.0, sum_sq = 0.0;
+            double min_val = 1e9, max_val = -1e9;
+            for (float val : face_uv_grids[25]) {
+                sum += val;
+                sum_sq += val * val;
+                min_val = std::min(min_val, (double)val);
+                max_val = std::max(max_val, (double)val);
+            }
+            double mean = sum / face_uv_grids[25].size();
+            double variance = sum_sq / face_uv_grids[25].size() - mean * mean;
+            double std_dev = std::sqrt(variance);
+
+            DBG_LOG << "\n  [Face 25 UV Grid Statistics]" << std::endl;
+            DBG_LOG << "    Size: " << face_uv_grids[25].size() << std::endl;
+            DBG_LOG << "    Mean: " << mean << std::endl;
+            DBG_LOG << "    Std:  " << std_dev << std::endl;
+            DBG_LOG << "    Min:  " << min_val << std::endl;
+            DBG_LOG << "    Max:  " << max_val << std::endl;
+            DBG_LOG << "    First 10 values: ";
+            for (int i = 0; i < 10 && i < (int)face_uv_grids[25].size(); ++i) {
+                DBG_LOG << face_uv_grids[25][i] << " ";
+            }
+            DBG_LOG << std::endl;
+        }
     }
-    face_uv_out.close();
-    // std::cout << "  Exported: " << face_uv_file << " (" << num_faces << " faces)" << std::endl;
-
-    // 输出Face 25的统计信息
-    // if (num_faces > 25 && !face_uv_grids[25].empty()) {
-    //     double sum = 0.0, sum_sq = 0.0;
-    //     double min_val = 1e9, max_val = -1e9;
-    //     for (float val : face_uv_grids[25]) {
-    //         sum += val;
-    //         sum_sq += val * val;
-    //         min_val = std::min(min_val, (double)val);
-    //         max_val = std::max(max_val, (double)val);
-    //     }
-    //     double mean = sum / face_uv_grids[25].size();
-    //     double variance = sum_sq / face_uv_grids[25].size() - mean * mean;
-    //     double std_dev = std::sqrt(variance);
-
-    //     std::cout << "\n  [Face 25 UV Grid Statistics]" << std::endl;
-    //     std::cout << "    Size: " << face_uv_grids[25].size() << std::endl;
-    //     std::cout << "    Mean: " << mean << std::endl;
-    //     std::cout << "    Std:  " << std_dev << std::endl;
-    //     std::cout << "    Min:  " << min_val << std::endl;
-    //     std::cout << "    Max:  " << max_val << std::endl;
-    //     std::cout << "    First 10 values: ";
-    //     for (int i = 0; i < 10 && i < (int)face_uv_grids[25].size(); ++i) {
-    //         std::cout << face_uv_grids[25][i] << " ";
-    //     }
-    //     std::cout << std::endl;
-    // }
 
     // ========================================================================
     // 创建原始Face ID到推理Face ID的映射（因为faces已经重排序）
@@ -300,238 +309,40 @@ void run_inference_with_export(const std::string& step_file,
         original_to_inference_face[original_id] = inference_id;
     }
 
-    // std::cout << "[Mapping] Created original->inference face mapping" << std::endl;
-    // std::cout << "[Example] Original Face 21 -> Inference Face "
-    //           << original_to_inference_face[21] << std::endl;
-    // std::cout << "[Example] Original Face 22 -> Inference Face "
-    //           << original_to_inference_face[22] << std::endl;
+    DBG_LOG << "[Mapping] Created original->inference face mapping" << std::endl;
 
     // [TOPOLOGY EXPORT] 导出每个face的coedge列表和映射关系
-    // fs::create_directories("cpp_topology");
-    // std::string face_coedge_file = "cpp_topology/" + base_name + "_face_coedges.txt";
-    // std::ofstream face_coedge_out(face_coedge_file);
+    if (EXPORT_ENABLED) {
+        fs::create_directories("cpp_topology");
+        std::string face_coedge_file = "cpp_topology/" + base_name + "_face_coedges.txt";
+        std::ofstream face_coedge_out(face_coedge_file);
 
-    // if (face_coedge_out.is_open()) {
-    //     face_coedge_out << "=== FACE COEDGE LISTS (REORDERED) ===" << std::endl;
-    //     face_coedge_out << "格式：推理Face ID (原始Face ID): coedge列表" << std::endl;
-    //     face_coedge_out << std::endl;
+        if (face_coedge_out.is_open()) {
+            face_coedge_out << "=== FACE COEDGE LISTS (REORDERED) ===" << std::endl;
+            face_coedge_out << "格式：推理Face ID (原始Face ID): coedge列表" << std::endl;
+            face_coedge_out << std::endl;
 
-    //     for (size_t inference_id = 0; inference_id < faces.size(); ++inference_id) {
-    //         const auto& face = faces[inference_id];
-    //         face_coedge_out << "Face " << inference_id << " (Original Face " << face.face_id << "): ";
-    //         for (size_t i = 0; i < face.coedge_ids.size(); ++i) {
-    //             if (i > 0) face_coedge_out << ", ";
-    //             face_coedge_out << face.coedge_ids[i];
-    //         }
-    //         face_coedge_out << " (total: " << face.coedge_ids.size() << ")" << std::endl;
-    //     }
+            for (size_t inference_id = 0; inference_id < faces.size(); ++inference_id) {
+                const auto& face = faces[inference_id];
+                face_coedge_out << "Face " << inference_id << " (Original Face " << face.face_id << "): ";
+                for (size_t i = 0; i < face.coedge_ids.size(); ++i) {
+                    if (i > 0) face_coedge_out << ", ";
+                    face_coedge_out << face.coedge_ids[i];
+                }
+                face_coedge_out << " (total: " << face.coedge_ids.size() << ")" << std::endl;
+            }
 
-    //     face_coedge_out << std::endl;
-    //     face_coedge_out << "=== FACE MAPPING ===" << std::endl;
-    //     face_coedge_out << "格式：推理Face ID -> 原始Face ID" << std::endl;
-    //     for (size_t inference_id = 0; inference_id < faces.size(); ++inference_id) {
-    //         face_coedge_out << inference_id << " -> " << faces[inference_id].face_id << std::endl;
-    //     }
+            face_coedge_out << std::endl;
+            face_coedge_out << "=== FACE MAPPING ===" << std::endl;
+            face_coedge_out << "格式：推理Face ID -> 原始Face ID" << std::endl;
+            for (size_t inference_id = 0; inference_id < faces.size(); ++inference_id) {
+                face_coedge_out << inference_id << " -> " << faces[inference_id].face_id << std::endl;
+            }
 
-    //     face_coedge_out.close();
-    //     std::cout << "[Topology] Face coedge lists exported to " << face_coedge_file << std::endl;
-    // }
-
-    // [DEBUG] Export edge input grids for diagnosis
-    // 不再需要，已注释掉
-    // EdgeInputExporter::export_edge_grids(pipeline, base_name);
-    // EdgeInputExporter::export_edge_representatives(pipeline, base_name);
-
-    // ========================================================================
-    // [DIAGNOSTIC] Verify EdgeGridsLocal[38] matches CoedgeGridsLocal[65]
-    // ========================================================================
-    // if (base_name == "20240116_231044_0_result" && pipeline.EdgeGridsLocal.defined()) {
-    //     std::cout << "\n" << std::string(80, '=') << std::endl;
-    //     std::cout << "[EDGE 38 VERIFICATION]" << std::endl;
-    //     std::cout << std::string(80, '=') << std::endl;
-
-    //     auto& edge_grids = pipeline.EdgeGridsLocal;
-    //     auto& coedge_grids = pipeline.CoedgeGridsLocal;
-
-    //     if (38 < edge_grids.sizes_[0] && 65 < coedge_grids.sizes_[0]) {
-    //         std::cout << "\nEdge 38 LOCAL x coordinates (from EdgeGridsLocal[38]):" << std::endl;
-    //         std::cout << "  [";
-    //         for (int i = 0; i < 10; ++i) {
-    //             std::cout << std::setprecision(3) << std::fixed << edge_grids.at({38, 0, i});
-    //             if (i < 9) std::cout << ", ";
-    //         }
-    //         std::cout << "]" << std::endl;
-
-    //         std::cout << "\nCoedge 65 LOCAL x coordinates (from CoedgeGridsLocal[65]):" << std::endl;
-    //         std::cout << "  [";
-    //         for (int i = 0; i < 10; ++i) {
-    //             std::cout << std::setprecision(3) << std::fixed << coedge_grids.at({65, 0, i});
-    //             if (i < 9) std::cout << ", ";
-    //         }
-    //         std::cout << "]" << std::endl;
-
-    //         std::cout << "\nExpected (Python LOCAL):" << std::endl;
-    //         std::cout << "  [6.509, 4.418, 2.141, 0.575, 0.049, 0.041, 0.314, 0.772, 1.364, 2.064]" << std::endl;
-
-    //         // Check if they match
-    //         bool match = true;
-    //         for (int i = 0; i < 10; ++i) {
-    //             float diff = std::abs(edge_grids.at({38, 0, i}) - coedge_grids.at({65, 0, i}));
-    //             if (diff > 1e-5) {
-    //                 match = false;
-    //                 break;
-    //             }
-    //         }
-
-    //         if (match) {
-    //             std::cout << "\n✅ EdgeGridsLocal[38] == CoedgeGridsLocal[65]" << std::endl;
-    //         } else {
-    //             std::cout << "\n❌ ERROR: EdgeGridsLocal[38] != CoedgeGridsLocal[65]" << std::endl;
-    //         }
-
-    //         std::cout << std::string(80, '=') << std::endl;
-    //     }
-    // }
-
-    // ========================================================================
-    // [DIAGNOSTIC] Coedge 65 Detailed Analysis
-    // ========================================================================
-    // if (base_name == "20240116_231044_0_result" && 65 < num_coedges) {
-    //     std::cout << "\n" << std::string(80, '=') << std::endl;
-    //     std::cout << "[COEDGE 65 DIAGNOSTIC - C++ SIDE]" << std::endl;
-    //     std::cout << std::string(80, '=') << std::endl;
-
-    //     const auto& coedge_65 = pipeline.coedges[65];
-
-    //     // Basic info
-    //     std::cout << "\nCoedge 65 Basic Info:" << std::endl;
-    //     std::cout << "  edge_idx: " << coedge_65.edge_idx << std::endl;
-    //     std::cout << "  face_idx: " << coedge_65.face_idx << std::endl;
-    //     std::cout << "  mate_idx: " << coedge_65.mate_idx << std::endl;
-    //     std::cout << "  orientation: " << (coedge_65.orientation ? "true" : "false") << std::endl;
-    //     std::cout << "  id: " << coedge_65.id << std::endl;
-
-    //     // Generate grid for coedge 65
-    //     std::cout << "\nGenerating grid for coedge 65..." << std::endl;
-    //     breptorch::Tensor coedge_65_grid = pipeline.generate_global_coedge_grid(65);
-
-    //     std::cout << "\nCoedge 65 Grid Info:" << std::endl;
-    //     std::cout << "  Shape: [" << coedge_65_grid.sizes_[0] << ", " << coedge_65_grid.sizes_[1] << "]" << std::endl;
-    //     std::cout << "  Expected: [13, 10]" << std::endl;
-
-    //     // Print first 10 values (flattened)
-    //     std::cout << "\n  First 10 values (row-major flattened):" << std::endl;
-    //     std::cout << "  [";
-    //     for (int i = 0; i < 10; ++i) {
-    //         int row = i / 10;
-    //         int col = i % 10;
-    //         std::cout << coedge_65_grid.at({row, col});
-    //         if (i < 9) std::cout << ", ";
-    //     }
-    //     std::cout << "]" << std::endl;
-
-    //     // Print grid structure (first 5 points)
-    //     std::cout << "\nCoedge 65 Grid Structure (first 5 points):" << std::endl;
-
-    //     const char* channel_names[] = {
-    //         "x", "y", "z",
-    //         "tangent_x", "tangent_y", "tangent_z",
-    //         "normal_L_x", "normal_L_y", "normal_L_z",
-    //         "normal_R_x", "normal_R_y", "normal_R_z",
-    //         "u_param"
-    //     };
-
-    //     for (int ch = 0; ch < 13; ++ch) {
-    //         std::cout << "  Channel " << std::setw(2) << ch << " (" << std::setw(12) << channel_names[ch] << "): [";
-    //         for (int pt = 0; pt < 5; ++pt) {
-    //             std::cout << std::setw(10) << std::setprecision(3) << std::fixed << coedge_65_grid.at({ch, pt});
-    //             if (pt < 4) std::cout << ", ";
-    //         }
-    //         std::cout << "]" << std::endl;
-    //     }
-
-    //     // Print LCS matrix
-    //     std::cout << "\nLCS Transformation Matrix:" << std::endl;
-    //     std::cout << "  Calling compute_coedge_lcs(65)..." << std::endl;
-
-    //     // Get LCS matrix by calling compute_coedge_lcs
-    //     breptorch::Tensor lcs_matrix = pipeline.compute_coedge_lcs(65);
-
-    //     std::cout << "\n  LCS Matrix (4x4):" << std::endl;
-    //     std::cout << std::setprecision(3) << std::fixed;
-    //     for (int row = 0; row < 4; ++row) {
-    //         std::cout << "  [";
-    //         for (int col = 0; col < 4; ++col) {
-    //             std::cout << std::setw(7) << lcs_matrix.at({row, col});
-    //             if (col < 3) std::cout << ", ";
-    //         }
-    //         std::cout << "]" << std::endl;
-    //     }
-
-    //     // Get edge geometry info
-    //     TopoDS_Edge edge = TopoDS::Edge(pipeline.unique_edges.FindKey(coedge_65.edge_idx + 1));
-    //     BRepAdaptor_Curve curve_adaptor(edge);
-
-    //     std::cout << "\nEdge " << coedge_65.edge_idx << " Geometric Info:" << std::endl;
-    //     std::cout << "  First parameter: " << std::setprecision(3) << curve_adaptor.FirstParameter() << std::endl;
-    //     std::cout << "  Last parameter: " << std::setprecision(3) << curve_adaptor.LastParameter() << std::endl;
-    //     std::cout << "  Edge type: " << (int)curve_adaptor.GetType() << std::endl;
-
-    //     // Check if edge is degenerate
-    //     bool is_degenerate = BRep_Tool::Degenerated(edge);
-    //     std::cout << "  Is degenerate: " << (is_degenerate ? "true" : "false") << std::endl;
-
-    //     std::cout << std::string(80, '=') << std::endl;
-    // }
-
-    // ========================================================================
-    // [DIAGNOSTIC] Check CoedgeGridsLocal[65] after LCS transformation
-    // ========================================================================
-    // if (base_name == "20240116_231044_0_result" && pipeline.CoedgeGridsLocal.defined()) {
-    //     std::cout << "\n" << std::string(80, '=') << std::endl;
-    //     std::cout << "[COEDGE 65 LOCAL GRID CHECK]" << std::endl;
-    //     std::cout << std::string(80, '=') << std::endl;
-
-    //     auto& coedge_grids_local = pipeline.CoedgeGridsLocal;
-
-    //     std::cout << "\nCoedgeGridsLocal shape: ["
-    //               << coedge_grids_local.sizes_[0] << ", "
-    //               << coedge_grids_local.sizes_[1] << ", "
-    //               << coedge_grids_local.sizes_[2] << "]" << std::endl;
-
-    //     if (65 < coedge_grids_local.sizes_[0]) {
-    //         std::cout << "\nCoedge 65 LOCAL coordinates (first 10 values, x channel):" << std::endl;
-    //         std::cout << "  [";
-    //         for (int i = 0; i < 10; ++i) {
-    //             std::cout << std::setprecision(3) << std::fixed << coedge_grids_local.at({65, 0, i});
-    //             if (i < 9) std::cout << ", ";
-    //         }
-    //         std::cout << "]" << std::endl;
-
-    //         std::cout << "\nPython LOCAL coordinates (expected):" << std::endl;
-    //         std::cout << "  [6.509, 4.418, 2.141, 0.575, 0.049, 0.041, 0.314, 0.772, 1.364, 2.064]" << std::endl;
-
-    //         std::cout << "\nCoedge 65 LOCAL grid structure (first 5 points):" << std::endl;
-    //         const char* channel_names[] = {
-    //             "x", "y", "z",
-    //             "tangent_x", "tangent_y", "tangent_z",
-    //             "normal_L_x", "normal_L_y", "normal_L_z",
-    //             "normal_R_x", "normal_R_y", "normal_R_z",
-    //             "u_param"
-    //         };
-
-    //         for (int ch = 0; ch < 13; ++ch) {
-    //             std::cout << "  Channel " << std::setw(2) << ch << " (" << std::setw(12) << channel_names[ch] << "): [";
-    //             for (int pt = 0; pt < 5; ++pt) {
-    //                 std::cout << std::setw(10) << std::setprecision(3) << std::fixed << coedge_grids_local.at({65, ch, pt});
-    //                 if (pt < 4) std::cout << ", ";
-    //             }
-    //             std::cout << "]" << std::endl;
-    //         }
-
-    //         std::cout << std::string(80, '=') << std::endl;
-    //     }
-    // }
+            face_coedge_out.close();
+            DBG_LOG << "[Topology] Face coedge lists exported to " << face_coedge_file << std::endl;
+        }
+    }
 
     // 导出 UVNet 输出
     // 注意：UVNet的输出已经嵌入在coedges的特征中了
@@ -573,49 +384,54 @@ void run_inference_with_export(const std::string& step_file,
             uvnet_curve_features.push_back(coedges[representative_coedge_id].edge_features);
 
             // Debug: Print Edge 38's representative
-            // if (e == 38) {
-            //     bool orientation = (representative_coedge_id < (int)pipeline.coedges.size()) ?
-            //                       pipeline.coedges[representative_coedge_id].orientation : false;
-            //     std::cout << "[DEBUG] Edge 38 representative: coedge " << representative_coedge_id
-            //               << " (orientation=" << (orientation ? "true" : "false") << ")" << std::endl;
-            //     std::cout << "[DEBUG] Edge 38 features[:10]: ";
-            //     for (int i = 0; i < 10 && i < (int)coedges[representative_coedge_id].edge_features.size(); ++i) {
-            //         std::cout << coedges[representative_coedge_id].edge_features[i] << " ";
-            //     }
-            //     std::cout << std::endl;
-            // }
+            if (DebugControl::instance().shouldDebug() && e == 38) {
+                bool orientation = (representative_coedge_id < (int)pipeline.coedges.size()) ?
+                                  pipeline.coedges[representative_coedge_id].orientation : false;
+                DBG_LOG << "[DEBUG] Edge 38 representative: coedge " << representative_coedge_id
+                        << " (orientation=" << (orientation ? "true" : "false") << ")" << std::endl;
+                DBG_LOG << "[DEBUG] Edge 38 features[:10]: ";
+                for (int i = 0; i < 10 && i < (int)coedges[representative_coedge_id].edge_features.size(); ++i) {
+                    DBG_LOG << coedges[representative_coedge_id].edge_features[i] << " ";
+                }
+                DBG_LOG << std::endl;
+            }
         } else {
             // 如果找不到representative，用全0特征
-            std::cerr << "[Warning] Edge " << e << " has no representative coedge!" << std::endl;
+            ERR_LOG << "[Warning] Edge " << e << " has no representative coedge!" << std::endl;
             uvnet_curve_features.push_back(std::vector<float>(64, 0.0f));
         }
     }
 
-    // exporter.exportVectorData(uvnet_surface_features, "uvnet_surface", base_name);
-    // exporter.exportVectorData(uvnet_curve_features, "uvnet_curve", base_name);
+    if (EXPORT_ENABLED) {
+        exporter.exportVectorData(uvnet_surface_features, "uvnet_surface", base_name);
+        exporter.exportVectorData(uvnet_curve_features, "uvnet_curve", base_name);
+    }
 
     // ========================================================================
     // 3. 运行BRepNet forward并导出每一层
     // ========================================================================
-    // std::cout << "[Inference] Running BRepNet..." << std::endl;
+    DBG_LOG << "[Inference] Running BRepNet..." << std::endl;
 
     // 我们需要手动执行forward的每一步，并在每一步之后导出
 
     // Layer 0: 一阶邻居更新
-    // std::cout << "  [Layer 0] First-order neighbors..." << std::endl;
+    DBG_LOG << "  [Layer 0] First-order neighbors..." << std::endl;
 
     std::vector<std::vector<float>> layer0_input_concat;
     std::vector<std::vector<float>> layer0_mlp_output_data;
 
-    // [DEBUG] 调试输出已注释
-    // std::cout << "\n================================================================================\n";
-    // std::cout << "[LAYER 0 MLP DEBUG] Processing all coedges\n";
-    // std::cout << "================================================================================\n";
+    DBG_LOG << "\n================================================================================\n";
+    DBG_LOG << "[LAYER 0 MLP DEBUG] Processing all coedges\n";
+    DBG_LOG << "================================================================================\n";
 
     // 诊断输出：对所有 coedge 记录简单的统计信息
-    // std::ofstream diag_mlp("cpp_feature_maps/layer0_mlp_all_coedges_stats.txt");
-    // diag_mlp << "Layer 0 MLP 输入/输出统计\n";
-    // diag_mlp << "格式: Coedge_ID, Parent_Face_ID, Input_Min, Input_Max, Input_Mean, FaceState_Min, FaceState_Max\n\n";
+    std::ofstream diag_mlp;
+    if (EXPORT_ENABLED) {
+        fs::create_directories("cpp_feature_maps");
+        diag_mlp.open("cpp_feature_maps/layer0_mlp_all_coedges_stats.txt");
+        diag_mlp << "Layer 0 MLP 输入/输出统计\n";
+        diag_mlp << "格式: Coedge_ID, Parent_Face_ID, Input_Min, Input_Max, Input_Mean, FaceState_Min, FaceState_Max\n\n";
+    }
 
     int processed_coedges = 0;
     for (auto& coedge : coedges) {
@@ -633,27 +449,27 @@ void run_inference_with_export(const std::string& step_file,
         Tensor input_tensor = breptorch::from_blob(input.data(), {1, 192}, breptorch::kFloat32).clone();
         Tensor output = model->layer0_mlp->forward(input_tensor);  // (1, 60)
 
-        // 详细调试：仅对前 3 个 coedge 打印（已注释）
-        // if (processed_coedges < 3) {
-        //     std::cout << "\n[DEBUG Layer 0 MLP] Coedge " << coedge.coedge_id << std::endl;
-        //     std::cout << "  Input shape: [1, 192]" << std::endl;
-        //     std::cout << "  parent_face_features (first 10): ";
-        //     for (int i = 0; i < 10; ++i) printf("%.10f ", input[i]);
-        //     std::cout << std::endl;
-        //     std::cout << "  mate_face_features (first 10): ";
-        //     for (int i = 64; i < 74; ++i) printf("%.10f ", input[i]);
-        //     std::cout << std::endl;
-        //     std::cout << "  edge_features (first 10): ";
-        //     for (int i = 128; i < 138; ++i) printf("%.10f ", input[i]);
-        //     std::cout << std::endl;
-        //     std::cout << "  MLP output shape: [" << output.size(0) << ", " << output.size(1) << "]" << std::endl;
-        //     std::cout << "  edge_state (dims 0-9): ";
-        //     for (int i = 0; i < 10; ++i) printf("%.10f ", output.at({0, i}));
-        //     std::cout << std::endl;
-        //     std::cout << "  face_state (dims 30-39): ";
-        //     for (int i = 30; i < 40; ++i) printf("%.10f ", output.at({0, i}));
-        //     std::cout << std::endl;
-        // }
+        // 详细调试：仅对前 3 个 coedge 打印
+        if (DebugControl::instance().shouldDebug() && processed_coedges < 3) {
+            DBG_LOG << "\n[DEBUG Layer 0 MLP] Coedge " << coedge.coedge_id << std::endl;
+            DBG_LOG << "  Input shape: [1, 192]" << std::endl;
+            DBG_LOG << "  parent_face_features (first 10): ";
+            for (int i = 0; i < 10; ++i) DBG_PRINTF("%.10f ", input[i]);
+            DBG_LOG << std::endl;
+            DBG_LOG << "  mate_face_features (first 10): ";
+            for (int i = 64; i < 74; ++i) DBG_PRINTF("%.10f ", input[i]);
+            DBG_LOG << std::endl;
+            DBG_LOG << "  edge_features (first 10): ";
+            for (int i = 128; i < 138; ++i) DBG_PRINTF("%.10f ", input[i]);
+            DBG_LOG << std::endl;
+            DBG_LOG << "  MLP output shape: [" << output.size(0) << ", " << output.size(1) << "]" << std::endl;
+            DBG_LOG << "  edge_state (dims 0-9): ";
+            for (int i = 0; i < 10; ++i) DBG_PRINTF("%.10f ", output.at({0, i}));
+            DBG_LOG << std::endl;
+            DBG_LOG << "  face_state (dims 30-39): ";
+            for (int i = 30; i < 40; ++i) DBG_PRINTF("%.10f ", output.at({0, i}));
+            DBG_LOG << std::endl;
+        }
 
         // 保存MLP输出
         std::vector<float> mlp_out;
@@ -678,24 +494,31 @@ void run_inference_with_export(const std::string& step_file,
         float face_min = *std::min_element(coedge.layer0_face_state.begin(), coedge.layer0_face_state.end());
         float face_max = *std::max_element(coedge.layer0_face_state.begin(), coedge.layer0_face_state.end());
 
-        // 记录到诊断文件（已注释）
-        // diag_mlp << coedge.coedge_id << "," << coedge.parent_face_id << ","
-        //         << input_min << "," << input_max << "," << input_mean << ","
-        //         << face_min << "," << face_max << "\n";
+        // 记录到诊断文件
+        if (diag_mlp.is_open()) {
+            diag_mlp << coedge.coedge_id << "," << coedge.parent_face_id << ","
+                    << input_min << "," << input_max << "," << input_mean << ","
+                    << face_min << "," << face_max << "\n";
+        }
 
         processed_coedges++;
     }
 
-    // diag_mlp.close();
+    if (diag_mlp.is_open()) diag_mlp.close();
 
-    // exporter.exportVectorData(layer0_input_concat, "layer0_input_concat", base_name);
-    // exporter.exportVectorData(layer0_mlp_output_data, "layer0_mlp_output", base_name);
+    if (EXPORT_ENABLED) {
+        exporter.exportVectorData(layer0_input_concat, "layer0_input_concat", base_name);
+        exporter.exportVectorData(layer0_mlp_output_data, "layer0_mlp_output", base_name);
+    }
 
     // Face MaxPooling
     // 诊断文件：记录每个面的 MaxPooling 过程
-    // std::ofstream diag_pool("cpp_feature_maps/layer0_face_pooling_all_faces_stats.txt");
-    // diag_pool << "Layer 0 Face MaxPooling 统计\n";
-    // diag_pool << "格式: Face_ID, Num_Coedges, Coedge_Count, Pooled_Min, Pooled_Max, Pooled_Mean\n\n";
+    std::ofstream diag_pool;
+    if (EXPORT_ENABLED) {
+        diag_pool.open("cpp_feature_maps/layer0_face_pooling_all_faces_stats.txt");
+        diag_pool << "Layer 0 Face MaxPooling 统计\n";
+        diag_pool << "格式: Face_ID, Num_Coedges, Coedge_Count, Pooled_Min, Pooled_Max, Pooled_Mean\n\n";
+    }
 
     std::vector<std::vector<float>> layer0_face_pooling_data;
     for (auto& face : faces) {
@@ -716,21 +539,28 @@ void run_inference_with_export(const std::string& step_file,
         float pooled_max = *std::max_element(face.layer0_state.begin(), face.layer0_state.end());
         float pooled_mean = std::accumulate(face.layer0_state.begin(), face.layer0_state.end(), 0.0f) / 30;
 
-        // 记录到诊断文件（已注释）
-        // diag_pool << face.face_id << "," << face.coedge_ids.size() << "," << coedge_count << ","
-        //          << pooled_min << "," << pooled_max << "," << pooled_mean << "\n";
+        // 记录到诊断文件
+        if (diag_pool.is_open()) {
+            diag_pool << face.face_id << "," << face.coedge_ids.size() << "," << coedge_count << ","
+                     << pooled_min << "," << pooled_max << "," << pooled_mean << "\n";
+        }
 
         layer0_face_pooling_data.push_back(face.layer0_state);
     }
 
-    // diag_pool.close();
+    if (diag_pool.is_open()) diag_pool.close();
 
-    // exporter.exportVectorData(layer0_face_pooling_data, "layer0_face_pooling", base_name);
+    if (EXPORT_ENABLED) {
+        exporter.exportVectorData(layer0_face_pooling_data, "layer0_face_pooling", base_name);
+    }
 
     // Edge MaxPooling
     std::vector<std::vector<float>> layer0_edge_pooling_data;
-    // std::ofstream edge_debug_file("cpp_feature_maps/edge_pooling_debug.txt", std::ios::app);
-    // edge_debug_file << "=== Test: " << base_name << " ===\n";
+    std::ofstream edge_debug_file;
+    if (EXPORT_ENABLED) {
+        edge_debug_file.open("cpp_feature_maps/edge_pooling_debug.txt", std::ios::app);
+        edge_debug_file << "=== Test: " << base_name << " ===\n";
+    }
 
     for (auto& edge : edges) {
         edge.layer0_state.resize(30, 0.0f);  // 初始化为0，与Python一致
@@ -752,26 +582,31 @@ void run_inference_with_export(const std::string& step_file,
             }
         }
 
-        // Debug output（已注释）
-        // edge_debug_file << "Edge " << edge.edge_id << ": coedge_ids=[";
-        // for (int cid : edge.coedge_ids) edge_debug_file << cid << " ";
-        // edge_debug_file << "] max_coedge=" << max_coedge_id
-        //                << " value[0]=" << edge.layer0_state[0]
-        //                << " sum_first_10=" << 0.0f;
-        // for (int i = 0; i < std::min(10, 30); ++i) {
-        //     edge_debug_file << " " << edge.layer0_state[i];
-        // }
-        // edge_debug_file << "\n";
+        // Debug output
+        if (edge_debug_file.is_open()) {
+            edge_debug_file << "Edge " << edge.edge_id << ": coedge_ids=[";
+            for (int cid : edge.coedge_ids) edge_debug_file << cid << " ";
+            edge_debug_file << "] max_coedge=" << max_coedge_id
+                           << " value[0]=" << edge.layer0_state[0]
+                           << " sum_first_10=" << 0.0f;
+            for (int i = 0; i < std::min(10, 30); ++i) {
+                edge_debug_file << " " << edge.layer0_state[i];
+            }
+            edge_debug_file << "\n";
+        }
 
         layer0_edge_pooling_data.push_back(edge.layer0_state);
     }
-    // edge_debug_file.close();
-    // exporter.exportVectorData(layer0_edge_pooling_data, "layer0_edge_pooling", base_name);
+    if (edge_debug_file.is_open()) edge_debug_file.close();
+
+    if (EXPORT_ENABLED) {
+        exporter.exportVectorData(layer0_edge_pooling_data, "layer0_edge_pooling", base_name);
+    }
 
     // ========================================================================
     // Layer 1: 二阶邻居
     // ========================================================================
-    // std::cout << "  [Layer 1] Second-order neighbors..." << std::endl;
+    DBG_LOG << "  [Layer 1] Second-order neighbors..." << std::endl;
 
     std::vector<std::vector<float>> layer1_input_concat;
     std::vector<std::vector<float>> layer1_mlp_output_data;
@@ -814,8 +649,10 @@ void run_inference_with_export(const std::string& step_file,
         }
     }
 
-    // exporter.exportVectorData(layer1_input_concat, "layer1_input_concat", base_name);
-    // exporter.exportVectorData(layer1_mlp_output_data, "layer1_mlp_output", base_name);
+    if (EXPORT_ENABLED) {
+        exporter.exportVectorData(layer1_input_concat, "layer1_input_concat", base_name);
+        exporter.exportVectorData(layer1_mlp_output_data, "layer1_mlp_output", base_name);
+    }
 
     // Face MaxPooling
     std::vector<std::vector<float>> layer1_face_pooling_data;
@@ -831,7 +668,10 @@ void run_inference_with_export(const std::string& step_file,
         }
         layer1_face_pooling_data.push_back(face.layer1_state);
     }
-    // exporter.exportVectorData(layer1_face_pooling_data, "layer1_face_pooling", base_name);
+
+    if (EXPORT_ENABLED) {
+        exporter.exportVectorData(layer1_face_pooling_data, "layer1_face_pooling", base_name);
+    }
 
     // Edge MaxPooling
     std::vector<std::vector<float>> layer1_edge_pooling_data;
@@ -847,12 +687,15 @@ void run_inference_with_export(const std::string& step_file,
         }
         layer1_edge_pooling_data.push_back(edge.layer1_state);
     }
-    // exporter.exportVectorData(layer1_edge_pooling_data, "layer1_edge_pooling", base_name);
+
+    if (EXPORT_ENABLED) {
+        exporter.exportVectorData(layer1_edge_pooling_data, "layer1_edge_pooling", base_name);
+    }
 
     // ========================================================================
     // Output Layer: 三阶邻居
     // ========================================================================
-    // std::cout << "  [Output Layer] Third-order neighbors..." << std::endl;
+    DBG_LOG << "  [Output Layer] Third-order neighbors..." << std::endl;
 
     std::vector<std::vector<float>> output_layer_input_concat;
     std::vector<std::vector<float>> output_layer_mlp_output_data;
@@ -893,26 +736,28 @@ void run_inference_with_export(const std::string& step_file,
         }
     }
 
-    // exporter.exportVectorData(output_layer_input_concat, "output_layer_input_concat", base_name);
-    // exporter.exportVectorData(output_layer_mlp_output_data, "output_layer_mlp_output", base_name);
+    if (EXPORT_ENABLED) {
+        exporter.exportVectorData(output_layer_input_concat, "output_layer_input_concat", base_name);
+        exporter.exportVectorData(output_layer_mlp_output_data, "output_layer_mlp_output", base_name);
+    }
 
     // Face MaxPooling（最终 embedding）
     std::vector<std::vector<float>> output_layer_face_embedding_data;
     for (size_t inference_id = 0; inference_id < faces.size(); ++inference_id) {
         auto& face = faces[inference_id];
-        
+
         // === 关键修复：Big faces vs Small faces 的初始化差异 ===
         const int max_coedges_per_face = 30;
         bool is_small_face = (int)face.coedge_ids.size() < max_coedges_per_face;
         float init_value = is_small_face ? 0.0f : -1e9f;
         face.output_state.assign(30, init_value);
-        
-        // 调试输出（已注释）
-        // if (!is_small_face) {
-        //     std::cout << "[Debug] Face " << face.face_id << " is BIG FACE with "
-        //               << face.coedge_ids.size() << " coedges, init=" << init_value << std::endl;
-        // }
-        
+
+        // 调试输出
+        if (!is_small_face) {
+            DBG_LOG << "[Debug] Face " << face.face_id << " is BIG FACE with "
+                    << face.coedge_ids.size() << " coedges, init=" << init_value << std::endl;
+        }
+
         for (int coedge_id : face.coedge_ids) {
             if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
                 const auto& coedge_state = coedges[coedge_id].output_face_state;
@@ -938,12 +783,15 @@ void run_inference_with_export(const std::string& step_file,
 
         output_layer_face_embedding_data.push_back(face.output_state);
     }
-    // exporter.exportVectorData(output_layer_face_embedding_data, "output_layer_face_embedding", base_name);
+
+    if (EXPORT_ENABLED) {
+        exporter.exportVectorData(output_layer_face_embedding_data, "output_layer_face_embedding", base_name);
+    }
 
     // ========================================================================
     // Linear 分类层（用于验证，但不导出，因为已经有cpp_logits了）
     // ========================================================================
-    // std::cout << "  [Classification] Running Linear layer..." << std::endl;
+    DBG_LOG << "  [Classification] Running Linear layer..." << std::endl;
 
     // 构建face embedding tensor
     Tensor face_embedding = breptorch::Tensor({num_faces, 30}, breptorch::kFloat32);
@@ -976,16 +824,18 @@ void run_inference_with_export(const std::string& step_file,
     }
 
     // 输出预测结果（简化版）
-    // std::cout << "  [Predictions] ";
-    // for (const auto& pair : class_dist) {
-    //     std::cout << "Class" << pair.first << ":" << pair.second << " ";
-    // }
-    // std::cout << std::endl;
+    if (DebugControl::instance().shouldDebug()) {
+        DBG_LOG << "  [Predictions] ";
+        for (const auto& pair : class_dist) {
+            DBG_LOG << "Class" << pair.first << ":" << pair.second << " ";
+        }
+        DBG_LOG << std::endl;
+    }
 
     // ========================================================================
-    // 导出 Logits 到 cpp_logits/
+    // 导出 Logits 到 cpp_logits/ — 始终执行，不受调试开关控制
     // ========================================================================
-    // std::cout << "  [Export] Saving logits..." << std::endl;
+    DBG_LOG << "  [Export] Saving logits..." << std::endl;
 
     // 确保目录存在
     fs::create_directories("cpp_logits");
@@ -1023,9 +873,9 @@ void run_inference_with_export(const std::string& step_file,
     }
     logits_file.close();
 
-    // std::cout << "  [Export] Logits saved to: " << logits_path << " (original face order)" << std::endl;
+    DBG_LOG << "  [Export] Logits saved to: " << logits_path << " (original face order)" << std::endl;
 
-    // std::cout << " -> [✓] F:" << num_faces << " E:" << num_edges << std::endl;
+    INFO_LOG << " -> [✓] F:" << num_faces << " E:" << num_edges << std::endl;
 
     // ========================================================================
     // [MEMORY CLEANUP] 显式释放所有临时数据结构，防止内存泄漏
@@ -1065,7 +915,6 @@ void run_inference_with_export(const std::string& step_file,
 
     // 清理其他临时数据
     {
-        std::vector<std::vector<float>>().swap(face_uv_grids);
         std::vector<std::vector<float>>().swap(uvnet_surface_features);
         std::vector<std::vector<float>>().swap(uvnet_curve_features);
         std::vector<std::vector<float>>().swap(logits_original_order);
@@ -1084,9 +933,9 @@ int main(int argc, char* argv[]) {
     SetConsoleOutputCP(65001);
     SetConsoleCP(65001);
 
-    // std::cout << "=== BRepNet Inference Tool ===" << std::endl;
-    // std::cout << "Purpose: Export intermediate layer outputs for comparison with Python" << std::endl;
-    // std::cout << "Output directory: cpp_feature_maps/" << std::endl;
+    INFO_LOG << "=== BRepNet Inference Tool ===" << std::endl;
+    DBG_LOG << "Purpose: Export intermediate layer outputs for comparison with Python" << std::endl;
+    DBG_LOG << "Output directory: cpp_feature_maps/" << std::endl;
 
     // ========================================================================
     // 1. 创建导出器
@@ -1099,7 +948,7 @@ int main(int argc, char* argv[]) {
     std::string weights_file = "inference_data/state_dict.npz";
     std::string step_dir = "inference_data/step_files";
 
-    // std::cout << "\n[Model] Loading weights: " << weights_file << std::endl;
+    DBG_LOG << "\n[Model] Loading weights: " << weights_file << std::endl;
 
     auto model = std::make_shared<BRepNetImpl>(27);
     cnpy::npz_t npz = cnpy::npz_load(weights_file);
@@ -1125,12 +974,14 @@ int main(int argc, char* argv[]) {
     auto params = model->named_parameters();
 
     // Debug: print all available parameters
-    // std::cout << "\n[Debug] Available C++ parameters:" << std::endl;
-    for (auto& p : params) {
-    // std::cout << "  " << p.first << std::endl;
+    DBG_LOG << "\n[Debug] Available C++ parameters:" << std::endl;
+    if (DebugControl::instance().shouldDebug()) {
+        for (auto& p : params) {
+            DBG_LOG << "  " << p.first << std::endl;
+        }
     }
 
-    // std::cout << "\n[Debug] Processing NPZ weights..." << std::endl;
+    DBG_LOG << "\n[Debug] Processing NPZ weights..." << std::endl;
     for (auto& item : npz) {
         std::string original_key = item.first;
         std::string key = original_key;
@@ -1145,65 +996,67 @@ int main(int argc, char* argv[]) {
             *params[key] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
 
             // 调试：打印所有 classification_layer 的加载
-            if (key.find("classification_layer") != std::string::npos) {
-    // std::cout << "  [LOADED] " << original_key << " (shape: ";
+            if (DebugControl::instance().shouldDebug() && key.find("classification_layer") != std::string::npos) {
+                DBG_LOG << "  [LOADED] " << original_key << " (shape: ";
                 for (size_t i = 0; i < shape.size(); i++) {
-    // std::cout << shape[i];
-    // if (i < shape.size() - 1) std::cout << ", ";
+                    DBG_LOG << shape[i];
+                    if (i < shape.size() - 1) DBG_LOG << ", ";
                 }
-    // std::cout << ")" << std::endl;
+                DBG_LOG << ")" << std::endl;
             }
 
             // Debug: print when loading layer 1 linear_1 bias
-            if (key.find("layer_1.mlp") != std::string::npos && key.find("linear_1.bias") != std::string::npos) {
-    // std::cout << "  [LOADED] " << original_key << " -> " << key << " (shape: ";
+            if (DebugControl::instance().shouldDebug() && key.find("layer_1.mlp") != std::string::npos && key.find("linear_1.bias") != std::string::npos) {
+                DBG_LOG << "  [LOADED] " << original_key << " -> " << key << " (shape: ";
                 for (size_t i = 0; i < shape.size(); i++) {
-    // std::cout << shape[i];
-    // if (i < shape.size() - 1) std::cout << ", ";
+                    DBG_LOG << shape[i];
+                    if (i < shape.size() - 1) DBG_LOG << ", ";
                 }
-    // std::cout << ")" << std::endl;
+                DBG_LOG << ")" << std::endl;
             }
         } else {
             // Debug: print when NOT found
-            if (original_key.find("classification_layer") != std::string::npos) {
-    // std::cout << "  [NOT FOUND] " << original_key << " -> " << key << std::endl;
-            }
-            if (original_key.find("layer_1") != std::string::npos && original_key.find("linear_1.bias") != std::string::npos) {
-    // std::cout << "  [NOT FOUND] " << original_key << " -> " << key << std::endl;
+            if (DebugControl::instance().shouldDebug()) {
+                if (original_key.find("classification_layer") != std::string::npos) {
+                    DBG_LOG << "  [NOT FOUND] " << original_key << " -> " << key << std::endl;
+                }
+                if (original_key.find("layer_1") != std::string::npos && original_key.find("linear_1.bias") != std::string::npos) {
+                    DBG_LOG << "  [NOT FOUND] " << original_key << " -> " << key << std::endl;
+                }
             }
         }
     }
 
-    // std::cout << "\n[Model] Weights loaded successfully!" << std::endl;
+    DBG_LOG << "\n[Model] Weights loaded successfully!" << std::endl;
 
     // 验证 Layer 1 linear_1 bias 是否被加载
-    // std::cout << "\n[Verification] Checking if Layer 1 linear_1 bias was loaded..." << std::endl;
+    DBG_LOG << "\n[Verification] Checking if Layer 1 linear_1 bias was loaded..." << std::endl;
     auto layer1_bias_key = "layer_1.mlp.mlp.linear_1.bias";
     if (params.find(layer1_bias_key) != params.end()) {
-    // std::cout << "  ✓ Found: " << layer1_bias_key << std::endl;
+        DBG_LOG << "  ✓ Found: " << layer1_bias_key << std::endl;
         // Try to re-load the bias explicitly
         if (npz.count("layers.1.mlp.mlp.linear_1.bias")) {
             auto arr = npz["layers.1.mlp.mlp.linear_1.bias"];
             std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
             *params[layer1_bias_key] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
-    // std::cout << "  ✓ Re-loaded bias: " << layer1_bias_key << std::endl;
+            DBG_LOG << "  ✓ Re-loaded bias: " << layer1_bias_key << std::endl;
         }
     } else {
-    // std::cout << "  ✗ NOT FOUND: " << layer1_bias_key << std::endl;
+        DBG_LOG << "  ✗ NOT FOUND: " << layer1_bias_key << std::endl;
     }
 
     // ========================================================================
     // 3. 获取所有 STEP 文件
     // ========================================================================
-    // std::cout << "\n[Files] Scanning directory: " << step_dir << std::endl;
+    DBG_LOG << "\n[Files] Scanning directory: " << step_dir << std::endl;
     auto step_files = get_step_files(step_dir);
 
     if (step_files.empty()) {
-        std::cerr << "[Error] No STEP files found" << std::endl;
+        ERR_LOG << "[Error] No STEP files found" << std::endl;
         return -1;
     }
 
-    // std::cout << "[Files] Found " << step_files.size() << " STEP files" << std::endl;
+    DBG_LOG << "[Files] Found " << step_files.size() << " STEP files" << std::endl;
 
     // ========================================================================
     // 4. 批量推理并导出
@@ -1215,7 +1068,7 @@ int main(int argc, char* argv[]) {
 
     for (const auto& step_file : step_files) {
         current++;
-    // std::cout << "\n[" << current << "/" << total_files << "] ";
+        DBG_LOG << "\n[" << current << "/" << total_files << "] ";
         run_inference_with_export(step_file, model, exporter);
 
         // ========================================================================
@@ -1228,7 +1081,7 @@ int main(int argc, char* argv[]) {
             if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
                 double working_set_mb = pmc.WorkingSetSize / 1024.0 / 1024.0;
                 double peak_mb = pmc.PeakWorkingSetSize / 1024.0 / 1024.0;
-                //std::cout << " [Memory] WS: " << std::fixed << std::setprecision(1)<< working_set_mb << " MB, Peak: " << peak_mb << " MB" << std::flush;
+                DBG_LOG << " [Memory] WS: " << std::fixed << std::setprecision(1) << working_set_mb << " MB, Peak: " << peak_mb << " MB" << std::flush;
             }
         }
     }
@@ -1239,11 +1092,11 @@ int main(int argc, char* argv[]) {
     // ========================================================================
     // 5. 打印导出清单
     // ========================================================================
-    // std::cout << "\n" << std::string(70, '=') << std::endl;
-    // std::cout << "All " << total_files << " files completed!" << std::endl;
-    // std::cout << "Total time: " << total_duration.count() / 1000.0 << " seconds" << std::endl;
-    // std::cout << "Average time per file: " << (total_duration.count() / total_files) << " ms" << std::endl;
-    // std::cout << std::string(70, '=') << std::endl;
+    INFO_LOG << "\n" << std::string(70, '=') << std::endl;
+    INFO_LOG << "All " << total_files << " files completed!" << std::endl;
+    INFO_LOG << "Total time: " << total_duration.count() / 1000.0 << " seconds" << std::endl;
+    INFO_LOG << "Average time per file: " << (total_duration.count() / total_files) << " ms" << std::endl;
+    INFO_LOG << std::string(70, '=') << std::endl;
 
     return 0;
 }

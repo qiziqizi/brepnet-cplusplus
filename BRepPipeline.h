@@ -4,7 +4,7 @@
 #include <vector>
 #include <map>
 #include <string>
-#include <algorithm> // ���� std::sort
+#include <algorithm>
 #include <cmath>
 
 // LibTorch
@@ -12,6 +12,7 @@
 #include "BRepTorch.h"
 #include "cnpy.h"
 #include "BRepUtils.h"
+#include "DebugControl.h"
 
 // OpenCascade 头文件
 #include <STEPControl_Reader.hxx>
@@ -46,13 +47,13 @@
 #include <BRepLProp_SLProps.hxx>
 #include <Geom2d_Curve.hxx>
 
-// extract_face_point_grids ���
+// extract_face_point_grids
 #include <BRepTools.hxx>
-#include <BRepTopAdaptor_FClass2d.hxx>    
+#include <BRepTopAdaptor_FClass2d.hxx>
 #include <gp_Pnt2d.hxx>
 #include <Precision.hxx>
 
-// extract_face_point_grids ���
+// extract_face_point_grids
 #include <GCPnts_UniformAbscissa.hxx>
 #include <GeomLProp_SLProps.hxx>
 
@@ -66,10 +67,10 @@ inline Tensor get_slice(const Tensor& t, int index) {
     std::vector<int64_t> new_sizes = t.sizes();
     if (new_sizes.empty()) return Tensor();
     new_sizes.erase(new_sizes.begin());
-    
+
     int64_t block_size = 1;
     for (auto s : new_sizes) block_size *= s;
-    
+
     Tensor out(new_sizes, t.dtype());
     if (t.dtype() == kFloat32) {
         const float* src = const_cast<Tensor&>(t).data_ptr<float>() + index * block_size;
@@ -138,23 +139,23 @@ public:
     // ===== 【诊断清理】位置5：析构函数 =====
     ~BRepPipeline() {
         close_diagnostics();
-        printf("[DIAGNOSTIC] Diagnostic system closed\n");
+        DBG_PRINTF("[DIAGNOSTIC] Diagnostic system closed\n");
     }
     // ===== 诊断清理完毕 =====
 
 
-    // --- ������� ---
+    // --- 主处理流程 ---
     bool process(const std::string& step_file_path) {
         // ===== 【诊断初始化】位置4 =====
         init_diagnostics();
-        printf("[DIAGNOSTIC] Diagnostic system initialized\n");
+        DBG_PRINTF("[DIAGNOSTIC] Diagnostic system initialized\n");
         // ===== 诊断初始化完毕 =====
 
         coedges.clear();
         unique_faces.Clear();
         unique_edges.Clear();
 
-        // 2. ��ȡ STEP
+        // 2. 读取 STEP
         STEPControl_Reader reader;
         IFSelect_ReturnStatus status = reader.ReadFile(step_file_path.c_str());
         int num_roots = reader.NbRootsForTransfer();
@@ -190,13 +191,12 @@ public:
     }
 
     void load_stats(const std::string& npz_path) {
-        std::cout << "[Debug] Loading stats from: " << npz_path << std::endl;
+        DBG_LOG("[Debug] Loading stats from: " << npz_path);
         try {
             cnpy::npz_t npz = cnpy::npz_load(npz_path);
             auto load_t = [&](const std::string& key) {
                 if (!npz.count(key)) {
-                    std::cerr << "Stats missing key: " << key << std::endl;
-                    // ����һ���� tensor �����׳��쳣����ֹ�����
+                    ERR_LOG("Stats missing key: " << key);
                     return breptorch::ones({ 1 }, breptorch::kFloat32);
                 }
                 cnpy::NpyArray arr = npz[key];
@@ -217,30 +217,29 @@ public:
             has_stats = true;
         }
         catch (const std::exception& e) {
-            std::cerr << " Load stats failed: " << e.what() << std::endl;
-            has_stats = false; 
+            ERR_LOG("Load stats failed: " << e.what());
+            has_stats = false;
         }
     }
 
-    // ��׼��
+    // 标准化
     void standardize() {
         if (!has_stats) {
-            std::cout << "[Warn] No stats loaded, skipping standardization." << std::endl;
+            DBG_LOG("[Warn] No stats loaded, skipping standardization.");
             return;
         }
-        std::cout << "[Debug] Executing standardization..." << std::endl;
+        DBG_LOG("[Debug] Executing standardization...");
         if (Xf.size(0) > 1) Xf.sub_(mean_f).div_(std_f);
         if (Xe.size(0) > 1) Xe.sub_(mean_e).div_(std_e);
         if (Xc.size(0) > 1) Xc.sub_(mean_c).div_(std_c);
     }
-    // �� BRepPipeline ��� public �������ӣ�
 
-    Tensor FaceGridsGlobal; // �洢��ȡ������ Grid ���� [N, 7, 10, 10]
+    Tensor FaceGridsGlobal; // 存储提取的全局 Grid 数据 [N, 7, 10, 10]
     Tensor EdgeGridsGlobal;
     Tensor CoedgeGridsGlobal;
     bool use_uvnet = false;
 
-    // �������������� Grid ���� (�� Python ������ npz)
+    // 从外部加载已有 Grid 数据 (从 Python 生成的 npz)
     void load_grids_from_npz(const std::string& npz_path) {
         try {
             cnpy::npz_t npz = cnpy::npz_load(npz_path);
@@ -250,10 +249,8 @@ public:
                 cnpy::NpyArray arr = npz["face_point_grids"];
                 std::vector<int64_t> s; for (auto d : arr.shape) s.push_back(d);
                 FaceGridsGlobal = breptorch::from_blob(arr.data<float>(), s, breptorch::kFloat32).clone();
-                // û�в� Padding ���ⲿ���߼��� Forward ��������ȫ������ֻ�������
                 use_uvnet = true;
-                std::cout << "Loaded Face Grids: " << FaceGridsGlobal.sizes() << std::endl;
-                //std::cout << FaceGridsGlobal[0][0] << std::endl;
+                DBG_LOG("Loaded Face Grids: " << FaceGridsGlobal.sizes());
             }
 
             // 2. Edge
@@ -261,8 +258,7 @@ public:
                 cnpy::NpyArray arr = npz["edge_point_grids"];
                 std::vector<int64_t> s; for (auto d : arr.shape) s.push_back(d);
                 EdgeGridsGlobal = breptorch::from_blob(arr.data<float>(), s, breptorch::kFloat32).clone();
-                std::cout << "Loaded Edge Grids: " << EdgeGridsGlobal.sizes() << std::endl;
-                //std::cout << EdgeGridsGlobal[0] << std::endl;
+                DBG_LOG("Loaded Edge Grids: " << EdgeGridsGlobal.sizes());
             }
 
             // 3. Coedge
@@ -270,18 +266,18 @@ public:
                 cnpy::NpyArray arr = npz["coedge_point_grids"];
                 std::vector<int64_t> s; for (auto d : arr.shape) s.push_back(d);
                 CoedgeGridsGlobal = breptorch::from_blob(arr.data<float>(), s, breptorch::kFloat32).clone();
-                std::cout << "Loaded Coedge Grids: " << CoedgeGridsGlobal.sizes() << std::endl;
+                DBG_LOG("Loaded Coedge Grids: " << CoedgeGridsGlobal.sizes());
             }
         }
         catch (const std::exception& e) {
-                std::cerr << "Failed to load grids from npz: " << e.what() << std::endl;
+            ERR_LOG("Failed to load grids from npz: " << e.what());
         }
     }
 
-    // �洢�ֲ�����ϵ�µ�����
+    // 存储局部坐标系下的数据
     Tensor FaceGridsLocal;   // [N_c, 2, 9, 10, 10]
-    Tensor EdgeGridsLocal;    //ʵ��û����
-    Tensor CoedgeGridsLocal;  //ʵ��û����
+    Tensor EdgeGridsLocal;    // 实际没用到
+    Tensor CoedgeGridsLocal;  // 实际没用到
 
 
 private:
@@ -293,11 +289,11 @@ private:
             const TopoDS_Face& face = TopoDS::Face(unique_faces.FindKey(f_idx));
 
             // 调试：统计 Face 0 的 Wires 和 Edges
-            if (f_idx == 1) {
+            if (f_idx == 1 && DebugControl::instance().shouldDebug()) {
                 int wire_count = 0;
                 TopExp_Explorer wireCounter(face, TopAbs_WIRE);
                 for (; wireCounter.More(); wireCounter.Next()) wire_count++;
-                std::cout << "[Debug Topology] Face 0 has " << wire_count << " wires" << std::endl;
+                DBG_LOG("[Debug Topology] Face 0 has " << wire_count << " wires");
             }
 
             TopExp_Explorer wireExp(face, TopAbs_WIRE);
@@ -337,8 +333,8 @@ private:
                 }
 
                 // 调试：打印 Face 0 每个 Wire 的边数
-                if (f_idx == 1) {
-                    std::cout << "[Debug Topology] Face 0, Wire " << wire_idx << " has " << edge_count_in_wire << " edges" << std::endl;
+                if (f_idx == 1 && DebugControl::instance().shouldDebug()) {
+                    DBG_LOG("[Debug Topology] Face 0, Wire " << wire_idx << " has " << edge_count_in_wire << " edges");
                 }
                 wire_idx++;
 
@@ -377,82 +373,61 @@ private:
         int num_f = unique_faces.Extent();
         int num_e = unique_edges.Extent();
         int num_c = coedges.size();
-        // 1. ��ʼ�� Face �������� (Xf)
-        // ��ʦָʾ������Ҫȫ�ּ����������������ռλ��ȫ��Ϊ 0 �� 1
-        // ά�ȱ��� 7 ��Ϊ�˼������е�Ȩ���ļ��ṹ
         Xf = breptorch::zeros({ num_f, 7 });
-
-        // 2. ��ʼ�� Edge �������� (Xe)
-        // ά�ȱ��� 10 �Լ���Ȩ��
         Xe = breptorch::zeros({ num_e, 10 });
-        // 3. ��ʼ�� Coedge �������� (Xc)
         Xc = breptorch::zeros({ num_c, 1 });
         auto Xc_a = Xc.accessor<float, 2>();
         for (int i = 0; i < num_c; ++i) {
-            // ����������һ�����Ϣ����Ϊ���������˽ṹ��һ����
             if (!coedges[i].orientation) Xc_a[i][0] = 1;
         }
 
-        std::cout << "[Info] Simplified Feature Extraction (No Global Geom Stats)." << std::endl;
+        DBG_LOG("[Info] Simplified Feature Extraction (No Global Geom Stats).");
     }
 
     void generate_tensors() {
-        // ��ȡ����
         int num_f = unique_faces.Extent();
         int num_e = unique_edges.Extent();
         int num_c = coedges.size();
 
         std::vector<int64_t> kf, ke, kc;
-        // winged_edge.json��Ϊ simple_edge.json
-        //std::vector<std::vector<int>> fw = { {},{1} }, ew = { {},{2},{3},{1,2},{1,3} }, cw = { {},{1},{2},{3},{1,2},{1,3} };
         std::vector<std::vector<int>> fw = { {},{1} }, ew = { {} }, cw = { {},{1} };
-        // --- ���� Kf ---
-        // Kf�ò�����
-        // ���޸� 1�� ��Ҫ push_back(0) ��
+        // --- 生成 Kf ---
         for (const auto& c : coedges) {
             for (auto& rule : fw) {
                 int t = walk(c.id, rule);
-                // ���޸� 2�� ��� t==-1 (���ھ�)���� num_f (��ΪԽ��ֵ)
-                // ��� t!=-1���� coedges[t].face_idx (0-based)
                 kf.push_back(t == -1 ? num_f : coedges[t].face_idx);
             }
         }
-        // ��״��Ϊ {num_c, ...}
         Kf = breptorch::from_blob(kf.data(), { num_c, (long long)fw.size() }, breptorch::kLong).clone();
 
-        // --- ���� Ke ---
-        // ��Ҫ push_back(0)
+        // --- 生成 Ke ---
         for (const auto& c : coedges) {
             for (auto& rule : ew) {
                 int t = walk(c.id, rule);
-                // ���ھӴ� num_e�����ھӴ� edge_idx
                 ke.push_back(t == -1 ? num_e : coedges[t].edge_idx);
             }
         }
         Ke = breptorch::from_blob(ke.data(), { num_c, (long long)ew.size() }, breptorch::kLong).clone();
 
-        // --- ���� Kc ---
-        // ��Ҫ push_back(0)
+        // --- 生成 Kc ---
         for (const auto& c : coedges) {
             for (auto& rule : cw) {
                 int t = walk(c.id, rule);
-                // ���ھӴ� num_c�����ھӴ� t (����ID��������0-based)
                 kc.push_back(t == -1 ? num_c : t);
             }
         }
         Kc = breptorch::from_blob(kc.data(), { num_c, (long long)cw.size() }, breptorch::kLong).clone();
 
         // --- Pooling Ce ---
-        std::vector<int64_t> ce(num_e * 2, num_c); // ��ʼ��Ϊ num_c (��Чֵ)
+        std::vector<int64_t> ce(num_e * 2, num_c);
         std::vector<int> ec(num_e, 0);
         for (const auto& c : coedges) {
-            // �� c.id (0-based)
             if (ec[c.edge_idx] < 2) ce[c.edge_idx * 2 + ec[c.edge_idx]++] = c.id;
         }
         Ce = breptorch::from_blob(ce.data(), { num_e, 2 }, breptorch::kLong).clone();
 
         // --- Pooling Cf (按照 Python 的方式：small faces + big faces) ---
-        int max_cpf = 30;  // Python 的 max_coedges_per_face
+        int max_cpf = 30;
 
         // 1. 统计每个 face 的 coedge 数量
         std::vector<int> fc(num_f, 0);
@@ -471,8 +446,8 @@ private:
             }
         }
 
-        std::cout << "[Debug BRepPipeline] Small faces: " << small_face_indices.size()
-                  << ", Big faces: " << big_face_indices.size() << std::endl;
+        DBG_LOG("[Debug BRepPipeline] Small faces: " << small_face_indices.size()
+                << ", Big faces: " << big_face_indices.size());
 
         // 3. 构建 face_permutation (small faces 在前，big faces 在后)
         std::vector<int> face_permutation;
@@ -481,7 +456,7 @@ private:
 
         // 4. 构建 Cf (只包含 small faces)
         int num_small_faces = small_face_indices.size();
-        std::vector<int64_t> cf(num_small_faces * max_cpf, num_c); // 初始化为 num_c (无效值)
+        std::vector<int64_t> cf(num_small_faces * max_cpf, num_c);
 
         // 为每个 face 收集 coedges
         std::vector<std::vector<int>> face_to_coedges(num_f);
@@ -499,13 +474,16 @@ private:
         }
 
         // 调试：打印 Cf[0] (第一个 small face)
-        std::cout << "[Debug BRepPipeline] Cf[0] corresponds to original Face " << small_face_indices[0] << std::endl;
-        std::cout << "[Debug BRepPipeline] Cf[0] has " << face_to_coedges[small_face_indices[0]].size() << " coedges" << std::endl;
-        std::cout << "[Debug BRepPipeline] Cf[0] coedge IDs (first 30): ";
-        for (int i = 0; i < std::min(30, (int)face_to_coedges[small_face_indices[0]].size()); ++i) {
-            std::cout << face_to_coedges[small_face_indices[0]][i] << " ";
+        if (DebugControl::instance().shouldDebug()) {
+            DBG_LOG("[Debug BRepPipeline] Cf[0] corresponds to original Face " << small_face_indices[0]);
+            DBG_LOG("[Debug BRepPipeline] Cf[0] has " << face_to_coedges[small_face_indices[0]].size() << " coedges");
+            std::ostringstream oss;
+            oss << "[Debug BRepPipeline] Cf[0] coedge IDs (first 30): ";
+            for (int i = 0; i < std::min(30, (int)face_to_coedges[small_face_indices[0]].size()); ++i) {
+                oss << face_to_coedges[small_face_indices[0]][i] << " ";
+            }
+            DBG_LOG(oss.str());
         }
-        std::cout << std::endl;
 
         Cf = breptorch::from_blob(cf.data(), { num_small_faces, max_cpf }, breptorch::kLong).clone();
 
@@ -520,11 +498,11 @@ private:
             Csf.push_back(coedge_tensor);
         }
 
-        std::cout << "[Debug BRepPipeline] Csf has " << Csf.size() << " big faces" << std::endl;
+        DBG_LOG("[Debug BRepPipeline] Csf has " << Csf.size() << " big faces");
     }
 
 
-    // ��Ӧ python �� extract_face_point_grid
+    // 对应 python 的 extract_face_point_grid
     // =========================================================================
 
     // BRepPipeline.h: generate_global_face_grid()
@@ -545,15 +523,12 @@ private:
         Standard_Real umin, umax, vmin, vmax;
         BRepTools::UVBounds(face, umin, umax, vmin, vmax);
         BRepAdaptor_Surface surf(face);
-        BRepTopAdaptor_FClass2d classifier(face, 1e-9);  // 与Python端容差一致
+        BRepTopAdaptor_FClass2d classifier(face, 1e-9);
 
         // IMPORTANT: UV sampling direction depends on face orientation
-        // Based on testing with Python output:
-        // REVERSED faces: U from max to min, V from min to max
-        // FORWARD faces: U from min to max, V from min to max (NOT max to min!)
         bool is_reversed = (face.Orientation() == TopAbs_REVERSED);
-        bool u_reverse = is_reversed;   // REVERSED: max->min, FORWARD: min->max
-        bool v_reverse = false;         // Both: min->max
+        bool u_reverse = is_reversed;
+        bool v_reverse = false;
 
         float* data = grid.data_ptr<float>();
 
@@ -567,10 +542,9 @@ private:
                 surf.D1(u, v, p, d1u, d1v);
 
                 // 使用 GeomLProp_SLProps 计算法线（与Python一致）
-                // Python端使用：GeomLProp_SLProps(surf, uv[0], uv[1], 1, 1e-9)
                 Handle(Geom_Surface) geom_surf = BRep_Tool::Surface(face);
                 GeomLProp_SLProps props(geom_surf, u, v, 1, 1e-9);
-                
+
                 gp_Vec n;
                 if (props.IsNormalDefined()) {
                     gp_Dir normal = props.Normal();
@@ -586,9 +560,6 @@ private:
                 gp_Pnt2d p2d(u, v);
                 TopAbs_State state = classifier.Perform(p2d);
                 float mask_val = (state == TopAbs_IN) ? 1.0f : 0.0f;
-
-                // 注意：不要强制将边框点设为0.0，因为Python端的occwl库可能对某些特殊face的对角线点返回1.0
-                // 例如Face 13的[0,0]和[9,0]点
 
                 int64_t idx = i * stride_h + j;
 
@@ -607,21 +578,18 @@ private:
             }
         }
 
-        // NOTE: Python does not flip REVERSED faces, so we don't either
-        // This was causing data corruption issues
-
         return grid;
     }
 
     Tensor generate_global_coedge_grid(int coedge_idx) {
-        std::cerr << "[DEBUG ArcLength] generate_global_coedge_grid() called for coedge " << coedge_idx << std::endl;
+        DBG_CERR("[DEBUG ArcLength] generate_global_coedge_grid() called for coedge " << coedge_idx);
         const CoedgeInfo& c_info = coedges[coedge_idx];
-        
-        // 1. ��ȡ����ʵ��
+
+        // 1. 获取几何实体
         TopoDS_Face face_left = TopoDS::Face(unique_faces.FindKey(c_info.face_idx + 1));
         TopoDS_Edge edge = TopoDS::Edge(unique_edges.FindKey(c_info.edge_idx + 1));
-        
-        // ��ȡ Mate �� (Right Face)
+
+        // 获取 Mate 面 (Right Face)
         TopoDS_Face face_right;
         bool has_mate = (c_info.mate_idx != -1);
         if (has_mate) {
@@ -629,23 +597,15 @@ private:
             face_right = TopoDS::Face(unique_faces.FindKey(mate_face_idx + 1));
         }
 
-        // 2. 准备 Tensor [12, 10] (实际上需要转换为 [12, 10] ? Python 的 [12, 10]是 PyTorch Conv1d 输入通常为 [Batch, Channel, Length])
-        // Python extract_coedge_point_grid 返回的是 np.transpose(single_grid, (1,0)) 
-        // single_grid 是 [10, 12]，转置后是 [12, 10]
-        // 这里直接生成 [12, 10]
+        // 2. 准备 Tensor [13, 10]
         int num_u = 10;
-        //Tensor grid = torch::zeros({12, num_u}, torch::kFloat32);
         Tensor grid = breptorch::zeros({13, num_u}, breptorch::kFloat32);
-        // auto accessor = grid.accessor<float, 2>();
 
-        // ✅ 【关键修复】检查curve是否为NULL（对应Python的EdgeDataExtractor.good检查）
-        // Python端：if not coedge_data.good: return np.zeros((13, num_u))
+        // ✅ 【关键修复】检查curve是否为NULL
         double u0_check, u1_check;
         Handle(Geom_Curve) curve_check = BRep_Tool::Curve(edge, u0_check, u1_check);
         if (curve_check.IsNull()) {
-            // 返回全0 grid，与Python端行为一致
-            // 这将导致后续的LCS计算也返回全0矩阵，然后被替换为eye(4)
-            return grid;  // grid已经是全0
+            return grid;
         }
 
         // 3. 创建curve adaptor
@@ -655,9 +615,8 @@ private:
         double len = last - first;
 
         // 4. 弧长参数化（与Python一致）
-        // Python使用直线距离近似弧长，我们需要完全一致
-        std::cerr << "[DEBUG ArcLength] Coedge " << coedge_idx << ": Using NEW arc-length parameterization (100 samples, line distance)" << std::endl;
-        
+        DBG_CERR("[DEBUG ArcLength] Coedge " << coedge_idx << ": Using NEW arc-length parameterization (100 samples, line distance)");
+
         // 步骤1：在边上采样100个点
         std::vector<gp_Pnt> sample_points;
         std::vector<double> sample_params;
@@ -690,16 +649,13 @@ private:
         std::vector<double> target_params;
         for (int i = 0; i < num_u; ++i) {
             double desired_arc_length_fraction = i / (double)(num_u - 1);
-            // 找到对应的参数区间
             int arc_length_index = 0;
             while (arc_length_fraction[arc_length_index] < desired_arc_length_fraction) {
                 arc_length_index++;
                 if (arc_length_index >= (int)arc_length_fraction.size() - 1) break;
             }
-            // 使用线性插值计算参数
             double frac_low, frac_high, u_low, u_high;
             if (arc_length_index == 0) {
-                // 特殊处理：第一个点
                 u_low = sample_params[0];
                 frac_low = arc_length_fraction[0];
             } else {
@@ -723,7 +679,7 @@ private:
         Handle(Geom2d_Curve) left_pcurve;
         double left_u0, left_u1;
         left_pcurve = BRep_Tool::CurveOnSurface(edge, face_left, left_u0, left_u1);
-        
+
         Handle(Geom2d_Curve) right_pcurve;
         double right_u0, right_u1;
         if (has_mate) {
@@ -740,40 +696,30 @@ private:
             gp_Pnt p;
             gp_Vec tangent;
             curve_adaptor.D1(param, p, tangent);
-            
+
             // 归一化切线向量
             if (tangent.Magnitude() > 1e-7) tangent.Normalize();
 
             // 处理切线方向 (Orientation)
-            // 如果 Coedge 是 Reversed，说明沿着 Edge 的反方向
-            // 所以切线应该取反
-            if (!c_info.orientation) { // orientation == false means REVERSED
+            if (!c_info.orientation) {
                 tangent.Reverse();
             }
 
-            // 【关键修复】使用pcurve获取UV参数，与Python一致
-            // Python: uv = pcurve.D0(u); normal = face.normal(uv)
-            // C++应该使用相同的方法
-            
             // 计算左面法线
             gp_Vec n_left;
             if (!left_pcurve.IsNull()) {
-                // 使用pcurve获取UV参数
                 gp_Pnt2d uv_left_2d;
                 left_pcurve->D0(param, uv_left_2d);
                 double u_left = uv_left_2d.X();
                 double v_left = uv_left_2d.Y();
-                
-                // 使用UV参数计算法线（与Python的face.normal(uv)一致）
+
                 BRepLProp_SLProps props_left(BRepAdaptor_Surface(face_left), u_left, v_left, 1, 1e-6);
                 if (props_left.IsNormalDefined()) {
                     n_left = props_left.Normal();
-                    // 应用face的orientation
                     if (face_left.Orientation() == TopAbs_REVERSED) n_left.Reverse();
                     if (n_left.Magnitude() > 1e-7) n_left.Normalize();
                 }
             }
-            // 如果pcurve获取失败，回退到投影方法
             if (n_left.Magnitude() < 1e-7) {
                 n_left = BRepUtils::GetNormalAtPoint(face_left, p);
             }
@@ -781,22 +727,18 @@ private:
             // 计算右面法线
             gp_Vec n_right;
             if (has_mate && !right_pcurve.IsNull()) {
-                // 使用pcurve获取UV参数
                 gp_Pnt2d uv_right_2d;
                 right_pcurve->D0(param, uv_right_2d);
                 double u_right = uv_right_2d.X();
                 double v_right = uv_right_2d.Y();
-                
-                // 使用UV参数计算法线
+
                 BRepLProp_SLProps props_right(BRepAdaptor_Surface(face_right), u_right, v_right, 1, 1e-6);
                 if (props_right.IsNormalDefined()) {
                     n_right = props_right.Normal();
-                    // 应用face的orientation
                     if (face_right.Orientation() == TopAbs_REVERSED) n_right.Reverse();
                     if (n_right.Magnitude() > 1e-7) n_right.Normalize();
                 }
             }
-            // 如果pcurve获取失败，回退到投影方法
             if (has_mate && n_right.Magnitude() < 1e-7) {
                 n_right = BRepUtils::GetNormalAtPoint(face_right, p);
             }
@@ -806,7 +748,7 @@ private:
             data[0 * stride_c + i] = (float)p.X();
             data[1 * stride_c + i] = (float)p.Y();
             data[2 * stride_c + i] = (float)p.Z();
-            
+
             // Tangents (3-5)
             data[3 * stride_c + i] = (float)tangent.X();
             data[4 * stride_c + i] = (float)tangent.Y();
@@ -823,12 +765,10 @@ private:
             data[11 * stride_c + i] = (float)n_right.Z();
 
             // 第12通道（u参数）对应Python的u_params
-            data[12 * stride_c + i] = (float)param; 
+            data[12 * stride_c + i] = (float)param;
         }
-        
-        // 检查 Coedge 是否是模：Python 的 EdgeDataExtractor 可能会把边也反转
-        // (例: grid[][0] 是终点，grid[][9] 是起点)
-        // 为了和 Python 一致，如果 orientation 是 false（REVERSED），则需要 flip dim 1
+
+        // 如果 orientation 是 false（REVERSED），则需要 flip dim 1
         if (!c_info.orientation) {
             grid = breptorch::flip(grid, {1});
         }
@@ -836,11 +776,8 @@ private:
         return grid;
     }
 
-    // �޸� compute_coedge_lcs (ʹ�þ�ȷ�е�)
-
-    
     double compute_arc_length_midpoint(Handle(Geom_Curve) curve, double u0, double u1) {
-        // 混合采样策略：对参数范围小的边使用100点（稳定性），大的边用200点（精度）
+        // 混合采样策略
         double param_span = u1 - u0;
         int num_samples = (param_span < 3.0) ? 100 : 200;
 
@@ -870,7 +807,6 @@ private:
             }
         }
 
-        // Handle edge case: if mid_length is very close to end, use last valid index
         if (idx_left >= (int)arc_length_vals.size() - 1) {
             idx_left = (int)arc_length_vals.size() - 2;
         }
@@ -884,25 +820,25 @@ private:
         double u_arc_mid = u_left + (u_right - u_left) * ratio;
 
         // ===== 【诊断输出】Arc-Length vs Parameter中点对比 =====
-        double u_param_mid = (u0 + u1) / 2.0;
-        double diff = std::abs(u_arc_mid - u_param_mid);
-        double diff_percent = (param_span > 1e-10) ? (diff / param_span) * 100.0 : 0;
+        if (EXPORT_ENABLED) {
+            double u_param_mid = (u0 + u1) / 2.0;
+            double diff = std::abs(u_arc_mid - u_param_mid);
+            double diff_percent = (param_span > 1e-10) ? (diff / param_span) * 100.0 : 0;
 
-        // 初始化诊断文件（第一次调用时）
-        if (!g_diag_arc_length && diff_percent > 1.0) {
-            g_diag_arc_length = fopen("arc_length_diagnosis.txt", "w");
-            if (g_diag_arc_length) {
-                fprintf(g_diag_arc_length, "Arc-Length vs Parameter Midpoint Tracking\n");
-                fprintf(g_diag_arc_length, "span u0 u1 param_mid arc_mid diff diff%% samples\n\n");
+            if (!g_diag_arc_length && diff_percent > 1.0) {
+                g_diag_arc_length = fopen("arc_length_diagnosis.txt", "w");
+                if (g_diag_arc_length) {
+                    fprintf(g_diag_arc_length, "Arc-Length vs Parameter Midpoint Tracking\n");
+                    fprintf(g_diag_arc_length, "span u0 u1 param_mid arc_mid diff diff%% samples\n\n");
+                }
             }
-        }
 
-        // 记录差异较大的情况（> 1%）
-        if (g_diag_arc_length && diff_percent > 1.0) {
-            fprintf(g_diag_arc_length,
-                    "%.4f %.6f %.6f %.6f %.6f %.6f %.2f%% %d\n",
-                    param_span, u0, u1, u_param_mid, u_arc_mid, diff, diff_percent, num_samples);
-            fflush(g_diag_arc_length);
+            if (g_diag_arc_length && diff_percent > 1.0) {
+                fprintf(g_diag_arc_length,
+                        "%.4f %.6f %.6f %.6f %.6f %.6f %.2f%% %d\n",
+                        param_span, u0, u1, u_param_mid, u_arc_mid, diff, diff_percent, num_samples);
+                fflush(g_diag_arc_length);
+            }
         }
         // ===== 诊断输出完毕 =====
 
@@ -917,15 +853,14 @@ private:
         // 1. 获取中点、切线、法线
         double u0, u1;
         Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, u0, u1);
-        
+
         // 检查曲线是否有效（退化边可能没有曲线）
         if (curve.IsNull()) {
-            // 对于退化边，返回单位矩阵
             Tensor lcs_inv = breptorch::eye(4);
             return lcs_inv;
         }
-        
-        double u_mid = compute_arc_length_midpoint(curve, u0, u1);  // Arc-length midpoint instead of parameter midpoint
+
+        double u_mid = compute_arc_length_midpoint(curve, u0, u1);
         gp_Pnt p;
         gp_Vec tangent;
         curve->D1(u_mid, p, tangent);
@@ -940,19 +875,17 @@ private:
         face_prop.Normal(uu, vv, p_face, normal);
 
 
-        // �ж��Ƿ���
         gp_Vec t_vec = tangent;
         gp_Vec n_vec = normal;
         if (!c_info.orientation) {
             t_vec.Reverse();
         }
 
-        // ת������������ֶ�����
         float p_arr[3] = { (float)p.X(), (float)p.Y(), (float)p.Z() };
         float t_arr[3] = { (float)t_vec.X(), (float)t_vec.Y(), (float)t_vec.Z() };
         float n_arr[3] = { (float)n_vec.X(), (float)n_vec.Y(), (float)n_vec.Z() };
 
-        // 1. W �� (��������һ��)
+        // 1. W 轴 (法线方向归一化)
         float w_norm = sqrt(n_arr[0] * n_arr[0] + n_arr[1] * n_arr[1] + n_arr[2] * n_arr[2]) + 1e-7f;
         float w_vec[3] = {
             n_arr[0] / w_norm,
@@ -960,7 +893,7 @@ private:
             n_arr[2] / w_norm
         };
 
-        // 2. V �� (������ͶӰ����ֱ�� W ��ƽ��)
+        // 2. V 轴 (切线投影到垂直于 W 轴的平面)
         float dot_tw = t_arr[0] * w_vec[0] + t_arr[1] * w_vec[1] + t_arr[2] * w_vec[2];
         float v_vec[3] = {
             t_arr[0] - dot_tw * w_vec[0],
@@ -968,12 +901,10 @@ private:
             t_arr[2] - dot_tw * w_vec[2]
         };
 
-        // V ���һ��
+        // V 轴归一化
         float v_norm = sqrt(v_vec[0] * v_vec[0] + v_vec[1] * v_vec[1] + v_vec[2] * v_vec[2]);
 
-        // ��� V �᳤��̫С��˵�����߼���ƽ���ڷ��ߣ���Ҫ��һ����������
         if (v_norm < 1e-6f) {
-            // ѡ��һ����ƽ���� W ������
             float temp[3] = { 1.0f, 0.0f, 0.0f };
             if (fabs(w_vec[0]) > 0.9f) {
                 temp[0] = 0.0f;
@@ -981,7 +912,6 @@ private:
                 temp[2] = 0.0f;
             }
 
-            // ͶӰ����ֱ�� W ��ƽ��
             float dot_temp_w = temp[0] * w_vec[0] + temp[1] * w_vec[1] + temp[2] * w_vec[2];
             v_vec[0] = temp[0] - dot_temp_w * w_vec[0];
             v_vec[1] = temp[1] - dot_temp_w * w_vec[1];
@@ -994,7 +924,7 @@ private:
         v_vec[1] /= (v_norm + 1e-7f);
         v_vec[2] /= (v_norm + 1e-7f);
 
-        // 3. U �� (V �� W)
+        // 3. U 轴 (V × W)
         float u_vec[3] = {
             v_vec[1] * w_vec[2] - v_vec[2] * w_vec[1],
             v_vec[2] * w_vec[0] - v_vec[0] * w_vec[2],
@@ -1002,16 +932,16 @@ private:
         };
 
 
-        // 4. ��װ���� (�ֶ����)
+        // 4. 组装矩阵 (手动赋值)
         Tensor mat = breptorch::eye(4);
         float* mat_ptr = mat.data_ptr<float>();
 
-        // �����ת���� (ǰ3x3) - ������
+        // 旋转部分 (前3x3) - 列主序
         mat_ptr[0 * 4 + 0] = u_vec[0];  mat_ptr[0 * 4 + 1] = v_vec[0];  mat_ptr[0 * 4 + 2] = w_vec[0];
         mat_ptr[1 * 4 + 0] = u_vec[1];  mat_ptr[1 * 4 + 1] = v_vec[1];  mat_ptr[1 * 4 + 2] = w_vec[1];
         mat_ptr[2 * 4 + 0] = u_vec[2];  mat_ptr[2 * 4 + 1] = v_vec[2];  mat_ptr[2 * 4 + 2] = w_vec[2];
 
-        // ���ƽ�Ʋ��� (��4��)
+        // 平移部分 (第4列)
         mat_ptr[0 * 4 + 3] = p_arr[0];
         mat_ptr[1 * 4 + 3] = p_arr[1];
         mat_ptr[2 * 4 + 3] = p_arr[2];
@@ -1019,80 +949,76 @@ private:
         return mat;
     }
 
-    // ��Ӧ Python �� transform_face_point_grid_to_local
-    // �� Grid (ȫ��) �任�� Local
-    // grid: [Channels, H, W] �� [Channels, L]
-    // lcs_inv: [4, 4] �����
-    // is_face: true Ϊ FaceGrid (9ch), false Ϊ CoedgeGrid (13ch)
+    // 对应 Python 的 transform_face_point_grid_to_local
     Tensor transform_grid_to_local(Tensor grid, Tensor lcs_inv, bool is_face) {
         Tensor new_grid = grid.clone();
         float* data = new_grid.data_ptr<float>();
-        
+
         // grid shape: [C, H, W] or [C, L]
         int C = (int)grid.size(0);
         int N = (int)(grid.numel() / C);
-        
+
         // lcs_inv: [4, 4]
         float* mat = lcs_inv.data_ptr<float>();
-        
+
         for (int i = 0; i < N; ++i) {
             // Points: channels 0, 1, 2
             float x = data[0 * N + i];
             float y = data[1 * N + i];
             float z = data[2 * N + i];
-            
+
             // Apply affine transform: P' = M * P
             float x_new = mat[0]*x + mat[1]*y + mat[2]*z + mat[3];
             float y_new = mat[4]*x + mat[5]*y + mat[6]*z + mat[7];
             float z_new = mat[8]*x + mat[9]*y + mat[10]*z + mat[11];
-            
+
             data[0 * N + i] = x_new;
             data[1 * N + i] = y_new;
             data[2 * N + i] = z_new;
-            
+
             // Vectors
             if (is_face) {
                 // Normals: channels 3, 4, 5
                 float nx = data[3 * N + i];
                 float ny = data[4 * N + i];
                 float nz = data[5 * N + i];
-                
+
                 // Apply rotation only
                 float nx_new = mat[0]*nx + mat[1]*ny + mat[2]*nz;
                 float ny_new = mat[4]*nx + mat[5]*ny + mat[6]*nz;
                 float nz_new = mat[8]*nx + mat[9]*ny + mat[10]*nz;
-                
+
                 data[3 * N + i] = nx_new;
                 data[4 * N + i] = ny_new;
                 data[5 * N + i] = nz_new;
             } else {
-                // Coedge: 
+                // Coedge:
                 // Tangent: 3,4,5
                 // LeftN: 6,7,8
                 // RightN: 9,10,11
-                
+
                 for (int k = 0; k < 3; ++k) { // 3 vectors
                     int base_c = 3 + k * 3;
                     float vx = data[(base_c + 0) * N + i];
                     float vy = data[(base_c + 1) * N + i];
                     float vz = data[(base_c + 2) * N + i];
-                    
+
                     float vx_new = mat[0]*vx + mat[1]*vy + mat[2]*vz;
                     float vy_new = mat[4]*vx + mat[5]*vy + mat[6]*vz;
                     float vz_new = mat[8]*vx + mat[9]*vy + mat[10]*vz;
-                    
+
                     data[(base_c + 0) * N + i] = vx_new;
                     data[(base_c + 1) * N + i] = vy_new;
                     data[(base_c + 2) * N + i] = vz_new;
                 }
             }
         }
-        
+
         return new_grid;
     }
-    
 
-    // ����ȫ��Face����
+
+    // 生成全局Face网格
     void generate_global_face_grids() {
         if (unique_faces.Extent() == 0) return;
 
@@ -1118,26 +1044,49 @@ private:
 
         for (int i = 0; i < num_c; ++i) {
             Tensor mat = compute_coedge_lcs(i);
-            
+
             // ===== 【LCS调试】输出Face 19的coedges（87, 88, 89）的LCS矩阵 =====
-            if (i == 87 || i == 88 || i == 89) {
-                std::cout << "\n[DEBUG LCS] Coedge " << i << " (Face 19):" << std::endl;
-                std::cout << "  Forward LCS Matrix:" << std::endl;
+            if (DebugControl::instance().shouldDebug() && (i == 87 || i == 88 || i == 89)) {
+                DBG_LOG("\n[DEBUG LCS] Coedge " << i << " (Face 19):");
+                DBG_LOG("  Forward LCS Matrix:");
                 float* m = const_cast<Tensor&>(mat).data_ptr<float>();
                 for (int r = 0; r < 4; r++) {
-                    std::cout << "    [" << std::setw(12) << std::fixed << std::setprecision(6) << m[r * 4]
-                              << ", " << std::setw(12) << m[r * 4 + 1]
-                              << ", " << std::setw(12) << m[r * 4 + 2]
-                              << ", " << std::setw(12) << m[r * 4 + 3] << "]" << std::endl;
+                    std::ostringstream row;
+                    row << std::fixed << std::setprecision(6);
+                    row << "    [" << std::setw(12) << m[r * 4]
+                        << ", " << std::setw(12) << m[r * 4 + 1]
+                        << ", " << std::setw(12) << m[r * 4 + 2]
+                        << ", " << std::setw(12) << m[r * 4 + 3] << "]";
+                    DBG_LOG(row.str());
                 }
-                std::cout << "  Origin: [" << std::setw(12) << m[3] << ", " << std::setw(12) << m[7] << ", " << std::setw(12) << m[11] << "]" << std::endl;
-                std::cout << "  u_vec:  [" << std::setw(12) << m[0] << ", " << std::setw(12) << m[4] << ", " << std::setw(12) << m[8] << "]" << std::endl;
-                std::cout << "  v_vec:  [" << std::setw(12) << m[1] << ", " << std::setw(12) << m[5] << ", " << std::setw(12) << m[9] << "]" << std::endl;
-                std::cout << "  w_vec:  [" << std::setw(12) << m[2] << ", " << std::setw(12) << m[6] << ", " << std::setw(12) << m[10] << "]" << std::endl;
-                
-                // 计算LCS Norm
-                float origin_norm = std::sqrt(m[3]*m[3] + m[7]*m[7] + m[11]*m[11]);
-                std::cout << "  LCS Origin Norm: " << std::setw(12) << origin_norm << std::endl;
+                {
+                    std::ostringstream oss;
+                    oss << std::fixed << std::setprecision(6);
+                    oss << "  Origin: [" << std::setw(12) << m[3] << ", " << std::setw(12) << m[7] << ", " << std::setw(12) << m[11] << "]";
+                    DBG_LOG(oss.str());
+                }
+                {
+                    std::ostringstream oss;
+                    oss << std::fixed << std::setprecision(6);
+                    oss << "  u_vec:  [" << std::setw(12) << m[0] << ", " << std::setw(12) << m[4] << ", " << std::setw(12) << m[8] << "]";
+                    DBG_LOG(oss.str());
+                }
+                {
+                    std::ostringstream oss;
+                    oss << std::fixed << std::setprecision(6);
+                    oss << "  v_vec:  [" << std::setw(12) << m[1] << ", " << std::setw(12) << m[5] << ", " << std::setw(12) << m[9] << "]";
+                    DBG_LOG(oss.str());
+                }
+                {
+                    std::ostringstream oss;
+                    oss << std::fixed << std::setprecision(6);
+                    oss << "  w_vec:  [" << std::setw(12) << m[2] << ", " << std::setw(12) << m[6] << ", " << std::setw(12) << m[10] << "]";
+                    DBG_LOG(oss.str());
+                }
+                {
+                    float origin_norm = std::sqrt(m[3]*m[3] + m[7]*m[7] + m[11]*m[11]);
+                    DBG_LOG("  LCS Origin Norm: " << std::fixed << std::setprecision(6) << origin_norm);
+                }
             }
             // ===== LCS调试结束 =====
 
@@ -1146,16 +1095,19 @@ private:
             }
 
             Tensor mat_inv = breptorch::inverse(mat);
-            
+
             // ===== 【LCS调试】输出逆矩阵 =====
-            if (i == 87 || i == 88 || i == 89) {
-                std::cout << "  Inverse LCS Matrix:" << std::endl;
+            if (DebugControl::instance().shouldDebug() && (i == 87 || i == 88 || i == 89)) {
+                DBG_LOG("  Inverse LCS Matrix:");
                 float* m_inv = const_cast<Tensor&>(mat_inv).data_ptr<float>();
                 for (int r = 0; r < 4; r++) {
-                    std::cout << "    [" << std::setw(12) << std::fixed << std::setprecision(6) << m_inv[r * 4]
-                              << ", " << std::setw(12) << m_inv[r * 4 + 1]
-                              << ", " << std::setw(12) << m_inv[r * 4 + 2]
-                              << ", " << std::setw(12) << m_inv[r * 4 + 3] << "]" << std::endl;
+                    std::ostringstream row;
+                    row << std::fixed << std::setprecision(6);
+                    row << "    [" << std::setw(12) << m_inv[r * 4]
+                        << ", " << std::setw(12) << m_inv[r * 4 + 1]
+                        << ", " << std::setw(12) << m_inv[r * 4 + 2]
+                        << ", " << std::setw(12) << m_inv[r * 4 + 3] << "]";
+                    DBG_LOG(row.str());
                 }
             }
             // ===== LCS调试结束 =====
@@ -1164,16 +1116,15 @@ private:
         }
     }
 
-    // ����Coedge�ֲ�����
+    // 生成Coedge局部网格
     void generate_coedge_local_grids(const std::vector<Tensor>& lcs_invs) {
         int num_c = coedges.size();
         std::vector<Tensor> c_list;
         c_list.reserve(num_c);
 
-        // �����ɵ�CoedgeGridsGlobal����û��Ҫ����
-        std::cerr << "[DEBUG] generate_coedge_local_grids() called, processing " << num_c << " coedges" << std::endl;
+        DBG_CERR("[DEBUG] generate_coedge_local_grids() called, processing " << num_c << " coedges");
         for (int i = 0; i < num_c; ++i) {
-            std::cerr << "[DEBUG] Processing coedge " << i << "..." << std::endl;
+            DBG_CERR("[DEBUG] Processing coedge " << i << "...");
             Tensor g_global = generate_global_coedge_grid(i);
             Tensor g_local = transform_grid_to_local(g_global, lcs_invs[i], false);
             c_list.push_back(g_local);
@@ -1182,7 +1133,7 @@ private:
         CoedgeGridsLocal = breptorch::stack(c_list);
     }
 
-    // ����Face�ֲ�����
+    // 生成Face局部网格
     void generate_face_local_grids(std::vector<Tensor>& lcs_invs) {
         int num_c = coedges.size();
         std::vector<Tensor> f_list;
@@ -1218,17 +1169,17 @@ private:
     // 生成Edge局部坐标系网格（修正版：使用Python的"左coedge"选择逻辑）
     void generate_edge_local_grids() {
         int num_e = unique_edges.Extent();
-        std::cout << "[DEBUG EdgeGrids] generate_edge_local_grids() called, num_e=" << num_e 
-                  << ", CoedgeGridsLocal.defined()=" << CoedgeGridsLocal.defined() << std::endl;
+        DBG_LOG("[DEBUG EdgeGrids] generate_edge_local_grids() called, num_e=" << num_e
+                << ", CoedgeGridsLocal.defined()=" << CoedgeGridsLocal.defined());
         if (num_e == 0 || !CoedgeGridsLocal.defined()) {
-            std::cout << "[DEBUG EdgeGrids] Early return due to num_e==0 or CoedgeGridsLocal not defined" << std::endl;
+            DBG_LOG("[DEBUG EdgeGrids] Early return due to num_e==0 or CoedgeGridsLocal not defined");
             return;
         }
 
-        std::cout << "[DEBUG EdgeGrids] generate_edge_local_grids() starting..." << std::endl;
-        std::cout << "[DEBUG EdgeGrids] num_edges = " << num_e << std::endl;
+        DBG_LOG("[DEBUG EdgeGrids] generate_edge_local_grids() starting...");
+        DBG_LOG("[DEBUG EdgeGrids] num_edges = " << num_e);
 
-        // 步骤1：按Edge索引收集Coedges（与Python的Ce矩阵逻辑一致）
+        // 步骤1：按Edge索引收集Coedges
         std::vector<std::vector<int>> coedges_of_edges(num_e);
         for (const auto& c : coedges) {
             int eid = c.edge_idx;
@@ -1240,19 +1191,14 @@ private:
         // 步骤2：处理特殊情况（球面等只有1个coedge的edge）
         for (int i = 0; i < num_e; ++i) {
             if (coedges_of_edges[i].size() == 1) {
-                // 复制同一个coedge两次
                 coedges_of_edges[i].push_back(coedges_of_edges[i][0]);
             }
         }
 
         // 步骤3：应用Python逻辑选择"左coedge"
-        // Python逻辑：检查second_coedge的orientation
-        // if reverse_flags[second_coedge]==1 (REVERSED) → select first_coedge
-        // else → select second_coedge
         std::vector<Tensor> e_list;
         e_list.reserve(num_e);
 
-        // 调试：记录前几条edge的选择
         static bool first_print = true;
 
         for (int edge_idx = 0; edge_idx < num_e; ++edge_idx) {
@@ -1264,35 +1210,28 @@ private:
                 int first_coedge_id = edge_coedges[0];
                 int second_coedge_id = edge_coedges[1];
 
-                // 【关键修复】按Python逻辑选择coedge
-                // C++中：orientation==false ↔ REVERSED ↔ reverse_flags==1
-                // Python: if reverse_flags[second]==1 → select first
-                // C++等价: if !coedges[second].orientation → select first
-                if (!coedges[second_coedge_id].orientation) {  // second coedge是REVERSED
+                if (!coedges[second_coedge_id].orientation) {
                     selected_coedge = first_coedge_id;
-                } else {  // second coedge是FORWARD
+                } else {
                     selected_coedge = second_coedge_id;
                 }
 
                 // 调试输出（仅前10条edge）
-                if (first_print && edge_idx < 10) {
-                    fprintf(stdout, "[DEBUG EdgeGrids] Edge %d: "
+                if (DebugControl::instance().shouldDebug() && first_print && edge_idx < 10) {
+                    DBG_PRINTF("[DEBUG EdgeGrids] Edge %d: "
                             "first=%d(orient=%s), second=%d(orient=%s), selected=%d\n",
                             edge_idx,
                             first_coedge_id, coedges[first_coedge_id].orientation ? "FORWARD" : "REVERSED",
                             second_coedge_id, coedges[second_coedge_id].orientation ? "FORWARD" : "REVERSED",
                             selected_coedge);
-                    fflush(stdout);
                 }
             } else if (edge_coedges.size() == 1) {
-                // 球面情况（只有1个coedge，已复制）
                 selected_coedge = edge_coedges[0];
             }
 
             if (selected_coedge != -1 && selected_coedge < CoedgeGridsLocal.size(0)) {
                 e_list.push_back(get_slice(CoedgeGridsLocal, selected_coedge));
             } else {
-                // 边界情况：返回零grid
                 e_list.push_back(breptorch::zeros({ 13, 10 }, CoedgeGridsLocal.options()));
             }
         }
@@ -1301,67 +1240,56 @@ private:
 
         EdgeGridsLocal = breptorch::stack(e_list);
 
-        std::cout << "[DEBUG EdgeGrids] Generated EdgeGridsLocal with shape "
-                  << EdgeGridsLocal.sizes() << std::endl;
+        DBG_LOG("[DEBUG EdgeGrids] Generated EdgeGridsLocal with shape "
+                << EdgeGridsLocal.sizes());
     }
 
-    // ���������������оֲ�����
-    // ֮ǰ�ṹ���ң����޸�
+    // 主入口：生成所有局部网格
     void generate_local_grids() {
         if (unique_faces.Extent() == 0) return;
 
-        // 1. ����ȫ��Face����
+        // 1. 生成全局Face网格
         generate_global_face_grids();
 
         int num_c = coedges.size();
         if (num_c == 0) return;
 
-        std::cout << "Generating local coordinate system features (LCS Transformation)..." << std::endl;
-        std::cerr << "[DEBUG] generate_local_grids() called for file with " << coedges.size() << " coedges" << std::endl;
+        DBG_LOG("Generating local coordinate system features (LCS Transformation)...");
+        DBG_CERR("[DEBUG] generate_local_grids() called for file with " << coedges.size() << " coedges");
 
-        // 2. ����LCS�任����
+        // 2. 计算LCS变换矩阵
         std::vector<Tensor> lcs_invs;
         compute_all_lcs_matrices(lcs_invs);
 
-        // 3. ��������LocalGrids
+        // 3. 生成各类LocalGrids
         generate_coedge_local_grids(lcs_invs);
         generate_face_local_grids(lcs_invs);
         generate_edge_local_grids();
 
-        // 4. 统计信息
-        //std::cout << " Local Features Generated." << std::endl;
-        //if (FaceGridsLocal.defined()) std::cout << "   Face: " << FaceGridsLocal.sizes() << std::endl;
-        //if (CoedgeGridsLocal.defined()) std::cout << "   Coedge: " << CoedgeGridsLocal.sizes() << std::endl;
-        //if (EdgeGridsLocal.defined()) std::cout << "   Edge: " << EdgeGridsLocal.sizes() << std::endl;
-        //std::cout << "\n[Debug] FaceGridsGlobal Summary:\n";
-        //for (int f = 0; f < std::min(3, (int)FaceGridsGlobal.size(0)); f++) {
-        //    std::cout << "  Face[" << f << "] point[0,5,5]=" << FaceGridsGlobal.at({ f, 0, 5, 5 })
-        //        << " normal[3,5,5]=" << FaceGridsGlobal.at({ f, 3, 5, 5 }) << "\n";
-        //}
-
-        // ===== 【方案三诊断】Face 19/23/26的Grid数据诊断 =====
-        printf("[DIAGNOSTIC] Calling face 19/23/26 grid diagnosis...\n");
-        diagnose_face_19_23_26_grids(
-            coedges,
-            FaceGridsLocal,
-            EdgeGridsLocal,
-            unique_faces.Size(),
-            unique_edges.Size()
-        );
-        printf("[DIAGNOSTIC] Face grid diagnosis complete\n");
-        // ===== 诊断调用完毕 =====
-
+        // 4. 诊断调用（仅在 export 模式下）
+        if (EXPORT_ENABLED) {
+            DBG_PRINTF("[DIAGNOSTIC] Calling face 19/23/26 grid diagnosis...\n");
+            diagnose_face_19_23_26_grids(
+                coedges,
+                FaceGridsLocal,
+                EdgeGridsLocal,
+                unique_faces.Size(),
+                unique_edges.Size()
+            );
+            DBG_PRINTF("[DIAGNOSTIC] Face grid diagnosis complete\n");
+        }
     }
 };
 
 // ===== 【方案三诊断函数实现】 =====
 
 void init_diagnostics() {
+    if (!EXPORT_ENABLED) return;
     if (g_diag_face_grid) fclose(g_diag_face_grid);
     if (g_diag_arc_length) fclose(g_diag_arc_length);
     g_diag_face_grid = nullptr;
     g_diag_arc_length = nullptr;
-    printf("[DIAGNOSTIC] Diagnostics initialized\n");
+    DBG_PRINTF("[DIAGNOSTIC] Diagnostics initialized\n");
 }
 
 void close_diagnostics() {
@@ -1370,14 +1298,16 @@ void close_diagnostics() {
         fprintf(g_diag_face_grid, "End of Grid Diagnosis\n");
         fprintf(g_diag_face_grid, "========================================\n");
         fclose(g_diag_face_grid);
-        printf("[DIAGNOSTIC] Grid diagnosis saved to coedge_grid_diagnosis.txt\n");
+        g_diag_face_grid = nullptr;
+        DBG_PRINTF("[DIAGNOSTIC] Grid diagnosis saved to coedge_grid_diagnosis.txt\n");
     }
     if (g_diag_arc_length) {
         fprintf(g_diag_arc_length, "\n========================================\n");
         fprintf(g_diag_arc_length, "End of Arc-Length Diagnosis\n");
         fprintf(g_diag_arc_length, "========================================\n");
         fclose(g_diag_arc_length);
-        printf("[DIAGNOSTIC] Arc-length diagnosis saved to arc_length_diagnosis.txt\n");
+        g_diag_arc_length = nullptr;
+        DBG_PRINTF("[DIAGNOSTIC] Arc-length diagnosis saved to arc_length_diagnosis.txt\n");
     }
 }
 
@@ -1389,10 +1319,12 @@ void diagnose_face_19_23_26_grids(
     int num_faces,
     int num_edges) {
 
+    if (!EXPORT_ENABLED) return;
+
     if (!g_diag_face_grid) {
         g_diag_face_grid = fopen("coedge_grid_diagnosis.txt", "w");
         if (!g_diag_face_grid) {
-            printf("[ERROR] Cannot create coedge_grid_diagnosis.txt\n");
+            ERR_LOG("[ERROR] Cannot create coedge_grid_diagnosis.txt");
             return;
         }
     }
@@ -1444,14 +1376,11 @@ void diagnose_face_19_23_26_grids(
 
             // Face Grids (2个面)
             for (int f = 0; f < 2; f++) {
-                // FaceGridsLocal 形状: [124, 2, 9, 10, 10]
-                // 第一维: coedge_idx, 第二维: f (0=当前面, 1=配对面)
                 if (coedge_idx >= (int)FaceGridsLocal.sizes()[0]) {
                     fprintf(g_diag_face_grid, "    Face Grid %d: COEDGE OUT OF RANGE\n", f + 1);
                     continue;
                 }
 
-                // 使用get_slice访问多维Tensor
                 Tensor coedge_grids = get_slice(FaceGridsLocal, coedge_idx);
                 if (f >= (int)coedge_grids.sizes()[0]) {
                     fprintf(g_diag_face_grid, "    Face Grid %d: FACE INDEX OUT OF RANGE\n", f + 1);
@@ -1465,7 +1394,6 @@ void diagnose_face_19_23_26_grids(
                     continue;
                 }
 
-                // 计算统计
                 float* grid_ptr = grid.data_ptr<float>();
                 int total = grid.numel();
 

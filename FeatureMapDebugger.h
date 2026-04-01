@@ -2,6 +2,7 @@
 #define FEATURE_MAP_DEBUGGER_H
 
 #include "BRepTorch.h"
+#include "DebugControl.h"
 #include <string>
 #include <fstream>
 #include <iomanip>
@@ -17,8 +18,10 @@ class FeatureMapDebugger {
 public:
     FeatureMapDebugger(const std::string& output_dir = "debug_feature_maps")
         : output_dir_(output_dir), enabled_(true) {
-        // 创建输出目录
-        std::filesystem::create_directories(output_dir_);
+        // 仅在 export 模式下创建输出目录
+        if (EXPORT_ENABLED) {
+            std::filesystem::create_directories(output_dir_);
+        }
     }
 
     // 启用/禁用调试
@@ -34,12 +37,12 @@ public:
     void saveTensor(const breptorch::Tensor& tensor,
                     const std::string& layer_name,
                     const std::string& file_name) {
-        if (!enabled_) return;
+        if (!enabled_ || !EXPORT_ENABLED) return;
 
         std::string filepath = output_dir_ + "/" + file_name + "_" + layer_name + ".txt";
         std::ofstream file(filepath);
         if (!file.is_open()) {
-            std::cerr << "[FeatureMapDebugger] 无法创建文件: " << filepath << std::endl;
+            ERR_LOG("[FeatureMapDebugger] 无法创建文件: " << filepath);
             return;
         }
 
@@ -99,7 +102,7 @@ public:
         }
 
         file.close();
-        std::cout << "[FeatureMapDebugger] 已保存: " << filepath << std::endl;
+        DBG_LOG("[FeatureMapDebugger] 已保存: " << filepath);
     }
 
     /**
@@ -109,12 +112,12 @@ public:
                               const std::string& layer_name,
                               const std::string& file_name,
                               const std::vector<int>& labels) {
-        if (!enabled_) return;
+        if (!enabled_ || !EXPORT_ENABLED) return;
 
         std::string filepath = output_dir_ + "/" + file_name + "_" + layer_name + "_labeled.txt";
         std::ofstream file(filepath);
         if (!file.is_open()) {
-            std::cerr << "[FeatureMapDebugger] 无法创建文件: " << filepath << std::endl;
+            ERR_LOG("[FeatureMapDebugger] 无法创建文件: " << filepath);
             return;
         }
 
@@ -138,7 +141,7 @@ public:
         }
 
         file.close();
-        std::cout << "[FeatureMapDebugger] 已保存（带标签）: " << filepath << std::endl;
+        DBG_LOG("[FeatureMapDebugger] 已保存（带标签）: " << filepath);
     }
 
     /**
@@ -147,7 +150,7 @@ public:
     void saveTensorStats(const breptorch::Tensor& tensor,
                         const std::string& layer_name,
                         const std::string& file_name) {
-        if (!enabled_) return;
+        if (!enabled_ || !EXPORT_ENABLED) return;
 
         std::string filepath = output_dir_ + "/" + file_name + "_" + layer_name + "_stats.txt";
         std::ofstream file(filepath);
@@ -221,10 +224,10 @@ public:
         }
 
         if (nan_count > 0 || inf_count > 0 || large_count > 0) {
-            std::cerr << "[警告] " << layer_name << " 包含异常值:\n";
-            std::cerr << "  NaN: " << nan_count << "\n";
-            std::cerr << "  Inf: " << inf_count << "\n";
-            std::cerr << "  超大值(>" << threshold << "): " << large_count << "\n";
+            ERR_LOG("[警告] " << layer_name << " 包含异常值:");
+            ERR_LOG("  NaN: " << nan_count);
+            ERR_LOG("  Inf: " << inf_count);
+            ERR_LOG("  超大值(>" << threshold << "): " << large_count);
             return true;
         }
         return false;

@@ -1,7 +1,7 @@
 #ifndef FEATURE_MAP_EXPORTER_H
 
 // 包含调试配置
-#include "DebugConfig.h"
+#include "DebugControl.h"
 
 #define FEATURE_MAP_EXPORTER_H
 
@@ -22,10 +22,12 @@ class FeatureMapExporter {
 public:
     FeatureMapExporter(const std::string& base_dir = "cpp_feature_maps")
         : base_dir_(base_dir) {
-        // 启用目录创建（调试时需要生成特征图）
-        if (!fs::exists(base_dir_)) {
-            fs::create_directory(base_dir_);
-            DEBUG_COUT << "  Creating directory: " << base_dir_ << std::endl;
+        // 仅在 export 模式下创建目录
+        if (EXPORT_ENABLED) {
+            if (!fs::exists(base_dir_)) {
+                fs::create_directory(base_dir_);
+                DBG_LOG("  Creating directory: " << base_dir_);
+            }
         }
     }
 
@@ -35,6 +37,8 @@ public:
     void exportTensor(const breptorch::Tensor& tensor,
                      const std::string& layer_name,
                      const std::string& step_file_name) {
+        if (!EXPORT_ENABLED) return;
+
         // 创建子文件夹
         std::string layer_dir = base_dir_ + "/" + layer_name;
         if (!fs::exists(layer_dir)) {
@@ -46,7 +50,7 @@ public:
         std::ofstream file(filename, std::ios::out);
 
         if (!file.is_open()) {
-            std::cerr << "  [错误] 无法创建文件: " << filename << std::endl;
+            ERR_LOG("  [错误] 无法创建文件: " << filename);
             return;
         }
 
@@ -123,6 +127,8 @@ public:
     void exportVectorData(const std::vector<std::vector<float>>& data,
                          const std::string& layer_name,
                          const std::string& step_file_name) {
+        if (!EXPORT_ENABLED) return;
+
         // 创建子文件夹
         std::string layer_dir = base_dir_ + "/" + layer_name;
         if (!fs::exists(layer_dir)) {
@@ -134,7 +140,7 @@ public:
         std::ofstream file(filename, std::ios::out);
 
         if (!file.is_open()) {
-            std::cerr << "  [错误] 无法创建文件: " << filename << std::endl;
+            ERR_LOG("  [错误] 无法创建文件: " << filename);
             return;
         }
 
@@ -157,9 +163,11 @@ public:
     }
 
     void printExportSummary() const {
-        DEBUG_COUT << "\n=== Feature Map Export Summary ===" << std::endl;
-        DEBUG_COUT << "Base directory: " << base_dir_ << std::endl;
-        DEBUG_COUT << "\nExported layers:" << std::endl;
+        if (!EXPORT_ENABLED) return;
+
+        DBG_LOG("\n=== Feature Map Export Summary ===");
+        DBG_LOG("Base directory: " << base_dir_);
+        DBG_LOG("\nExported layers:");
 
         const std::vector<std::string> layers = {
             "uvnet_surface", "uvnet_curve",
@@ -178,7 +186,7 @@ public:
                 for (const auto& entry : fs::directory_iterator(layer_dir)) {
                     if (entry.is_regular_file()) file_count++;
                 }
-                DEBUG_COUT << "  OK " << layer << " (" << file_count << " files)" << std::endl;
+                DBG_LOG("  OK " << layer << " (" << file_count << " files)");
             }
         }
     }
