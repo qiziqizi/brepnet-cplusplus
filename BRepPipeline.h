@@ -728,9 +728,7 @@ private:
                     if (n_left.Magnitude() > 1e-7) n_left.Normalize();
                 }
             }
-            if (n_left.Magnitude() < 1e-7) {
-                n_left = BRepUtils::GetNormalAtPoint(face_left, p);
-            }
+            // Python在IsNormalDefined()为false时返回零向量，不做fallback
 
             // 计算右面法线
             gp_Vec n_right;
@@ -756,9 +754,7 @@ private:
                     if (n_right.Magnitude() > 1e-7) n_right.Normalize();
                 }
             }
-            if (has_mate && n_right.Magnitude() < 1e-7) {
-                n_right = BRepUtils::GetNormalAtPoint(face_right, p);
-            }
+            // Python在IsNormalDefined()为false时返回零向量，不做fallback
 
             // 写入 Tensor
             // Points (0-2)
