@@ -7,11 +7,15 @@
 #include <QApplication>
 #include <QMenuBar>
 #include <QStatusBar>
+#include <QDir>
 #include <map>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
     , modelLoaded_(false) {
+
+    // 调试输出：显示当前工作目录
+    std::cout << "[调试] 当前工作目录: " << QDir::currentPath().toStdString() << std::endl;
 
     // 创建数据模块
     loader_ = std::make_unique<StepLoader>();
@@ -22,17 +26,20 @@ MainWindow::MainWindow(QWidget* parent)
     setupUI();
     setupConnections();
 
-    // 自动加载模型 - 尝试多个可能路径
+    // 自动加载模型 - 基于exe所在目录查找
+    QString exeDir = QCoreApplication::applicationDirPath();
+    std::cout << "[调试] exe所在目录: " << exeDir.toStdString() << std::endl;
+    
     QString weightsPath;
     QStringList possiblePaths = {
-        "test_data/state_dict.npz",
-        "inference_data/state_dict.npz",
-        "../test_data/state_dict.npz",
-        "../inference_data/state_dict.npz"
+        exeDir + "/inference_data/state_dict.npz",
+        exeDir + "/../../../inference_data/state_dict.npz"
     };
     
     for (const QString& path : possiblePaths) {
         QFileInfo info(path);
+        std::cout << "[调试] 检查路径: " << path.toStdString() 
+                  << " -> 存在: " << (info.exists() ? "是" : "否") << std::endl;
         if (info.exists()) {
             weightsPath = path;
             break;
@@ -173,10 +180,14 @@ void MainWindow::setupConnections() {
 }
 
 void MainWindow::onLoadFile() {
+    // 基于exe所在目录构建STEP文件默认路径
+    QString exeDir = QCoreApplication::applicationDirPath();
+    QString defaultPath = exeDir + "/../../../inference_data/step_files";
+    
     QString fileName = QFileDialog::getOpenFileName(
         this,
         "加载STEP文件",
-        "inference_data/step_files",
+        defaultPath,
         "STEP Files (*.step *.stp);;All Files (*)");
 
     if (fileName.isEmpty()) {
@@ -209,6 +220,8 @@ void MainWindow::onLoadFile() {
     lblSelectedFace_->setText("选中面: --");
     updateModelInfo();
 
+    // 调试输出：显示模型加载状态
+    std::cout << "[调试] onLoadFile: modelLoaded_ = " << modelLoaded_ << std::endl;
     btnRunPrediction_->setEnabled(modelLoaded_);
     btnLoadLabels_->setEnabled(true);
     btnExportResults_->setEnabled(false);
