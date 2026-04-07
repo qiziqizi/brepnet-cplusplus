@@ -66,11 +66,11 @@ namespace breptorch {
             storage_ = std::make_shared<Storage>(n, dt);
         }
 
-        // ���Ӵ˹��캯��������ƥ�� initializer_list
+        // 添加此构造函数，用于匹配 initializer_list
         Tensor(std::initializer_list<int64_t> sizes, DType dt = kFloat32)
             : Tensor(std::vector<int64_t>(sizes.begin(), sizes.end()), dt)
         {
-            // ί�й��죺�� initializer_list ת��Ϊ vector���ٵ������й��캯��
+            // 委托构造：将 initializer_list 转换为 vector，再调用另一个构造函数
         }
 
         // Static factories
@@ -814,20 +814,20 @@ namespace breptorch {
     //}
     //
     inline Tensor dot(const Tensor& a, const Tensor& b) {
-        // У�飺������ 3D ������ƥ����� ProjectVector ������
+        // 校验：仅支持 3D 向量，匹配用于 ProjectVector 的调用
         if (a.sizes() != std::vector<int64_t>{3} || b.sizes() != std::vector<int64_t>{3}) {
             throw std::runtime_error("dot only supports 3D vectors (size={3})");
         }
         float sum = 0.0f;
         if (a.dtype_ == kFloat32 && b.dtype_ == kFloat32) {
-            for (size_t i = 0; i < 3; ++i) { // �̶�3ά������Ч
+            for (size_t i = 0; i < 3; ++i) { // 固定3维，更高效
                 sum += a.storage_->dataf_[i] * b.storage_->dataf_[i];
             }
         }
-        return Tensor(sum); // ���� Tensor��ƥ������� .item<float>() ���߼�
+        return Tensor(sum); // 返回 Tensor，匹配调用方 .item<float>() 的逻辑
     }
 
-    // 2. ��ȫ norm ������breptorch �����ռ��ڣ����� Tensor��
+    // 2. 安全 norm 函数（breptorch 命名空间内，返回 Tensor）
     inline Tensor norm(const Tensor& a) {
         if (a.sizes() != std::vector<int64_t>{3}) {
             throw std::runtime_error("norm only supports 3D vectors (size={3})");
@@ -838,7 +838,7 @@ namespace breptorch {
                 sum_sq += a.storage_->dataf_[i] * a.storage_->dataf_[i];
             }
         }
-        return Tensor(std::sqrt(sum_sq)); // ���� Tensor
+        return Tensor(std::sqrt(sum_sq)); // 返回 Tensor
     }
 
     inline Tensor cat(const std::vector<Tensor>& l, int d) {

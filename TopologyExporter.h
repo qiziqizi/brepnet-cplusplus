@@ -192,7 +192,7 @@ private:
             coedge_counts.push_back((int)pair.second.size());
         }
 
-        file << "每个面的共边数��计:\n";
+        file << "每个面的共边数统计:\n";
         file << "  最小: " << *std::min_element(coedge_counts.begin(), coedge_counts.end()) << "\n";
         file << "  最大: " << *std::max_element(coedge_counts.begin(), coedge_counts.end()) << "\n";
         file << "  平均: " << std::fixed << std::setprecision(2)

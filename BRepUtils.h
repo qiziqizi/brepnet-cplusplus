@@ -8,8 +8,8 @@
 #include "BRepTorch.h"
 #include "cnpy.h"
 
-// OpenCascade ������������ͷ�ļ�
-// (ֻ����������Ҫ��ͷ�ļ������ٱ�������)
+// OpenCascade 必要的最小头文件
+// (只包含声明需要的头文件，减少编译依赖)
 #include <TopoDS.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Face.hxx>
@@ -22,12 +22,12 @@
 using namespace breptorch;
 
 namespace BRepUtils {
-    // --- ��ѧ���ߺ��� ---
+    // --- 数学工具函数 ---
 
-    // ������ƽ���ϵ�ͶӰ
+    // 向量到平面上的投影
     Tensor ProjectVector(Tensor vec, Tensor target_plane_normal);
 
-    // ����������������
+    // 求任意正交向量
     Tensor AnyOrthogonalTensor(Tensor vec);
 
     // Get parameter with strict boundary matching
@@ -35,23 +35,23 @@ namespace BRepUtils {
     // reverse=false: sample from min to max (for V parameter)
     double GetParamStrict(int index, int total, double min_val, double max_val, bool reverse = true);
 
-    // --- �����������㺯�� ---
+    // --- 面和边的计算函数 ---
 
-    // ����������
+    // 计算面的面积
     double GetFaceArea(const TopoDS_Shape& face);
 
-    // ����ߵĳ���
+    // 计算边的长度
     double GetEdgeLength(const TopoDS_Shape& edge);
 
-    // ���� Shape ����һ���ߴ�
+    // 缩放 Shape 到归一化尺寸
     TopoDS_Shape ScaleShape(const TopoDS_Shape& s);
 
-    // ��ȡ�������ϵķ����� (ͨ�� UV ͶӰ)
+    // 获取面上某点的法向量 (通过 UV 投影)
     gp_Vec GetNormalAtPoint(const TopoDS_Face& face, const gp_Pnt& p);
 
-    // ��ȡ�������ϵķ����� (ͨ�� Geom Surface)
+    // 获取面上某点的法向量 (通过 Geom Surface)
     gp_Vec GetNormalAtFace(const TopoDS_Face& face, const gp_Pnt& p);
 
-    // ����ߵ�͹�� (0: ��, 1: ͹, 2: ƽ��/����)
+    // 计算边的凹凸性 (0: 凹, 1: 凸, 2: 平滑/光顺)
     int CalcConvexity(const TopoDS_Edge& edge, int f1_idx, int f2_idx, const TopTools_IndexedMapOfShape& unique_faces);
 }

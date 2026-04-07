@@ -1,7 +1,7 @@
 #include "BRepUtils.h"
 
-// OpenCascade �㷨ʵ�������ͷ�ļ�
-// ��Щͷ�ļ��Ƚ��أ����� .cpp ����Լӿ������ļ��ı����ٶ�
+// OpenCascade 算法实现所需的头文件
+// 这些头文件比较重，放在 .cpp 可以加快其他文件的编译速度
 #include <STEPControl_Reader.hxx>
 #include <TopoDS_Wire.hxx>
 #include <TopExp.hxx>
@@ -35,9 +35,9 @@
 using namespace breptorch;
 
 namespace BRepUtils {
-    // --- ��ѧ�������� ---
+    // --- 数学工具函数 ---
     //
-    // ����������ͶӰ
+    // 向量到平面的投影
     Tensor ProjectVector(Tensor vec, Tensor target_plane_normal) {
         // vec: [3], normal: [3]
         // v_proj = v - (v . n) * n
@@ -45,11 +45,11 @@ namespace BRepUtils {
         Tensor delta = target_plane_normal * dp;
         Tensor res = vec - delta;
         float len = norm(res).template item<float>();
-        if (len < 1e-7) return Tensor(); // ʧ��
-        return res / len; // ��һ��
+        if (len < 1e-7) return Tensor(); // 失败
+        return res / len; // 归一化
     }
 
-    // ��������������������
+    // 求任意正交向量
     Tensor AnyOrthogonalTensor(Tensor vec) {
         //Tensor res = ProjectVector(tensor({ 1.0, 0.0, 0.0 }, vec.options()), vec);
         //if (res.defined()) return res;
@@ -57,7 +57,7 @@ namespace BRepUtils {
         //if (res.defined()) return res;
         //return ProjectVector(tensor({ 0.0, 0.0, 1.0 }, vec.options()), vec);
 
-        // ����������׼������
+        // 尝试三个标准基向量
         Tensor candidates[3] = {
             tensor({1.0f, 0.0f, 0.0f}),
             tensor({0.0f, 1.0f, 0.0f}),
@@ -73,7 +73,7 @@ namespace BRepUtils {
 
     }
 
-    // �������ϸ�����Բ�ֵ����֤��β��ȷ���б߽�
+    // 获取更严格的参数插值，保证首尾精确落在边界
     // IMPORTANT: Python samples U from max to min, but V from min to max
     // U parameter (reverse=true): index=0 -> max_val, index=total-1 -> min_val
     // V parameter (reverse=false): index=0 -> min_val, index=total-1 -> max_val
@@ -90,9 +90,9 @@ namespace BRepUtils {
             return min_val + (max_val - min_val) * (double)index / (double)(total - 1);
         }
     }
-    // --- ���θ������� ---
+    // --- 几何辅助函数 ---
 
-    // --- ���������㼸������ ---
+    // --- 面和边的几何函数 ---
     double GetFaceArea(const TopoDS_Shape& face) {
         GProp_GProps props;
         BRepGProp::SurfaceProperties(face, props);
@@ -119,12 +119,12 @@ namespace BRepUtils {
         return BRepBuilderAPI_Transform(s, sc * t, Standard_True).Shape();
     }
 
-    // ����������ĳ��ķ���
+    // 获取面上某点的法线
     gp_Vec GetNormalAtPoint(const TopoDS_Face& face, const gp_Pnt& p) {
         BRepAdaptor_Surface surf(face);
-        // �� 3D ��ͶӰ�� UV �ռ� (��Լ��㾫ȷ���ߺ���Ҫ)
-        // ����򻯴���������������ϣ�ʹ�� GeomAPI_ProjectPointOnSurf
-        // Ϊ�����ܣ���ҵ��ʵ��ͨ�������� Edge �� pcurve��������ͶӰ��Ϊͨ�ýⷨ
+        // 将 3D 点投影到 UV 空间 (对计算精确法线很重要)
+        // 这里简化处理，对于任意面上，使用 GeomAPI_ProjectPointOnSurf
+        // 为了性能，工业级实现通常利用 Edge 的 pcurve，这里用投影作为通用解法
         GeomAPI_ProjectPointOnSurf proj(p, BRep_Tool::Surface(face));
         if (proj.NbPoints() > 0) {
             double u, v;
@@ -141,7 +141,7 @@ namespace BRepUtils {
                 return n;
             }
         }
-        return gp_Vec(0, 0, 0); // ʧ��
+        return gp_Vec(0, 0, 0); // 失败
     }
 
     gp_Vec GetNormalAtFace(const TopoDS_Face& face, const gp_Pnt& p) {
@@ -154,7 +154,7 @@ namespace BRepUtils {
         if (props.IsNormalDefined()) {
             gp_Vec n = props.Normal();
             if (face.Orientation() == TopAbs_REVERSED) n.Reverse();
-            // ? ȷ����һ��
+            // 确保归一化
             if (n.Magnitude() > 1e-7) {
                 n.Normalize();
             }
@@ -172,7 +172,7 @@ namespace BRepUtils {
         Handle(Geom_Curve) c3d = BRep_Tool::Curve(edge, first, last);
         if (c3d.IsNull()) return 2;
 
-        // ȡ�е㸽������ֹ�����
+        // 取中点附近，防止奇异点
         double p_val = first + (last - first) * 0.43;
         gp_Pnt p; gp_Vec tang;
         c3d->D1(p_val, p, tang);
@@ -182,7 +182,7 @@ namespace BRepUtils {
 
         if (n1.Angle(n2) < 0.087 || (M_PI - n1.Angle(n2)) < 0.087) return 2; // Smooth
 
-        // ͹���ж�
+        // 凹凸判断
         gp_Vec cross = n1 ^ n2;
 
         bool f1_fwd = false;
