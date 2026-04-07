@@ -71,6 +71,7 @@ namespace BRepUtils {
             }
         }
 
+        return Tensor();
     }
 
     // 获取更严格的参数插值，保证首尾精确落在边界

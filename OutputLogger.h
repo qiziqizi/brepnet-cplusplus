@@ -41,9 +41,9 @@ protected:
 class OutputLogger {
 private:
     std::ofstream file;
-    TeeBuf* tee_buf;
-    std::streambuf* old_cout_buf;
-    std::streambuf* old_cerr_buf;
+    TeeBuf* tee_buf = nullptr;
+    std::streambuf* old_cout_buf = nullptr;
+    std::streambuf* old_cerr_buf = nullptr;
 
 public:
     OutputLogger(const std::string& filename) {

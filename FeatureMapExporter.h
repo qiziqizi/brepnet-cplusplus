@@ -1,9 +1,7 @@
 #ifndef FEATURE_MAP_EXPORTER_H
-
-// 包含调试配置
-#include "DebugControl.h"
-
 #define FEATURE_MAP_EXPORTER_H
+
+#include "DebugControl.h"
 
 #include "BRepTorch.h"
 #include <string>

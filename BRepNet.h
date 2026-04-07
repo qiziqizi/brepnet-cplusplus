@@ -50,14 +50,8 @@ struct BRepNetMLPImpl : Module {
         return mlp->forward(x);
     }
 
-    // 参数同步：确保加载的权重被正确同步到所有子模块
-    void sync_parameters() {
-        auto params = named_parameters();
-        for (auto& p : params) {
-            // 参数已经被加载到 named_parameters 返回的映射中
-            // 这个方法只是为了触发所有子模块的参数更新
-        }
-    }
+    // 参数同步（当前为空操作，权重通过 named_parameters 直接加载）
+    void sync_parameters() {}
 };
 TORCH_MODULE(BRepNetMLP)
 
@@ -120,7 +114,6 @@ struct EdgeData {
 
 // 5. BRepNet 主网络
 struct BRepNetImpl : Module {
-    bool use_uvnet = false;
     UVNetSurfaceEncoder surf_enc;
     UVNetCurveEncoder curve_enc;
 
@@ -454,7 +447,7 @@ struct BRepNetImpl : Module {
                 }
             }
 
-            // 调试：打印 Edge 0 的 MeanPooling 结果
+            // 调试：打印 Edge 0 的 MaxPooling 结果
             if (DebugControl::instance().shouldDebug() && edge.edge_id == 0) {
                 DBG_LOG << "  Edge 0 (has " << edge.coedge_ids.size() << " coedges):" << std::endl;
                 DBG_LOG << "    Coedge IDs: ";

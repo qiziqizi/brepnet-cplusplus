@@ -594,7 +594,7 @@ void run_inference_with_export(const std::string& step_file,
             for (int cid : edge.coedge_ids) edge_debug_file << cid << " ";
             edge_debug_file << "] max_coedge=" << max_coedge_id
                            << " value[0]=" << edge.layer0_state[0]
-                           << " sum_first_10=" << 0.0f;
+                           << " sum_first_10=" << std::accumulate(edge.layer0_state.begin(), edge.layer0_state.begin() + std::min(10, 30), 0.0f);
             for (int i = 0; i < std::min(10, 30); ++i) {
                 edge_debug_file << " " << edge.layer0_state[i];
             }
@@ -1035,20 +1035,12 @@ int main(int argc, char* argv[]) {
 
     DBG_LOG << "\n[Model] Weights loaded successfully!" << std::endl;
 
-    // 验证 Layer 1 linear_1 bias 是否被加载
-    DBG_LOG << "\n[Verification] Checking if Layer 1 linear_1 bias was loaded..." << std::endl;
+    // 验证 Layer 1 linear_1 bias 是否被加载（主循环已完成加载，此处仅做验证）
     auto layer1_bias_key = "layer_1.mlp.mlp.linear_1.bias";
     if (params.find(layer1_bias_key) != params.end()) {
-        DBG_LOG << "  ✓ Found: " << layer1_bias_key << std::endl;
-        // Try to re-load the bias explicitly
-        if (npz.count("layers.1.mlp.mlp.linear_1.bias")) {
-            auto arr = npz["layers.1.mlp.mlp.linear_1.bias"];
-            std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
-            *params[layer1_bias_key] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
-            DBG_LOG << "  ✓ Re-loaded bias: " << layer1_bias_key << std::endl;
-        }
+        DBG_LOG << "\n[Verification] Layer 1 linear_1 bias: loaded" << std::endl;
     } else {
-        DBG_LOG << "  ✗ NOT FOUND: " << layer1_bias_key << std::endl;
+        DBG_LOG << "\n[Verification] Layer 1 linear_1 bias: NOT FOUND" << std::endl;
     }
 
     // ========================================================================

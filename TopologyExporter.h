@@ -193,10 +193,14 @@ private:
         }
 
         file << "每个面的共边数统计:\n";
-        file << "  最小: " << *std::min_element(coedge_counts.begin(), coedge_counts.end()) << "\n";
-        file << "  最大: " << *std::max_element(coedge_counts.begin(), coedge_counts.end()) << "\n";
-        file << "  平均: " << std::fixed << std::setprecision(2)
-             << (double)std::accumulate(coedge_counts.begin(), coedge_counts.end(), 0) / coedge_counts.size() << "\n\n";
+        if (!coedge_counts.empty()) {
+            file << "  最小: " << *std::min_element(coedge_counts.begin(), coedge_counts.end()) << "\n";
+            file << "  最大: " << *std::max_element(coedge_counts.begin(), coedge_counts.end()) << "\n";
+            file << "  平均: " << std::fixed << std::setprecision(2)
+                 << (double)std::accumulate(coedge_counts.begin(), coedge_counts.end(), 0) / coedge_counts.size() << "\n\n";
+        } else {
+            file << "  (无面数据)\n\n";
+        }
 
         // 大面列表 (>30 coedges)
         std::vector<int> big_faces;
