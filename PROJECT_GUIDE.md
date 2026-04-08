@@ -450,12 +450,7 @@ main()
         └── 显式内存清理（swap释放）
 ```
 
-> **注意**：`main_export_features.cpp` 中的 forward 是**手动逐层执行**的（没有调用 `BRepNet::forward()`），因为需要在每层之后导出中间结果。两者存在**有意的语义差异**：  
-> - Layer 0/1 MaxPool 初始化：`main` 使用 `0.0f`（匹配 Python 的 zero-padding），`forward()` 使用 `-1e9f`  
-> - Output Layer Big/Small Face 阈值：`main` 使用 `< 30`，`forward()` 使用 `> 30`  
-> - Output Layer：`main` 对 Small Face MaxPool 后额外施加 ReLU，`forward()` 没有  
-> 
-> **`main` 中的实现是正确的生产路径**（与 Python 输出一致），`BRepNet::forward()` 是未被调用的死代码，仅作参考保留。
+> **注意**：`main_export_features.cpp` 中的 forward 是**手动逐层执行**的（没有调用 `BRepNet::forward()`），因为需要在每层之后导出中间结果。两者的推理逻辑已同步一致（MaxPooling 初始化、大小面阈值、小面 ReLU），预测结果相同。`BRepNet::forward()` 被可视化工具（`FaceClassifier`）调用。
 
 #### 权重名称映射
 

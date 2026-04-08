@@ -269,7 +269,7 @@ struct BRepNetImpl : Module {
         }
 
         for (auto& face : faces) {
-            face.layer0_state.resize(30, -1e9f);  // 初始化为负无穷
+            face.layer0_state.resize(30, 0.0f);  // 初始化为0，与Python零填充一致
 
             int coedge_count = 0;
             for (int coedge_id : face.coedge_ids) {
@@ -312,7 +312,7 @@ struct BRepNetImpl : Module {
         // 步骤3: 遍历每个 edge，MaxPooling 其所有 coedge 的状态
         DBG_LOG << "\n[Layer 0 Edge Pooling (MaxPooling)]" << std::endl;
         for (auto& edge : edges) {
-            edge.layer0_state.resize(30, -1e9f);  // 初始化为负无穷
+            edge.layer0_state.resize(30, 0.0f);  // 初始化为0，与Python零填充一致
 
             int coedge_count = 0;
             for (int coedge_id : edge.coedge_ids) {
@@ -405,7 +405,7 @@ struct BRepNetImpl : Module {
         // MaxPooling
         DBG_LOG << "\n[Layer 1 Face Pooling (MaxPooling)]" << std::endl;
         for (auto& face : faces) {
-            face.layer1_state.resize(30, -1e9f);  // 初始化为负无穷
+            face.layer1_state.resize(30, 0.0f);  // 初始化为0，与Python零填充一致
 
             int coedge_count = 0;
             for (int coedge_id : face.coedge_ids) {
@@ -434,14 +434,14 @@ struct BRepNetImpl : Module {
 
         DBG_LOG << "\n[Layer 1 Edge Pooling (MaxPooling)]" << std::endl;
         for (auto& edge : edges) {
-            edge.layer1_state.resize(30, -1e9f);  // 初始化为负无穷
+            edge.layer1_state.resize(30, 0.0f);  // 初始化为0，与Python零填充一致
 
             int coedge_count = 0;
             for (int coedge_id : edge.coedge_ids) {
                 if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
                     const auto& coedge_state = coedges[coedge_id].layer1_edge_state;
                     for (int i = 0; i < 30; ++i) {
-                        edge.layer1_state[i] = std::max(edge.layer1_state[i], coedge_state[i]);  // 取最大值
+                        edge.layer1_state[i] = std::max(edge.layer1_state[i], coedge_state[i]);
                     }
                     coedge_count++;
                 }
@@ -522,16 +522,14 @@ struct BRepNetImpl : Module {
         // MaxPooling
         DBG_LOG << "\n[Output Layer Face Pooling (MaxPooling)]" << std::endl;
         for (auto& face : faces) {
-            // 关键修复：Big faces vs Small faces 的初始化差异
-            const int MAX_COEDGES_PER_FACE = 30;
-            bool is_big_face = (int)face.coedge_ids.size() > MAX_COEDGES_PER_FACE;
-            float init_value = is_big_face ? -1e9f : 0.0f;  // Big face: -inf, Small face: 0
-            face.output_state.assign(30, init_value);  // 使用 assign 确保覆盖所有元素
+            const int max_coedges_per_face = 30;
+            bool is_small_face = (int)face.coedge_ids.size() < max_coedges_per_face;
+            float init_value = is_small_face ? 0.0f : -1e9f;
+            face.output_state.assign(30, init_value);
 
-            // 调试输出 big face
-            if (is_big_face) {
+            if (!is_small_face) {
                 DBG_LOG << "[Debug] Face " << face.face_id << " is BIG FACE with "
-                          << face.coedge_ids.size() << " coedges, init_value=" << init_value << std::endl;
+                          << face.coedge_ids.size() << " coedges, init=" << init_value << std::endl;
             }
 
             int coedge_count = 0;
@@ -539,9 +537,15 @@ struct BRepNetImpl : Module {
                 if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
                     const auto& coedge_state = coedges[coedge_id].output_face_state;
                     for (int i = 0; i < 30; ++i) {
-                        face.output_state[i] = std::max(face.output_state[i], coedge_state[i]);  // 取最大值
+                        face.output_state[i] = std::max(face.output_state[i], coedge_state[i]);
                     }
                     coedge_count++;
+                }
+            }
+
+            if (is_small_face) {
+                for (int i = 0; i < 30; ++i) {
+                    face.output_state[i] = std::max(0.0f, face.output_state[i]);
                 }
             }
 

@@ -77,49 +77,139 @@
 
 ---
 
-## 4. 面的序号从哪来（关键）
+## 4. 面的序号规则（重要 — 构建 Labels 必读）
 
-### 面的编号规则
+### 4.1 面序号是怎么产生的
 
-面的序号（#0, #1, #2, ...）由 **OpenCascade 的 `TopExp_Explorer` 遍历顺序** 决定：
+本项目中面的序号（#0, #1, #2, ...）由 **OpenCascade 的 `TopExp_Explorer` 遍历顺序** 唯一确定。这不是随机的，也不是按 CAD 建模顺序排列的，而是由 STEP 文件中存储的 B-Rep 拓扑结构决定的**确定性深度优先遍历**。
+
+具体流程：
+
+1. `STEPControl_Reader` 读取 STEP 文件，得到一个复合形体 `TopoDS_Shape`
+2. `TopExp_Explorer(shape, TopAbs_FACE)` 对这个形体做深度优先遍历，依次发现所有拓扑面
+3. 第 1 个被发现的面 → **#0**，第 2 个 → **#1**，以此类推
+4. **同一个 STEP 文件，无论运行多少次、在哪台机器上，遍历顺序完全一致**
 
 ```cpp
-// StepLoader.cpp:60-68
-for (TopExp_Explorer exp(shape_, TopAbs_FACE); exp.More(); exp.Next()) {
+// 本项目三个模块（可视化显示、可视化预测、批量推理）都使用这个遍历：
+for (TopExp_Explorer exp(shape, TopAbs_FACE); exp.More(); exp.Next()) {
     TopoDS_Face face = TopoDS::Face(exp.Current());
-    faces_.push_back(face);  // faces_[0] = 第一个面, faces_[1] = 第二个面, ...
+    // 第 0 次循环 → 面 #0，第 1 次循环 → 面 #1，...
 }
 ```
 
-具体含义：
+### 4.2 面序号与 CAD 特征的关系
 
-- STEP 文件被 `STEPControl_Reader` 读取后得到一个复合形体（`TopoDS_Shape`）
-- `TopExp_Explorer(shape, TopAbs_FACE)` 对这个形体做**深度优先遍历**，依次找到所有面
-- 遍历到的第 1 个面编号为 **#0**，第 2 个面编号为 **#1**，以此类推
-- 这个顺序由 STEP 文件中的几何体拓扑结构决定，**对同一个 STEP 文件，每次遍历顺序完全一致**
+面的序号**不等于** CAD 软件中的特征编号或建模顺序。举例说明：
 
-### 预测模块（BRepPipeline）使用相同的遍历方式
+- 一个简单的长方体有 6 个面，`TopExp_Explorer` 可能按以下顺序遍历：
+  - #0 = 顶面、#1 = 底面、#2 = 前面、#3 = 后面、#4 = 左面、#5 = 右面
+- 但也可能是另一种顺序 — 取决于 STEP 文件内部的拓扑存储结构
+- 如果在 CAD 软件中对零件做了修改（如增加倒角、打孔），重新导出 STEP 后，**原有面的序号可能会发生变化**
 
-```cpp
-// BRepPipeline.h:173-177
-TopExp_Explorer faceExp(shape, TopAbs_FACE);
-for (; faceExp.More(); faceExp.Next()) {
-    TopoDS_Face f = TopoDS::Face(faceExp.Current());
-    unique_faces.Add(f);  // TopTools_IndexedMapOfShape，自动去重
-}
+### 4.3 如何确认每个面的序号（构建 Labels 的方法）
+
+#### 方法 1（推荐）：使用本项目的可视化工具
+
+这是最直观的方式：
+
+1. 启动可视化工具，加载目标 STEP 文件
+2. 所有面以灰色显示在 3D 视图中
+3. **左键点击任意面**，右侧信息栏显示：`选中面: #N`
+4. 旋转、缩放模型，逐个点击所有面，记录每个面的序号和对应的类别
+5. 按序号从 #0 开始，依次写入 labels 文件
+
+具体操作示例：
+
+```
+点击顶面    → 信息栏显示 "选中面: #0"  → 判断为 plane   → labels 第 1 行写 0
+点击侧面    → 信息栏显示 "选中面: #1"  → 判断为 cylinder → labels 第 2 行写 1
+点击圆角面  → 信息栏显示 "选中面: #2"  → 判断为 fillet   → labels 第 3 行写 10
+...
 ```
 
-两者都使用 `TopExp_Explorer(shape, TopAbs_FACE)`，遍历顺序一致。区别在于 BRepPipeline 使用 `IndexedMapOfShape`（自动去重），StepLoader 使用 `vector`（不去重）。对正常的 STEP 文件，两者结果相同。
+#### 方法 2：使用 Python + OCC 脚本
 
-### 与批量推理工具（main_export_features.cpp）的关系
+如果不方便使用可视化工具，可以编写 Python 脚本。安装 `pythonocc-core` 后：
 
-批量推理工具 `main_export_features.cpp` 也使用 BRepPipeline，面的顺序与可视化工具一致。输出的 `.logits` 文件中，第 N 行对应面 #N。
+```python
+from OCP.STEPControl import STEPControl_Reader
+from OCP.TopExp import TopExp_Explorer
+from OCP.TopAbs import TopAbs_FACE
+from OCP.TopoDS import topods
+from OCP.BRep import BRep_Tool
+from OCP.BRepAdaptor import BRepAdaptor_Surface
+from OCP.GeomAbs import GeomAbs_Plane, GeomAbs_Cylinder, GeomAbs_Cone, GeomAbs_Sphere, GeomAbs_Torus
 
-**总结：面 #0, #1, #2, ... 的顺序 = `TopExp_Explorer(shape, TopAbs_FACE)` 深度优先遍历的发现顺序。三个模块（可视化显示、可视化预测、批量推理）使用同一遍历方式，顺序一致。**
+reader = STEPControl_Reader()
+reader.ReadFile("your_file.step")
+reader.TransferRoots()
+shape = reader.OneShape()
 
-### 如何确认某个面的序号
+surface_type_names = {
+    GeomAbs_Plane: "Plane", GeomAbs_Cylinder: "Cylinder",
+    GeomAbs_Cone: "Cone", GeomAbs_Sphere: "Sphere", GeomAbs_Torus: "Torus",
+}
 
-在可视化工具中，加载 STEP 文件后，左键点击任意面，信息栏会显示 `选中面: #N`，这个 N 就是该面的 0-based 序号。
+exp = TopExp_Explorer(shape, TopAbs_FACE)
+face_id = 0
+while exp.More():
+    face = topods.Face(exp.Current())
+    adaptor = BRepAdaptor_Surface(face)
+    stype = adaptor.GetType()
+    type_name = surface_type_names.get(stype, "Other")
+    print(f"Face #{face_id}: {type_name}")
+    face_id += 1
+    exp.Next()
+
+print(f"\nTotal: {face_id} faces")
+```
+
+输出示例：
+```
+Face #0: Plane
+Face #1: Cylinder
+Face #2: Plane
+Face #3: Cylinder
+Face #4: Plane
+Face #5: Plane
+Total: 6 faces
+```
+
+> **注意**：Python 的 `TopExp_Explorer` 与 C++ 完全一致（底层是同一个 OpenCascade 库），遍历顺序保证相同。
+
+#### 方法 3：先运行预测，再修正
+
+1. 运行批量推理或可视化工具的"运行预测"，得到每个面的预测类别
+2. 在可视化工具中，点击每个面查看预测结果是否正确
+3. 对于预测错误的面，记录其序号和正确类别
+4. 构建完整的 labels 文件
+
+### 4.4 三个模块的面顺序一致性保证
+
+| 模块 | 遍历代码位置 | 容器类型 | 面序号来源 |
+|------|-------------|----------|-----------|
+| 可视化显示 | `StepLoader.cpp:65` | `vector<TopoDS_Face>` | vector 下标 |
+| 可视化预测 | `BRepPipeline.h:173` | `TopTools_IndexedMapOfShape` | Map 索引 |
+| 批量推理 | `BRepPipeline.h:173`（同上） | `TopTools_IndexedMapOfShape` | Map 索引 |
+
+三者都使用 `TopExp_Explorer(shape, TopAbs_FACE)` 遍历。StepLoader 用 `vector`（不去重），BRepPipeline 用 `IndexedMapOfShape`（自动去重）。对于正常的 STEP 文件（没有重复面），两者结果完全一致。
+
+**批量推理输出的 `.logits` 文件中，第 N 行（0-indexed）对应面 #N，与可视化工具中的面序号一致。**
+
+### 4.5 常见问题
+
+**Q: 同一个零件，在不同 CAD 软件中导出的 STEP 文件，面顺序会一样吗？**
+A: **不一定**。不同 CAD 软件（SolidWorks、CATIA、NX 等）导出 STEP 时，内部拓扑结构的存储顺序可能不同。必须基于**实际要使用的那个 STEP 文件**来确认面顺序。
+
+**Q: 修改了 STEP 文件后重新导出，原来的 labels 还能用吗？**
+A: **不能直接用**。任何对零件的修改（加特征、删特征、修改参数）都可能导致面的数量或顺序变化。必须重新确认面顺序并重新构建 labels。
+
+**Q: 面的序号会因为操作系统或编译器不同而变化吗？**
+A: **不会**。面的遍历顺序由 STEP 文件内容唯一决定，与操作系统、编译器无关。只要使用 OpenCascade 的 `TopExp_Explorer`，任何平台上的结果都一致。
+
+**Q: 为什么有些面看起来一样但序号不同？**
+A: 一个复杂零件可能有多个几何相似但拓扑上独立的面（如多个相同的孔的内壁）。它们在拓扑结构中是不同的面，因此有不同的序号。
 
 ---
 
@@ -288,11 +378,9 @@ through_hole: 2
 
 ## 8. 注意事项
 
-### 8.1 可视化工具的推理路径与批量推理工具不同
+### 8.1 推理路径
 
-可视化工具内部调用 `BRepNet::forward()`（`BRepNet.h` 中定义），而批量推理工具 `main_export_features.cpp` 使用手动逐层执行的推理路径。两者在 MaxPooling 初始化等细节上存在**有意的语义差异**。
-
-对于大多数模型，两者结果的 argmax（预测类别）一致。但在极端情况下（某些面的 coedge 数量恰好在阈值附近），可能出现类别不同。如果需要与批量推理结果严格一致，应以 `cpp_logits/` 目录下的 `.logits` 文件为准。
+可视化工具内部调用 `BRepNet::forward()`（`BRepNet.h` 中定义），批量推理工具 `main_export_features.cpp` 使用手动逐层执行的推理路径。两者的推理逻辑已同步一致（MaxPooling 初始化、大小面阈值、小面 ReLU），预测结果应完全相同。
 
 ### 8.2 面数一致性校验
 
