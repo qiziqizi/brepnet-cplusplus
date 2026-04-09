@@ -881,6 +881,81 @@ void run_inference_with_export(const std::string& step_file,
 
     DBG_LOG << "  [Export] Logits saved to: " << logits_path << " (original face order)" << std::endl;
 
+    // ========================================================================
+    // 导出预测结果到 cpp_results/ — 始终执行，不受调试开关控制
+    // ========================================================================
+    DBG_LOG << "  [Export] Saving predictions..." << std::endl;
+
+    // 确保目录存在
+    fs::create_directories("cpp_results");
+
+    // 创建原始顺序的预测数据
+    std::vector<std::vector<float>> probs_original_order(num_faces);
+    std::vector<int> predictions_original_order(num_faces);
+    std::vector<float> confidences_original_order(num_faces);
+
+    for (int inference_id = 0; inference_id < num_faces; ++inference_id) {
+        int original_id = faces[inference_id].face_id;
+
+        // 获取该 Face 的概率和预测
+        std::vector<float> face_probs(27);
+        float max_prob = -1e9f;
+        int pred_class = 0;
+
+        for (int c = 0; c < 27; ++c) {
+            face_probs[c] = probs.at({inference_id, c});
+            if (face_probs[c] > max_prob) {
+                max_prob = face_probs[c];
+                pred_class = c;
+            }
+        }
+
+        probs_original_order[original_id] = face_probs;
+        predictions_original_order[original_id] = pred_class;
+        confidences_original_order[original_id] = max_prob;
+    }
+
+    // 导出预测结果
+    std::string results_path = "cpp_results/" + base_name + ".results";
+    std::ofstream results_file(results_path);
+    results_file << "# filename: " << base_name << ".step" << "\n";
+    results_file << "# topology: " << num_coedges << " coedges, "
+                 << num_faces << " faces, " << num_edges << " edges\n";
+    results_file << "# format: face_id predicted_class confidence top3_classes\n";
+    results_file << std::scientific << std::setprecision(6);
+
+    for (int original_id = 0; original_id < num_faces; ++original_id) {
+        int pred_class = predictions_original_order[original_id];
+        float confidence = confidences_original_order[original_id];
+
+        // 找 Top 3
+        std::vector<std::pair<int, float>> class_probs;
+        for (int c = 0; c < 27; ++c) {
+            class_probs.push_back({c, probs_original_order[original_id][c]});
+        }
+        std::sort(class_probs.begin(), class_probs.end(),
+                  [](const auto& a, const auto& b) { return a.second > b.second; });
+
+        // 输出一行
+        results_file << "face_" << original_id << " "
+                     << pred_class << " ";
+
+        // 置信度（不用科学计数法，便于阅读）
+        results_file << std::defaultfloat << std::setprecision(6) << confidence << " ";
+
+        // Top 3 类别
+        results_file << std::scientific << std::setprecision(6);
+        for (int i = 0; i < 3 && i < 27; ++i) {
+            if (i > 0) results_file << " ";
+            results_file << class_probs[i].first << ":"
+                         << class_probs[i].second;
+        }
+        results_file << "\n";
+    }
+    results_file.close();
+
+    DBG_LOG << "  [Export] Results saved to: " << results_path << " (original face order)" << std::endl;
+
     INFO_LOG << " -> [✓] F:" << num_faces << " E:" << num_edges << std::endl;
 
     // ========================================================================
@@ -924,6 +999,9 @@ void run_inference_with_export(const std::string& step_file,
         std::vector<std::vector<float>>().swap(uvnet_surface_features);
         std::vector<std::vector<float>>().swap(uvnet_curve_features);
         std::vector<std::vector<float>>().swap(logits_original_order);
+        std::vector<std::vector<float>>().swap(probs_original_order);
+        std::vector<int>().swap(predictions_original_order);
+        std::vector<float>().swap(confidences_original_order);
         std::vector<int>().swap(edge_representatives);
         std::map<int, int>().swap(original_to_inference_face);
     }

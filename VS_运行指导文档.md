@@ -10,13 +10,13 @@
 
 ## 一、运行模式总览
 
-| 模式 | 命令参数 | 终端输出 | 中间文件导出 | 适用场景 |
-|------|---------|---------|------------|---------|
-| **静默批量模式** | _(留空)_ | 仅文件名+结果 | ❌ 不导出 | 28000文件批量跑 |
-| **调试单文件模式** | `--debug --target 文件名` | 该文件全量调试 | ✅ 该文件导出 | 发现问题文件后定点调试 |
-| **调试全部模式** | `--debug` | 所有文件全量调试 | ✅ 全部导出 | 对比验证/全量检查 |
-| **仅导出中间文件** | `--export` | 仅文件名+结果 | ✅ 全部导出 | 需要中间数据但不要终端刷屏 |
-| **导出指定文件** | `--export --target 文件名` | 仅文件名+结果 | ✅ 该文件导出 | 只导出某个文件的中间数据 |
+| 模式 | 命令参数 | 终端输出 | 输出文件 | 适用场景 |
+|------|---------|---------|---------|---------|
+| **静默批量模式** | _(留空)_ | 仅文件名+结果 | ✅ logits + results | 28000文件批量跑 |
+| **调试单文件模式** | `--debug --target 文件名` | 该文件全量调试 | ✅ logits + results + 中间层 | 发现问题文件后定点调试 |
+| **调试全部模式** | `--debug` | 所有文件全量调试 | ✅ logits + results + 中间层 | 对比验证/全量检查 |
+| **仅导出中间文件** | `--export` | 仅文件名+结果 | ✅ logits + results + 中间层 | 需要中间数据但不要终端刷屏 |
+| **导出指定文件** | `--export --target 文件名` | 仅文件名+结果 | ✅ logits + results + 中间层 | 只导出某个文件的中间数据 |
 
 ---
 
@@ -68,7 +68,9 @@ Total time: 4523.5 seconds
 - ❌ 不输出任何 `[DEBUG]`、`[Layer 0]`、`[DIAGNOSTIC]` 信息
 - ❌ 不创建 `cpp_feature_maps/`、`cpp_uv_grids/` 中间文件
 - ❌ 不创建 `arc_length_diagnosis.txt`、`coedge_grid_diagnosis.txt`
-- ✅ 只创建最终结果 `cpp_logits/*.logits`
+- ✅ 创建最终结果
+  - `cpp_logits/*.logits`：原始 logits（softmax 前）
+  - `cpp_results/*.results`：分类预测结果（类别、置信度、Top 3）
 
 ---
 
@@ -102,6 +104,8 @@ Forward Propagation Started
 ...（完整调试信息）
 
 [Export] Intermediate files saved to:
+  cpp_logits/step3268.logits
+  cpp_results/step3268.results
   cpp_feature_maps/step3268_*
   cpp_uv_grids/step3268_*
   arc_length_diagnosis.txt
@@ -160,16 +164,17 @@ step3268 -> [✓] F:28 E:55
 
 ## 四、参数组合速查表
 
-| 命令参数 | 终端调试 | 中间文件 | 诊断文件 |
-|---------|---------|---------|---------|
-| _(空)_ | ❌ | ❌ | ❌ |
-| `--debug` | ✅ 全部 | ✅ 全部 | ✅ |
-| `--debug --target X` | ✅ 仅X | ✅ 仅X | ✅ 仅X |
-| `--export` | ❌ | ✅ 全部 | ✅ |
-| `--export --target X` | ❌ | ✅ 仅X | ✅ 仅X |
+| 命令参数 | 终端调试 | 永远生成 | 条件生成 | 诊断文件 |
+|---------|---------|---------|---------|---------|
+| _(空)_ | ❌ | ✅ logits + results | ❌ | ❌ |
+| `--debug` | ✅ 全部 | ✅ logits + results | ✅ 全部中间层 | ✅ |
+| `--debug --target X` | ✅ 仅X | ✅ logits + results | ✅ 仅X中间层 | ✅ 仅X |
+| `--export` | ❌ | ✅ logits + results | ✅ 全部中间层 | ✅ |
+| `--export --target X` | ❌ | ✅ logits + results | ✅ 仅X中间层 | ✅ 仅X |
 
 **"终端调试"** = `[DEBUG]`、`[Layer 0]`、MLP输入输出、Pooling详情等  
-**"中间文件"** = `cpp_feature_maps/`、`cpp_uv_grids/` 中的 `.txt` 文件  
+**"永远生成"** = `cpp_logits/`、`cpp_results/`（所有模式都输出）  
+**"条件生成"** = `cpp_feature_maps/`、`cpp_uv_grids/`（调试/导出模式才输出）  
 **"诊断文件"** = `arc_length_diagnosis.txt`、`coedge_grid_diagnosis.txt`、`cpp_feature_maps/layer0_mlp_all_coedges_stats.txt` 等
 
 ---
@@ -233,9 +238,14 @@ step3268 -> [✓] F:28 E:55
 3. **`--target` 匹配规则**：精确匹配 stem 名称，大小写敏感。
 4. **批量模式性能**：静默模式下所有调试代码被条件跳过（`if (false)`），编译器会优化掉，**零性能损失**。
 5. **输出目录**：
-   - 最终结果始终输出到 `cpp_logits/`
-   - 中间文件输出到 `cpp_feature_maps/` 和 `cpp_uv_grids/`
-   - 诊断文件输出到项目根目录
+   - 最终结果（始终生成）
+     - `cpp_logits/` — 原始 logits（softmax 前）
+     - `cpp_results/` — 分类预测结果（类别、置信度、Top 3）
+   - 中间文件（调试/导出模式）
+     - `cpp_feature_maps/` — 各层中间特征
+     - `cpp_uv_grids/` — UV Grid 原始数据
+   - 诊断文件（调试/导出模式）
+     - `arc_length_diagnosis.txt`、`coedge_grid_diagnosis.txt`（项目根目录）
 
 ---
 

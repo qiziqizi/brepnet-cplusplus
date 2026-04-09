@@ -58,7 +58,8 @@ d:\brepnet-cplusplus\
 │   ├── state_dict.npz         ← Python 导出的模型权重
 │   └── step_files/            ← 待推理的 STEP 文件
 │
-├── cpp_logits/                ← 输出：每个文件的 logits（[num_faces, 27]）
+├── cpp_logits/                ← 输出：原始 logits（softmax 前，始终生成）
+├── cpp_results/               ← 输出：分类预测结果（每个 Face 的类别、置信度、Top 3，始终生成）
 ├── cpp_uv_grids/              ← 输出：UV Grid 原始数据（调试用）
 ├── cpp_feature_maps/          ← 输出：每层中间特征（调试用）
 │
@@ -145,8 +146,9 @@ STEP 文件
 │     → softmax → probs[F, 27]                        │
 └─────────────────────────────────────────────────────┘
     │
-    ▼
-  cpp_logits/<filename>.logits  （每行27个浮点数，按原始Face顺序）
+    ├─ cpp_logits/<filename>.logits    （原始 logits）
+    │
+    └─ cpp_results/<filename>.results  （预测结果统计）
 ```
 
 ### 3.2 关键维度速查
@@ -465,7 +467,40 @@ layers.1.mlp → layer_1.mlp
 
 logits 按**原始 Face ID 顺序**导出（与 Python 一致），而非推理时的内部排列顺序。推理内部使用 `face_permutation`（small faces 在前，big faces 在后）。
 
-### 4.7 辅助文件
+### 4.7 `cpp_results` 预测结果导出（新增）
+
+在 `main_export_features.cpp` 的 logits 导出后，自动生成预测结果文件。
+
+#### 文件位置
+`cpp_results/<filename>.results`
+
+#### 生成时机
+- **所有推理模式都生成**（不受 `--debug` 等参数限制）
+- 与 `cpp_logits/<filename>.logits` 同时生成
+- 在 logits 导出之后，内存清理之前
+
+#### 用途
+- 快速诊断分类结果的准确性
+- 识别置信度低的 Face，用于深入调试
+- 与 Python 端的 `print_prediction_distribution()` 输出对应
+
+#### 包含信息
+- **预测类别**：argmax(softmax(logits))，即最可能的加工特征（0-26）
+- **置信度**：max(softmax(logits))，即最大概率值，衡量预测可靠性
+- **Top 3 类别及其概率**：前三高的类别和对应概率，便于了解备选预测
+
+#### 实现位置
+`main_export_features.cpp` 第 884-957 行
+
+#### 关键特性
+- ✅ 按原始 Face 顺序输出（与 cpp_logits 一致）
+- ✅ Top 3 通过排序得到（最高概率优先）
+- ✅ 置信度采用普通浮点格式（易读）
+- ✅ Top 3 概率采用科学计数法（高精度）
+- ✅ 显式内存清理（probs_original_order 等向量）
+- ✅ 详见：`cpp_results_输出说明.md`
+
+### 4.8 辅助文件
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
@@ -552,6 +587,28 @@ inference_data/
 - 每行 27 个浮点数（科学计数法，20 位精度），空格分隔
 - 行号 = 原始 Face ID（0-based）
 - 值 = 未归一化的分类 logits
+
+**`cpp_results/<name>.results`**：
+- 文件头：三行注释
+  - `# filename: <file_stem>.step` — 原始文件名
+  - `# topology: C coedges, F faces, E edges` — 拓扑信息
+  - `# format: face_id predicted_class confidence top3_classes` — 列说明
+- 数据行：每行对应一个 Face，包含 5 列
+  - `face_id`：Face 原始编号（face_0, face_1, ...）
+  - `predicted_class`：预测的加工特征类别（0-26）
+  - `confidence`：最大概率值（6 位精度，普通浮点格式）
+  - `top3_classes`：Top 3 类别及其概率（科学计数法）
+    - 格式：`class_id:probability class_id:probability class_id:probability`
+    - 例：`5:9.532009e-01 8:3.214500e-02 12:9.283000e-03`
+- 示例：
+  ```
+  # filename: 20240116_231044_0_result.step
+  # topology: 190 coedges, 28 faces, 55 edges
+  # format: face_id predicted_class confidence top3_classes
+  face_0  5  0.953201  5:9.532009e-01 8:3.214500e-02 12:9.283000e-03
+  face_1  8  0.872401  8:8.724013e-01 5:8.723401e-02 3:1.230400e-02
+  face_2  16  0.941523  16:9.415234e-01 5:3.215600e-02 8:1.523400e-02
+  ```
 
 ---
 
