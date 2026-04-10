@@ -71,8 +71,8 @@
 
 5. **点击查看面信息**：左键点击任意面，信息栏显示：
    ```
-   选中面: #5 | 预测: cylinder(1) | 真实: cylinder(1) ✓
-   选中面: #12 | 预测: plane(0) | 真实: fillet(10) ✗
+   选中面: #5 | 预测: through_hole(1) | 真实: through_hole(1) ✓
+   选中面: #12 | 预测: chamfer(0) | 真实: slanted_through_step(10) ✗
    ```
 
 ---
@@ -122,9 +122,9 @@ for (TopExp_Explorer exp(shape, TopAbs_FACE); exp.More(); exp.Next()) {
 具体操作示例：
 
 ```
-点击顶面    → 信息栏显示 "选中面: #0"  → 判断为 plane   → labels 第 1 行写 0
-点击侧面    → 信息栏显示 "选中面: #1"  → 判断为 cylinder → labels 第 2 行写 1
-点击圆角面  → 信息栏显示 "选中面: #2"  → 判断为 fillet   → labels 第 3 行写 10
+点击顶面    → 信息栏显示 "选中面: #0"  → 判断为 plane    → labels 第 1 行写 24
+点击侧面    → 信息栏显示 "选中面: #1"  → 判断为 cylinder → labels 第 2 行写 25
+点击圆角面  → 信息栏显示 "选中面: #2"  → 判断为 round    → labels 第 3 行写 23
 ...
 ```
 
@@ -246,24 +246,24 @@ A: 一个复杂零件可能有多个几何相似但拓扑上独立的面（如�
 | 对应关系 | 第 K 个有效行（跳过空行和注释后从 0 开始计数）对应面 #K |
 | 错误处理 | 如果任何一行不是合法整数或超出 0-26 范围，**整个文件被拒绝**（返回空） |
 
-### 27 个类别 ID 对照表
+### 27 个类别 ID 对照表（与 segment_names.json / MFCAD 数据集一致）
 
 | ID | 类别名 | ID | 类别名 |
 |----|--------|----|--------|
-| 0 | plane | 14 | depression |
-| 1 | cylinder | 15 | imprint |
-| 2 | cone | 16 | island |
-| 3 | sphere | 17 | through_hole |
-| 4 | torus | 18 | blind_hole |
-| 5 | revolution | 19 | rectangular_pocket |
-| 6 | extrusion | 20 | rectangular_protrusion |
-| 7 | other | 21 | circular_pocket |
-| 8 | blend | 22 | circular_protrusion |
-| 9 | chamfer | 23 | thread |
-| 10 | fillet | 24 | draft |
-| 11 | hole | 25 | split |
-| 12 | pocket | 26 | unknown |
-| 13 | protrusion | | |
+| 0 | chamfer | 14 | rectangular_pocket |
+| 1 | through_hole | 15 | 6sides_pocket |
+| 2 | triangular_passage | 16 | circular_end_pocket |
+| 3 | rectangular_passage | 17 | rectangular_blind_slot |
+| 4 | 6sides_passage | 18 | v_circular_end_blind_slot |
+| 5 | triangular_through_slot | 19 | h_circular_end_blind_slot |
+| 6 | rectangular_through_slot | 20 | triangular_blind_step |
+| 7 | circular_through_slot | 21 | circular_blind_step |
+| 8 | rectangular_through_step | 22 | rectangular_blind_step |
+| 9 | 2sides_through_step | 23 | round |
+| 10 | slanted_through_step | 24 | plane |
+| 11 | Oring | 25 | cylinder |
+| 12 | blind_hole | 26 | cone |
+| 13 | triangular_pocket | | |
 
 ### 构建 Labels 文件的步骤
 
@@ -281,27 +281,27 @@ A: 一个复杂零件可能有多个几何相似但拓扑上独立的面（如�
 # 面数: 6
 #
 # 面#0: 顶面，平面
-0
+24
 # 面#1: 侧面，圆柱面
-1
+25
 # 面#2: 底面，平面
-0
+24
 # 面#3: 圆角过渡面
-10
+23
 # 面#4: 通孔内壁
-17
+1
 # 面#5: 通孔内壁
-17
+1
 ```
 
 可以省略注释，最简形式：
 ```
-0
+24
+25
+24
+23
 1
-0
-10
-17
-17
+1
 ```
 
 ---
@@ -319,12 +319,12 @@ BRepNet 预测结果
 
 面索引	类别ID	类别名称
 ------	------	--------
-0	0	plane
-1	1	cylinder
-2	0	plane
-3	10	fillet
-4	17	through_hole
-5	17	through_hole
+0	24	plane
+1	25	cylinder
+2	24	plane
+3	23	round
+4	1	through_hole
+5	1	through_hole
 
 
 类别分布统计
@@ -332,7 +332,7 @@ BRepNet 预测结果
 
 plane: 2
 cylinder: 1
-fillet: 1
+round: 1
 through_hole: 2
 ```
 
@@ -344,33 +344,33 @@ through_hole: 2
 
 | ID | 类别名 | 颜色 | RGB |
 |----|--------|------|-----|
-| 0 | plane | 红色 | (1.0, 0.0, 0.0) |
-| 1 | cylinder | 绿色 | (0.0, 1.0, 0.0) |
-| 2 | cone | 蓝色 | (0.0, 0.0, 1.0) |
-| 3 | sphere | 黄色 | (1.0, 1.0, 0.0) |
-| 4 | torus | 品红 | (1.0, 0.0, 1.0) |
-| 5 | revolution | 青色 | (0.0, 1.0, 1.0) |
-| 6 | extrusion | 橙色 | (1.0, 0.5, 0.0) |
-| 7 | other | 紫色 | (0.5, 0.0, 1.0) |
-| 8 | blend | 深绿 | (0.0, 0.5, 0.0) |
-| 9 | chamfer | 橄榄绿 | (0.5, 0.5, 0.0) |
-| 10 | fillet | 深青 | (0.0, 0.5, 0.5) |
-| 11 | hole | 深红 | (0.5, 0.0, 0.0) |
-| 12 | pocket | 棕色 | (0.5, 0.25, 0.0) |
-| 13 | protrusion | 亮黄 | (0.75, 0.75, 0.0) |
-| 14 | depression | 亮青 | (0.0, 0.75, 0.75) |
-| 15 | imprint | 亮紫 | (0.75, 0.0, 0.75) |
-| 16 | island | 黄绿 | (0.25, 0.5, 0.0) |
-| 17 | through_hole | 蓝绿 | (0.0, 0.25, 0.5) |
-| 18 | blind_hole | 酒红 | (0.5, 0.0, 0.25) |
-| 19 | rectangular_pocket | 土黄 | (0.75, 0.5, 0.25) |
-| 20 | rectangular_protrusion | 春绿 | (0.25, 0.75, 0.5) |
-| 21 | circular_pocket | 紫罗兰 | (0.5, 0.25, 0.75) |
-| 22 | circular_protrusion | 金色 | (0.9, 0.6, 0.0) |
-| 23 | thread | 天蓝 | (0.0, 0.6, 0.9) |
-| 24 | draft | 玫瑰红 | (0.9, 0.0, 0.6) |
-| 25 | split | 深灰 | (0.3, 0.3, 0.3) |
-| 26 | unknown | 棕褐 | (0.6, 0.4, 0.2) |
+| 0 | chamfer | 暗青 | (0.184, 0.310, 0.310) |
+| 1 | through_hole | 鞍棕 | (0.545, 0.271, 0.075) |
+| 2 | triangular_passage | 橄榄 | (0.502, 0.502, 0.0) |
+| 3 | rectangular_passage | 暗紫 | (0.282, 0.239, 0.545) |
+| 4 | 6sides_passage | 绿 | (0.0, 0.502, 0.0) |
+| 5 | triangular_through_slot | 玫瑰棕 | (0.737, 0.561, 0.561) |
+| 6 | rectangular_through_slot | 黄绿 | (0.604, 0.804, 0.196) |
+| 7 | circular_through_slot | 深蓝 | (0.0, 0.0, 0.545) |
+| 8 | rectangular_through_step | 暗海绿 | (0.561, 0.737, 0.561) |
+| 9 | 2sides_through_step | 紫 | (0.502, 0.0, 0.502) |
+| 10 | slanted_through_step | 栗红 | (0.690, 0.188, 0.376) |
+| 11 | Oring | 红 | (1.0, 0.0, 0.0) |
+| 12 | blind_hole | 暗橙 | (1.0, 0.549, 0.0) |
+| 13 | triangular_pocket | 黄 | (1.0, 1.0, 0.0) |
+| 14 | rectangular_pocket | 草绿 | (0.498, 1.0, 0.0) |
+| 15 | 6sides_pocket | 春绿 | (0.0, 0.980, 0.604) |
+| 16 | circular_end_pocket | 绯红 | (0.863, 0.078, 0.235) |
+| 17 | rectangular_blind_slot | 青 | (0.0, 1.0, 1.0) |
+| 18 | v_circular_end_blind_slot | 蓝 | (0.0, 0.0, 1.0) |
+| 19 | h_circular_end_blind_slot | 品红 | (1.0, 0.0, 1.0) |
+| 20 | triangular_blind_step | 卡其 | (0.941, 0.902, 0.549) |
+| 21 | circular_blind_step | 天蓝 | (0.529, 0.808, 0.922) |
+| 22 | rectangular_blind_step | 矢车菊蓝 | (0.392, 0.584, 0.929) |
+| 23 | round | 深粉 | (1.0, 0.078, 0.576) |
+| 24 | plane | 中紫 | (0.482, 0.408, 0.933) |
+| 25 | cylinder | 浅鲑 | (1.0, 0.627, 0.478) |
+| 26 | cone | 紫罗兰 | (0.933, 0.510, 0.933) |
 
 未分类面（未运行预测时）显示为灰色 `(0.7, 0.7, 0.7)`。
 

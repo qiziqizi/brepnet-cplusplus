@@ -8,35 +8,35 @@ ColorMapper::ColorMapper() {
 }
 
 void ColorMapper::initializeClassNames() {
-    // 27个类别名称（根据BRepNet论文）
+    // 27个类别名称（与 segment_names.json / MFCAD 数据集一致）
     classNames_ = {
-        "plane",           // 0
-        "cylinder",        // 1
-        "cone",            // 2
-        "sphere",          // 3
-        "torus",           // 4
-        "revolution",      // 5
-        "extrusion",       // 6
-        "other",           // 7
-        "blend",           // 8
-        "chamfer",         // 9
-        "fillet",          // 10
-        "hole",            // 11
-        "pocket",          // 12
-        "protrusion",      // 13
-        "depression",      // 14
-        "imprint",         // 15
-        "island",          // 16
-        "through_hole",    // 17
-        "blind_hole",      // 18
-        "rectangular_pocket", // 19
-        "rectangular_protrusion", // 20
-        "circular_pocket", // 21
-        "circular_protrusion", // 22
-        "thread",          // 23
-        "draft",           // 24
-        "split",           // 25
-        "unknown"          // 26
+        "chamfer",                    // 0
+        "through_hole",               // 1
+        "triangular_passage",         // 2
+        "rectangular_passage",        // 3
+        "6sides_passage",             // 4
+        "triangular_through_slot",    // 5
+        "rectangular_through_slot",   // 6
+        "circular_through_slot",      // 7
+        "rectangular_through_step",   // 8
+        "2sides_through_step",        // 9
+        "slanted_through_step",       // 10
+        "Oring",                      // 11
+        "blind_hole",                 // 12
+        "triangular_pocket",          // 13
+        "rectangular_pocket",         // 14
+        "6sides_pocket",              // 15
+        "circular_end_pocket",        // 16
+        "rectangular_blind_slot",     // 17
+        "v_circular_end_blind_slot",  // 18
+        "h_circular_end_blind_slot",  // 19
+        "triangular_blind_step",      // 20
+        "circular_blind_step",        // 21
+        "rectangular_blind_step",     // 22
+        "round",                      // 23
+        "plane",                      // 24
+        "cylinder",                   // 25
+        "cone"                        // 26
     };
 }
 
@@ -44,33 +44,33 @@ void ColorMapper::initializeColors() {
     // 定义27种视觉上易区分的颜色（RGB值）
     // 色相跨度大，便于区分
     std::vector<std::tuple<float, float, float>> colors = {
-        {1.0f, 0.0f, 0.0f},    // 0: 红色
-        {0.0f, 1.0f, 0.0f},    // 1: 绿色
-        {0.0f, 0.0f, 1.0f},    // 2: 蓝色
-        {1.0f, 1.0f, 0.0f},    // 3: 黄色
-        {1.0f, 0.0f, 1.0f},    // 4: 品红
-        {0.0f, 1.0f, 1.0f},    // 5: 青色
-        {1.0f, 0.5f, 0.0f},    // 6: 橙色
-        {0.5f, 0.0f, 1.0f},    // 7: 紫色
-        {0.0f, 0.5f, 0.0f},    // 8: 深绿
-        {0.5f, 0.5f, 0.0f},    // 9: 橄榄绿
-        {0.0f, 0.5f, 0.5f},    // 10: 深青
-        {0.5f, 0.0f, 0.0f},    // 11: 深红
-        {0.5f, 0.25f, 0.0f},   // 12: 棕色
-        {0.75f, 0.75f, 0.0f},  // 13: 亮黄
-        {0.0f, 0.75f, 0.75f},  // 14: 亮青
-        {0.75f, 0.0f, 0.75f},  // 15: 亮紫
-        {0.25f, 0.5f, 0.0f},   // 16: 黄绿
-        {0.0f, 0.25f, 0.5f},   // 17: 蓝绿
-        {0.5f, 0.0f, 0.25f},   // 18: 酒红
-        {0.75f, 0.5f, 0.25f},  // 19: 土黄
-        {0.25f, 0.75f, 0.5f},  // 20: 春绿
-        {0.5f, 0.25f, 0.75f},  // 21: 紫罗兰
-        {0.9f, 0.6f, 0.0f},    // 22: 金色
-        {0.0f, 0.6f, 0.9f},    // 23: 天蓝
-        {0.9f, 0.0f, 0.6f},    // 24: 玫瑰红
-        {0.3f, 0.3f, 0.3f},    // 25: 深灰
-        {0.6f, 0.4f, 0.2f}     // 26: 棕褐
+        {0.184f, 0.310f, 0.310f},  // 0:  chamfer - 暗青
+        {0.545f, 0.271f, 0.075f},  // 1:  through_hole - 鞍棕
+        {0.502f, 0.502f, 0.0f},    // 2:  triangular_passage - 橄榄
+        {0.282f, 0.239f, 0.545f},  // 3:  rectangular_passage - 暗紫
+        {0.0f, 0.502f, 0.0f},      // 4:  6sides_passage - 绿
+        {0.737f, 0.561f, 0.561f},  // 5:  triangular_through_slot - 玫瑰棕
+        {0.604f, 0.804f, 0.196f},  // 6:  rectangular_through_slot - 黄绿
+        {0.0f, 0.0f, 0.545f},      // 7:  circular_through_slot - 深蓝
+        {0.561f, 0.737f, 0.561f},  // 8:  rectangular_through_step - 暗海绿
+        {0.502f, 0.0f, 0.502f},    // 9:  2sides_through_step - 紫
+        {0.690f, 0.188f, 0.376f},  // 10: slanted_through_step - 栗红
+        {1.0f, 0.0f, 0.0f},        // 11: Oring - 红
+        {1.0f, 0.549f, 0.0f},      // 12: blind_hole - 暗橙
+        {1.0f, 1.0f, 0.0f},        // 13: triangular_pocket - 黄
+        {0.498f, 1.0f, 0.0f},      // 14: rectangular_pocket - 草绿
+        {0.0f, 0.980f, 0.604f},    // 15: 6sides_pocket - 春绿
+        {0.863f, 0.078f, 0.235f},  // 16: circular_end_pocket - 绯红
+        {0.0f, 1.0f, 1.0f},        // 17: rectangular_blind_slot - 青
+        {0.0f, 0.0f, 1.0f},        // 18: v_circular_end_blind_slot - 蓝
+        {1.0f, 0.0f, 1.0f},        // 19: h_circular_end_blind_slot - 品红
+        {0.941f, 0.902f, 0.549f},  // 20: triangular_blind_step - 卡其
+        {0.529f, 0.808f, 0.922f},  // 21: circular_blind_step - 天蓝
+        {0.392f, 0.584f, 0.929f},  // 22: rectangular_blind_step - 矢车菊蓝
+        {1.0f, 0.078f, 0.576f},    // 23: round - 深粉
+        {0.482f, 0.408f, 0.933f},  // 24: plane - 中紫
+        {1.0f, 0.627f, 0.478f},    // 25: cylinder - 浅鲑
+        {0.933f, 0.510f, 0.933f}   // 26: cone - 紫罗兰
     };
 
     for (int i = 0; i < 27; ++i) {
