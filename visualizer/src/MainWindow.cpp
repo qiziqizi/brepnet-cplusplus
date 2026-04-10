@@ -8,6 +8,9 @@
 #include <QMenuBar>
 #include <QStatusBar>
 #include <QDir>
+#include <QGridLayout>
+#include <QScrollArea>
+#include <Quantity_Color.hxx>
 #include <map>
 
 MainWindow::MainWindow(QWidget* parent)
@@ -147,8 +150,46 @@ void MainWindow::setupUI() {
 
     panelLayout->addWidget(resultGroup);
 
-    // 添加弹性空间
-    panelLayout->addStretch();
+    // === 区域6: 颜色图例 ===
+    QGroupBox* legendGroup = new QGroupBox("颜色图例", controlPanel);
+    QVBoxLayout* legendOuterLayout = new QVBoxLayout(legendGroup);
+    legendOuterLayout->setContentsMargins(2, 2, 2, 2);
+
+    QScrollArea* legendScroll = new QScrollArea(legendGroup);
+    legendScroll->setWidgetResizable(true);
+    legendScroll->setMinimumHeight(120);
+    legendScroll->setFrameShape(QFrame::NoFrame);
+
+    QWidget* legendContent = new QWidget();
+    QGridLayout* legendGrid = new QGridLayout(legendContent);
+    legendGrid->setSpacing(2);
+    legendGrid->setContentsMargins(4, 4, 4, 4);
+
+    for (int i = 0; i < 27; ++i) {
+        QLabel* colorSwatch = new QLabel(legendContent);
+        colorSwatch->setFixedSize(14, 14);
+        Quantity_Color qc = colorMapper_->getColor(i);
+        int r = static_cast<int>(qc.Red() * 255);
+        int g = static_cast<int>(qc.Green() * 255);
+        int b = static_cast<int>(qc.Blue() * 255);
+        colorSwatch->setStyleSheet(
+            QString("background-color: rgb(%1,%2,%3); border: 1px solid #888;")
+                .arg(r).arg(g).arg(b));
+
+        QLabel* nameLabel = new QLabel(
+            QString("%1: %2").arg(i).arg(QString::fromStdString(colorMapper_->getClassName(i))),
+            legendContent);
+        nameLabel->setStyleSheet("font-size: 11px;");
+
+        legendGrid->addWidget(colorSwatch, i, 0);
+        legendGrid->addWidget(nameLabel, i, 1);
+    }
+    legendGrid->setColumnStretch(1, 1);
+
+    legendScroll->setWidget(legendContent);
+    legendOuterLayout->addWidget(legendScroll);
+
+    panelLayout->addWidget(legendGroup, 1);
 
     mainSplitter_->addWidget(controlPanel);
 

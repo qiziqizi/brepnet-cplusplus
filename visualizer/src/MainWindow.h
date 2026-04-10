@@ -8,6 +8,7 @@
 #include <QTextEdit>
 #include <QGroupBox>
 #include <QVBoxLayout>
+#include <QScrollArea>
 #include <memory>
 
 #include "OCCTViewer.h"
