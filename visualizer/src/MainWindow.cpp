@@ -10,7 +10,10 @@
 #include <QDir>
 #include <QGridLayout>
 #include <QScrollArea>
+#include <QResizeEvent>
+#include <QTimer>
 #include <Quantity_Color.hxx>
+#include <algorithm>
 #include <map>
 
 MainWindow::MainWindow(QWidget* parent)
@@ -66,6 +69,47 @@ MainWindow::MainWindow(QWidget* parent)
 }
 
 MainWindow::~MainWindow() {
+}
+
+void MainWindow::resizeEvent(QResizeEvent* event) {
+    QMainWindow::resizeEvent(event);
+    refreshLegendLayout();
+}
+
+void MainWindow::refreshLegendLayout() {
+    if (!legendGrid_ || legendItems_.empty()) {
+        return;
+    }
+
+    // 清空现有布局
+    QLayoutItem* item;
+    while ((item = legendGrid_->takeAt(0)) != nullptr) {
+        if (!item->widget()) delete item;
+    }
+
+    // 每个图例项的固定宽度：234px（20正方形 + 4间距 + 210文字）
+    int itemWidth = 234;
+    int itemHeight = 24;
+    int spacing = 4;
+    int availableWidth = legendScroll_->viewport()->width();
+    if (availableWidth < 234) availableWidth = 234;  // 至少显示 1 列
+
+    // 计算可以放多少列
+    int cols = std::max(1, availableWidth / itemWidth);
+
+    // 计算总行数
+    int rows = (27 + cols - 1) / cols;  // 向上取整
+
+    // 添加图例到 grid
+    for (int i = 0; i < 27; ++i) {
+        int row = i / cols;
+        int col = i % cols;
+        legendGrid_->addWidget(legendItems_[i], row, col, Qt::AlignTop | Qt::AlignLeft);
+    }
+
+    // 计算并设置 legendContent 的实际高度
+    int totalHeight = rows * itemHeight + (rows - 1) * spacing;
+    legendScroll_->widget()->setFixedHeight(totalHeight);
 }
 
 void MainWindow::setupUI() {
@@ -152,22 +196,35 @@ void MainWindow::setupUI() {
 
     // === 区域6: 颜色图例 ===
     QGroupBox* legendGroup = new QGroupBox("颜色图例", controlPanel);
+    legendGroup->setStyleSheet("QGroupBox { padding-top: 15px; margin: 0px; } QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0px 5px; }");
     QVBoxLayout* legendOuterLayout = new QVBoxLayout(legendGroup);
-    legendOuterLayout->setContentsMargins(2, 2, 2, 2);
+    legendOuterLayout->setContentsMargins(0, 0, 0, 0);
+    legendOuterLayout->setSpacing(0);
 
-    QScrollArea* legendScroll = new QScrollArea(legendGroup);
-    legendScroll->setWidgetResizable(true);
-    legendScroll->setMinimumHeight(120);
-    legendScroll->setFrameShape(QFrame::NoFrame);
+    legendScroll_ = new QScrollArea(legendGroup);
+    legendScroll_->setWidgetResizable(true);
+    legendScroll_->setFrameShape(QFrame::NoFrame);
+    legendScroll_->setStyleSheet("QScrollArea { margin: 0px; padding: 0px; border: none; background: transparent; }");
+    legendScroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    legendScroll_->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     QWidget* legendContent = new QWidget();
-    QGridLayout* legendGrid = new QGridLayout(legendContent);
-    legendGrid->setSpacing(2);
-    legendGrid->setContentsMargins(4, 4, 4, 4);
+    legendContent->setStyleSheet("QWidget { margin: 0px; padding: 0px; background: transparent; }");
+    legendGrid_ = new QGridLayout(legendContent);
+    legendGrid_->setSpacing(4);
+    legendGrid_->setContentsMargins(4, 0, 0, 0);  // 左边距4px
 
+    // 创建所有图例项（每个项目包含正方形+文字，固定宽度）
     for (int i = 0; i < 27; ++i) {
-        QLabel* colorSwatch = new QLabel(legendContent);
-        colorSwatch->setFixedSize(14, 14);
+        // 创建图例项容器
+        QWidget* itemWidget = new QWidget();
+        QHBoxLayout* itemLayout = new QHBoxLayout(itemWidget);
+        itemLayout->setContentsMargins(0, 0, 0, 0);
+        itemLayout->setSpacing(4);
+
+        // 正方形
+        QLabel* colorSwatch = new QLabel();
+        colorSwatch->setFixedSize(20, 20);
         Quantity_Color qc = colorMapper_->getColor(i);
         int r = static_cast<int>(qc.Red() * 255);
         int g = static_cast<int>(qc.Green() * 255);
@@ -176,22 +233,31 @@ void MainWindow::setupUI() {
             QString("background-color: rgb(%1,%2,%3); border: 1px solid #888;")
                 .arg(r).arg(g).arg(b));
 
+        // 文字
         QLabel* nameLabel = new QLabel(
-            QString("%1: %2").arg(i).arg(QString::fromStdString(colorMapper_->getClassName(i))),
-            legendContent);
-        nameLabel->setStyleSheet("font-size: 11px;");
+            QString("%1: %2").arg(i).arg(QString::fromStdString(colorMapper_->getClassName(i))));
+        nameLabel->setStyleSheet("font-size: 13px;");
+        nameLabel->setFixedWidth(210);
 
-        legendGrid->addWidget(colorSwatch, i, 0);
-        legendGrid->addWidget(nameLabel, i, 1);
+        itemLayout->addWidget(colorSwatch);
+        itemLayout->addWidget(nameLabel);
+        itemLayout->addStretch();
+
+        // 设置图例项的固定尺寸：宽度234px，高度24px（固定）
+        itemWidget->setFixedSize(234, 24);
+        legendItems_.push_back(itemWidget);
     }
-    legendGrid->setColumnStretch(1, 1);
 
-    legendScroll->setWidget(legendContent);
-    legendOuterLayout->addWidget(legendScroll);
+    legendScroll_->setWidget(legendContent);
+    legendScroll_->viewport()->setContentsMargins(0, 0, 0, 0);
+    legendOuterLayout->addWidget(legendScroll_);
 
     panelLayout->addWidget(legendGroup, 1);
 
     mainSplitter_->addWidget(controlPanel);
+
+    // 延迟初始化图例布局，确保窗口已完成布局
+    QTimer::singleShot(100, this, &MainWindow::refreshLegendLayout);
 
     // 设置分割比例（70% vs 30%）
     mainSplitter_->setStretchFactor(0, 7);

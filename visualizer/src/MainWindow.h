@@ -8,6 +8,8 @@
 #include <QTextEdit>
 #include <QGroupBox>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QGridLayout>
 #include <QScrollArea>
 #include <memory>
 
@@ -48,6 +50,10 @@ private:
     void displayStatistics();
     void updateComparisonResults();
     std::vector<int> loadLabelsFromFile(const QString& filePath);
+    void refreshLegendLayout();
+
+protected:
+    void resizeEvent(QResizeEvent* event) override;
 
     // UI组件
     QSplitter* mainSplitter_;
@@ -66,6 +72,11 @@ private:
     QLabel* lblAccuracy_;
 
     QTextEdit* txtStatistics_;
+
+    // 颜色图例组件
+    QScrollArea* legendScroll_;
+    QGridLayout* legendGrid_;
+    std::vector<QWidget*> legendItems_;
 
     // 数据模块
     std::unique_ptr<StepLoader> loader_;
