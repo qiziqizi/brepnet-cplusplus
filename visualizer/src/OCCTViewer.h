@@ -26,11 +26,14 @@ public:
     void displayFaces(const std::vector<TopoDS_Face>& faces);
     void updateFaceColor(int faceIndex, const Quantity_Color& color);
     void updateAllFaceColors(const std::vector<Quantity_Color>& colors);
+    void updateSingleFaceColor(int faceIndex, const Quantity_Color& color);
+    void resetAllFaceColors();
     void highlightErrorFaces(const std::vector<int>& errorIndices, bool highlight = true);
     void clearErrorHighlights();
     void clearAll();
     void fitAll();
     int getNumFaces() const { return static_cast<int>(faceObjects_.size()); }
+    int getSelectedFaceIndex() const { return selectedFaceIndex_; }
 
 signals:
     void faceSelected(int faceIndex);

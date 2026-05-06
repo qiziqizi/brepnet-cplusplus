@@ -671,17 +671,72 @@ cpp_feature_maps/
 
 ## 9. Visualizer 子项目
 
-位于 `visualizer/` 目录，是一个独立的 Qt 桌面应用：
+位于 `visualizer/` 目录，是一个独立的 Qt 桌面应用。
+
+### 9.1 核心组件
 
 | 文件 | 职责 |
 |------|------|
-| `MainWindow` | 主窗口，整合 3D 视图和控件 |
-| `OCCTViewer` | 基于 OCCT 的 3D 渲染视图 |
+| `MainWindow` | 主窗口，整合 3D 视图和控件，管理工作模式 |
+| `OCCTViewer` | 基于 OCCT 的 3D 渲染视图，支持交互和着色 |
 | `StepLoader` | 加载 STEP 文件到 OCCT Shape |
 | `FaceClassifier` | 调用推理引擎对每个 Face 分类 |
-| `ColorMapper` | 根据分类结果给 Face 着色 |
+| `ColorMapper` | 根据分类结果给 Face 着色（27种颜色映射） |
 
-构建需要额外配置 Qt 和 OCCT 的集成。
+### 9.2 工作模式系统
+
+可视化工具实现了三种互斥的工作模式：
+
+```cpp
+enum class WorkMode {
+    None,           // 未操作模式
+    Prediction,     // 预测模式
+    ManualLabeling  // 人工标注模式
+};
+```
+
+**模式切换逻辑**：
+- 运行预测 → 进入预测模式
+- 导入标签并上色 → 进入标注模式
+- 清除所有操作 → 回到未操作模式
+- 预测模式和标注模式互斥，必须重置后才能切换
+
+### 9.3 主要功能
+
+#### 预测模式
+- 运行 BRepNet 推理
+- 按预测类别着色
+- 导入真实标签对比
+- 显示准确率和错误面
+- 导出预测结果
+
+#### 人工标注模式
+- 导入标签文件并着色
+- 点击面修改类别（弹出输入框）
+- 实时更新颜色和统计
+- 导出标注结果（`.labels` 格式）
+
+#### 通用功能
+- 3D 交互（旋转、平移、缩放）
+- 点击面查看详细信息
+- 颜色图例显示（27类）
+- 重置功能
+
+### 9.4 关键实现
+
+**OCCTViewer 新增方法**：
+- `updateSingleFaceColor()` - 更新单个面颜色（用于标注修改）
+- `resetAllFaceColors()` - 恢复灰色显示（用于重置）
+- `getSelectedFaceIndex()` - 获取当前选中的面索引
+
+**MainWindow 核心方法**：
+- `setWorkMode()` - 模式切换，控制按钮启用/禁用
+- `onLoadManualLabels()` - 导入标签并上色
+- `onModifyFaceClass()` - 修改面类别（使用 QInputDialog）
+- `onExportManualLabels()` - 导出标注结果
+- `onReset()` - 重置所有操作
+
+构建需要额外配置 Qt 和 OCCT 的集成。详见《环境配置.md》第七、八章。
 
 ---
 

@@ -12,12 +12,14 @@
 #include <QScrollArea>
 #include <QResizeEvent>
 #include <QTimer>
+#include <QInputDialog>
 #include <Quantity_Color.hxx>
 #include <algorithm>
 #include <map>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
+    , currentMode_(WorkMode::None)
     , modelLoaded_(false) {
 
     // 调试输出：显示当前工作目录
@@ -35,37 +37,37 @@ MainWindow::MainWindow(QWidget* parent)
     // 自动加载模型 - 基于exe所在目录查找
     QString exeDir = QCoreApplication::applicationDirPath();
     std::cout << "[调试] exe所在目录: " << exeDir.toStdString() << std::endl;
-    
+
     QString weightsPath;
     QStringList possiblePaths = {
         exeDir + "/inference_data/state_dict.npz",
         exeDir + "/../../../inference_data/state_dict.npz"
     };
-    
+
     for (const QString& path : possiblePaths) {
         QFileInfo info(path);
-        std::cout << "[调试] 检查路径: " << path.toStdString() 
+        std::cout << "[调试] 检查路径: " << path.toStdString()
                   << " -> 存在: " << (info.exists() ? "是" : "否") << std::endl;
         if (info.exists()) {
             weightsPath = path;
             break;
         }
     }
-    
+
     if (!weightsPath.isEmpty()) {
         std::cout << "[MainWindow] 尝试加载模型: " << weightsPath.toStdString() << std::endl;
         if (classifier_->loadModel(weightsPath.toStdString())) {
             modelLoaded_ = true;
-            lblStatus_->setText("状态: 模型已加载");
             std::cout << "[MainWindow] 模型加载成功" << std::endl;
         } else {
-            lblStatus_->setText("状态: 模型加载失败");
             std::cerr << "[MainWindow] 模型加载失败" << std::endl;
         }
     } else {
-        lblStatus_->setText("状态: 未找到模型权重文件");
         std::cerr << "[MainWindow] 未找到模型权重文件" << std::endl;
     }
+
+    // 初始化模式
+    setWorkMode(WorkMode::None);
 }
 
 MainWindow::~MainWindow() {
@@ -148,53 +150,75 @@ void MainWindow::setupUI() {
     btnRunPrediction_->setEnabled(false);
     predLayout->addWidget(btnRunPrediction_);
 
-    btnExportResults_ = new QPushButton("导出结果", predGroup);
-    btnExportResults_->setEnabled(false);
-    predLayout->addWidget(btnExportResults_);
+    btnLoadPredictionLabels_ = new QPushButton("导入真实标签(对比)", predGroup);
+    btnLoadPredictionLabels_->setEnabled(false);
+    predLayout->addWidget(btnLoadPredictionLabels_);
+
+    btnExportPrediction_ = new QPushButton("导出结果", predGroup);
+    btnExportPrediction_->setEnabled(false);
+    predLayout->addWidget(btnExportPrediction_);
+
+    lblPredictionAccuracy_ = new QLabel("准确率: --", predGroup);
+    predLayout->addWidget(lblPredictionAccuracy_);
 
     panelLayout->addWidget(predGroup);
 
-    // === 区域3: 对比验证 ===
-    QGroupBox* compareGroup = new QGroupBox("对比验证", controlPanel);
-    QVBoxLayout* compareLayout = new QVBoxLayout(compareGroup);
+    // === 区域3: 人工标注 ===
+    QGroupBox* manualGroup = new QGroupBox("人工标注", controlPanel);
+    QVBoxLayout* manualLayout = new QVBoxLayout(manualGroup);
 
-    btnLoadLabels_ = new QPushButton("导入真实标签", compareGroup);
-    btnLoadLabels_->setEnabled(false);
-    compareLayout->addWidget(btnLoadLabels_);
+    btnLoadManualLabels_ = new QPushButton("导入标签并上色", manualGroup);
+    btnLoadManualLabels_->setEnabled(false);
+    manualLayout->addWidget(btnLoadManualLabels_);
 
-    lblAccuracy_ = new QLabel("准确率: --", compareGroup);
-    compareLayout->addWidget(lblAccuracy_);
+    btnModifyFaceClass_ = new QPushButton("修改当前面类别", manualGroup);
+    btnModifyFaceClass_->setEnabled(false);
+    manualLayout->addWidget(btnModifyFaceClass_);
 
-    panelLayout->addWidget(compareGroup);
+    btnExportManualLabels_ = new QPushButton("导出标注结果", manualGroup);
+    btnExportManualLabels_->setEnabled(false);
+    manualLayout->addWidget(btnExportManualLabels_);
 
-    // === 区域4: 模型信息 ===
+    panelLayout->addWidget(manualGroup);
+
+    // === 区域4: 重置 ===
+    QGroupBox* resetGroup = new QGroupBox("重置", controlPanel);
+    QVBoxLayout* resetLayout = new QVBoxLayout(resetGroup);
+
+    btnReset_ = new QPushButton("清除所有操作", resetGroup);
+    btnReset_->setEnabled(false);
+    resetLayout->addWidget(btnReset_);
+
+    panelLayout->addWidget(resetGroup);
+
+    // === 区域5: 模型信息 ===
     QGroupBox* infoGroup = new QGroupBox("模型信息", controlPanel);
     QVBoxLayout* infoLayout = new QVBoxLayout(infoGroup);
 
     lblFileName_ = new QLabel("文件: 未加载", infoGroup);
     lblNumFaces_ = new QLabel("面数: 0", infoGroup);
-    lblStatus_ = new QLabel("状态: 未加载模型", infoGroup);
+    lblCurrentMode_ = new QLabel("当前模式: 未操作", infoGroup);
     lblSelectedFace_ = new QLabel("选中面: 无", infoGroup);
 
     infoLayout->addWidget(lblFileName_);
     infoLayout->addWidget(lblNumFaces_);
-    infoLayout->addWidget(lblStatus_);
+    infoLayout->addWidget(lblCurrentMode_);
     infoLayout->addWidget(lblSelectedFace_);
 
     panelLayout->addWidget(infoGroup);
 
-    // === 区域5: 预测结果 ===
-    QGroupBox* resultGroup = new QGroupBox("预测结果", controlPanel);
+    // === 区域6: 结果统计 ===
+    QGroupBox* resultGroup = new QGroupBox("结果统计", controlPanel);
     QVBoxLayout* resultLayout = new QVBoxLayout(resultGroup);
 
     txtStatistics_ = new QTextEdit(resultGroup);
     txtStatistics_->setReadOnly(true);
-    txtStatistics_->setPlainText("等待预测...");
+    txtStatistics_->setPlainText("等待操作...");
     resultLayout->addWidget(txtStatistics_);
 
     panelLayout->addWidget(resultGroup);
 
-    // === 区域6: 颜色图例 ===
+    // === 区域7: 颜色图例 ===
     QGroupBox* legendGroup = new QGroupBox("颜色图例", controlPanel);
     legendGroup->setStyleSheet("QGroupBox { padding-top: 15px; margin: 0px; } QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0px 5px; }");
     QVBoxLayout* legendOuterLayout = new QVBoxLayout(legendGroup);
@@ -279,18 +303,69 @@ void MainWindow::setupUI() {
 }
 
 void MainWindow::setupConnections() {
+    // 文件操作
     connect(btnLoadFile_, &QPushButton::clicked, this, &MainWindow::onLoadFile);
+
+    // 预测操作
     connect(btnRunPrediction_, &QPushButton::clicked, this, &MainWindow::onRunPrediction);
-    connect(btnExportResults_, &QPushButton::clicked, this, &MainWindow::onExportResults);
-    connect(btnLoadLabels_, &QPushButton::clicked, this, &MainWindow::onLoadLabels);
+    connect(btnLoadPredictionLabels_, &QPushButton::clicked, this, &MainWindow::onLoadPredictionLabels);
+    connect(btnExportPrediction_, &QPushButton::clicked, this, &MainWindow::onExportPrediction);
+
+    // 人工标注
+    connect(btnLoadManualLabels_, &QPushButton::clicked, this, &MainWindow::onLoadManualLabels);
+    connect(btnModifyFaceClass_, &QPushButton::clicked, this, &MainWindow::onModifyFaceClass);
+    connect(btnExportManualLabels_, &QPushButton::clicked, this, &MainWindow::onExportManualLabels);
+
+    // 重置
+    connect(btnReset_, &QPushButton::clicked, this, &MainWindow::onReset);
+
+    // 面选择
     connect(viewer_, &OCCTViewer::faceSelected, this, &MainWindow::onFaceSelected);
+}
+
+void MainWindow::setWorkMode(WorkMode mode) {
+    currentMode_ = mode;
+
+    // 根据模式启用/禁用按钮
+    bool isPredMode = (mode == WorkMode::Prediction);
+    bool isManualMode = (mode == WorkMode::ManualLabeling);
+    bool isNone = (mode == WorkMode::None);
+    bool hasFile = !currentFilePath_.isEmpty();
+
+    // 预测操作区
+    btnRunPrediction_->setEnabled(isNone && modelLoaded_ && hasFile);
+    btnLoadPredictionLabels_->setEnabled(isPredMode);
+    btnExportPrediction_->setEnabled(isPredMode);
+
+    // 人工标注区
+    btnLoadManualLabels_->setEnabled(isNone && hasFile);
+    btnModifyFaceClass_->setEnabled(isManualMode);
+    btnExportManualLabels_->setEnabled(isManualMode);
+
+    // 重置按钮
+    btnReset_->setEnabled(!isNone && hasFile);
+
+    // 更新状态显示
+    QString modeText;
+    switch (mode) {
+        case WorkMode::None:
+            modeText = "未操作";
+            break;
+        case WorkMode::Prediction:
+            modeText = "预测模式";
+            break;
+        case WorkMode::ManualLabeling:
+            modeText = "标注模式";
+            break;
+    }
+    lblCurrentMode_->setText("当前模式: " + modeText);
 }
 
 void MainWindow::onLoadFile() {
     // 基于exe所在目录构建STEP文件默认路径
     QString exeDir = QCoreApplication::applicationDirPath();
     QString defaultPath = exeDir + "/../../../inference_data/step_files";
-    
+
     QString fileName = QFileDialog::getOpenFileName(
         this,
         "加载STEP文件",
@@ -312,7 +387,7 @@ void MainWindow::onLoadFile() {
         return;
     }
 
-    // 显示面
+    // 显示面（灰色）
     viewer_->displayFaces(loader_->getFaces());
 
     QApplication::restoreOverrideCursor();
@@ -321,17 +396,15 @@ void MainWindow::onLoadFile() {
     currentFilePath_ = fileName;
     predictions_.clear();
     groundTruthLabels_.clear();
+    manualLabels_.clear();
     errorFaceIndices_.clear();
-    lblAccuracy_->setText("准确率: --");
-    txtStatistics_->setPlainText("等待预测...");
+    lblPredictionAccuracy_->setText("准确率: --");
+    txtStatistics_->setPlainText("等待操作...");
     lblSelectedFace_->setText("选中面: --");
     updateModelInfo();
 
-    // 调试输出：显示模型加载状态
-    std::cout << "[调试] onLoadFile: modelLoaded_ = " << modelLoaded_ << std::endl;
-    btnRunPrediction_->setEnabled(modelLoaded_);
-    btnLoadLabels_->setEnabled(true);
-    btnExportResults_->setEnabled(false);
+    // 重置为无模式
+    setWorkMode(WorkMode::None);
 
     statusBar()->showMessage("加载成功: " + QString::fromStdString(loader_->getFileName()));
 }
@@ -383,24 +456,51 @@ void MainWindow::onRunPrediction() {
     }
     viewer_->updateAllFaceColors(colors);
 
+    // 切换到预测模式
+    setWorkMode(WorkMode::Prediction);
+
     // 更新统计信息
     updatePredictionResults();
 
-    // 更新状态显示
-    updateModelInfo();
-
-    // 如果已有真实标签，自动进行对比
-    if (!groundTruthLabels_.empty()) {
-        updateComparisonResults();
-    }
-
-    btnExportResults_->setEnabled(true);
     statusBar()->showMessage("预测完成");
-
     QMessageBox::information(this, "成功", "预测完成！模型已按类别着色。");
 }
 
-void MainWindow::onExportResults() {
+void MainWindow::onLoadPredictionLabels() {
+    QString fileName = QFileDialog::getOpenFileName(
+        this,
+        "导入真实标签文件(对比)",
+        "inference_data/step_files",
+        "Label Files (*.labels *.txt);;All Files (*)");
+
+    if (fileName.isEmpty()) {
+        return;
+    }
+
+    groundTruthLabels_ = loadLabelsFromFile(fileName);
+
+    if (groundTruthLabels_.empty()) {
+        QMessageBox::critical(this, "错误", "无法解析标签文件");
+        return;
+    }
+
+    // 验证标签数量
+    if (static_cast<int>(groundTruthLabels_.size()) != loader_->getNumFaces()) {
+        QMessageBox::warning(this, "警告",
+            QString("标签数量(%1)与面数量(%2)不匹配")
+            .arg(groundTruthLabels_.size())
+            .arg(loader_->getNumFaces()));
+        groundTruthLabels_.clear();
+        return;
+    }
+
+    statusBar()->showMessage("标签已加载: " + fileName);
+
+    // 自动进行对比
+    updateComparisonResults();
+}
+
+void MainWindow::onExportPrediction() {
     if (predictions_.empty()) {
         QMessageBox::warning(this, "警告", "没有可导出的结果");
         return;
@@ -466,23 +566,24 @@ void MainWindow::onFaceSelected(int faceIndex) {
 
     QString info = QString("选中面: #%1").arg(faceIndex);
 
-    if (!predictions_.empty() && faceIndex < static_cast<int>(predictions_.size())) {
+    // 根据当前模式显示不同信息
+    if (currentMode_ == WorkMode::Prediction && !predictions_.empty()) {
         int predClassId = predictions_[faceIndex];
         QString predClassName = QString::fromStdString(colorMapper_->getClassName(predClassId));
         info += QString(" | 预测: %1(%2)").arg(predClassName).arg(predClassId);
 
-        // 如果有真实标签，显示对比
-        if (!groundTruthLabels_.empty() && faceIndex < static_cast<int>(groundTruthLabels_.size())) {
+        // 如果有对比标签
+        if (!groundTruthLabels_.empty()) {
             int trueClassId = groundTruthLabels_[faceIndex];
             QString trueClassName = QString::fromStdString(colorMapper_->getClassName(trueClassId));
             info += QString(" | 真实: %1(%2)").arg(trueClassName).arg(trueClassId);
-
-            if (predClassId == trueClassId) {
-                info += QString::fromUtf8(" ✓");
-            } else {
-                info += QString::fromUtf8(" ✗");
-            }
+            info += (predClassId == trueClassId) ? QString::fromUtf8(" ✓") : QString::fromUtf8(" ✗");
         }
+    }
+    else if (currentMode_ == WorkMode::ManualLabeling && !manualLabels_.empty()) {
+        int labelClassId = manualLabels_[faceIndex];
+        QString labelClassName = QString::fromStdString(colorMapper_->getClassName(labelClassId));
+        info += QString(" | 标注: %1(%2)").arg(labelClassName).arg(labelClassId);
     }
 
     lblSelectedFace_->setText(info);
@@ -491,12 +592,32 @@ void MainWindow::onFaceSelected(int faceIndex) {
 void MainWindow::updateModelInfo() {
     lblFileName_->setText("文件: " + QString::fromStdString(loader_->getFileName()));
     lblNumFaces_->setText(QString("面数: %1").arg(loader_->getNumFaces()));
+}
 
-    if (!predictions_.empty()) {
-        lblStatus_->setText("状态: 已预测");
-    } else {
-        lblStatus_->setText("状态: 已加载，未预测");
+void MainWindow::updateManualLabelingResults() {
+    if (manualLabels_.empty()) {
+        txtStatistics_->setPlainText("等待标注...");
+        return;
     }
+
+    // 统计每个类别的数量
+    std::map<int, int> distribution;
+    for (int classId : manualLabels_) {
+        distribution[classId]++;
+    }
+
+    // 生成统计报告
+    QString report = "标注类别分布\n";
+    report += "============\n\n";
+
+    for (const auto& pair : distribution) {
+        QString className = QString::fromStdString(colorMapper_->getClassName(pair.first));
+        report += QString("%1: %2\n").arg(className, -25).arg(pair.second);
+    }
+
+    report += QString("\n总计: %1 个面\n").arg(manualLabels_.size());
+
+    txtStatistics_->setPlainText(report);
 }
 
 void MainWindow::updatePredictionResults() {
@@ -512,7 +633,7 @@ void MainWindow::updatePredictionResults() {
     }
 
     // 生成统计报告
-    QString report = "类别分布统计\n";
+    QString report = "预测类别分布\n";
     report += "============\n\n";
 
     for (const auto& pair : distribution) {
@@ -525,10 +646,10 @@ void MainWindow::updatePredictionResults() {
     txtStatistics_->setPlainText(report);
 }
 
-void MainWindow::onLoadLabels() {
+void MainWindow::onLoadManualLabels() {
     QString fileName = QFileDialog::getOpenFileName(
         this,
-        "导入真实标签文件",
+        "导入标签文件",
         "inference_data/step_files",
         "Label Files (*.labels *.txt);;All Files (*)");
 
@@ -536,31 +657,154 @@ void MainWindow::onLoadLabels() {
         return;
     }
 
-    groundTruthLabels_ = loadLabelsFromFile(fileName);
+    manualLabels_ = loadLabelsFromFile(fileName);
 
-    if (groundTruthLabels_.empty()) {
+    if (manualLabels_.empty()) {
         QMessageBox::critical(this, "错误", "无法解析标签文件");
         return;
     }
 
     // 验证标签数量
-    if (static_cast<int>(groundTruthLabels_.size()) != loader_->getNumFaces()) {
+    if (static_cast<int>(manualLabels_.size()) != loader_->getNumFaces()) {
         QMessageBox::warning(this, "警告",
             QString("标签数量(%1)与面数量(%2)不匹配")
-            .arg(groundTruthLabels_.size())
+            .arg(manualLabels_.size())
             .arg(loader_->getNumFaces()));
-        groundTruthLabels_.clear();
+        manualLabels_.clear();
         return;
     }
 
-    statusBar()->showMessage("标签已加载: " + fileName);
-
-    // 如果已有预测结果，自动进行对比
-    if (!predictions_.empty()) {
-        updateComparisonResults();
-    } else {
-        lblAccuracy_->setText(QString("准确率: -- (已加载%1个标签)").arg(groundTruthLabels_.size()));
+    // 上色
+    std::vector<Quantity_Color> colors;
+    for (int classId : manualLabels_) {
+        colors.push_back(colorMapper_->getColor(classId));
     }
+    viewer_->updateAllFaceColors(colors);
+
+    // 切换到标注模式
+    setWorkMode(WorkMode::ManualLabeling);
+
+    // 更新统计
+    updateManualLabelingResults();
+
+    statusBar()->showMessage("标签已加载并上色: " + fileName);
+    QMessageBox::information(this, "成功", "标签已加载并按类别着色。");
+}
+
+void MainWindow::onModifyFaceClass() {
+    // 检查是否有选中的面
+    int selectedFace = viewer_->getSelectedFaceIndex();
+    if (selectedFace < 0) {
+        QMessageBox::warning(this, "警告", "请先点击选中一个面");
+        return;
+    }
+
+    // 弹出输入框
+    bool ok;
+    int currentClass = manualLabels_[selectedFace];
+    QString currentClassName = QString::fromStdString(colorMapper_->getClassName(currentClass));
+
+    int newClass = QInputDialog::getInt(
+        this,
+        "修改面类别",
+        QString("当前面 #%1\n当前类别: %2 (%3)\n\n请输入新类别 (0-26):")
+            .arg(selectedFace)
+            .arg(currentClass)
+            .arg(currentClassName),
+        currentClass,  // 默认值
+        0, 26, 1, &ok);
+
+    if (!ok) return;
+
+    // 更新标签
+    manualLabels_[selectedFace] = newClass;
+
+    // 更新颜色
+    Quantity_Color newColor = colorMapper_->getColor(newClass);
+    viewer_->updateSingleFaceColor(selectedFace, newColor);
+
+    // 更新选中面信息
+    onFaceSelected(selectedFace);
+
+    // 更新统计
+    updateManualLabelingResults();
+
+    QString newClassName = QString::fromStdString(colorMapper_->getClassName(newClass));
+    statusBar()->showMessage(
+        QString("面 #%1 类别已修改: %2(%3) → %4(%5)")
+        .arg(selectedFace)
+        .arg(currentClass).arg(currentClassName)
+        .arg(newClass).arg(newClassName));
+}
+
+void MainWindow::onExportManualLabels() {
+    if (manualLabels_.empty()) {
+        QMessageBox::warning(this, "警告", "没有可导出的标注结果");
+        return;
+    }
+
+    QString fileName = QFileDialog::getSaveFileName(
+        this,
+        "导出标注结果",
+        "manual_labels.txt",
+        "Label Files (*.labels *.txt);;All Files (*)");
+
+    if (fileName.isEmpty()) return;
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "错误", "无法创建文件");
+        return;
+    }
+
+    QTextStream out(&file);
+    out.setCodec("UTF-8");
+
+    // 写入文件头
+    out << "# BRepNet 人工标注结果\n";
+    out << "# 文件: " << currentFilePath_ << "\n";
+    out << "# 面数: " << loader_->getNumFaces() << "\n";
+    out << "# 格式: 每行一个整数 (0-26)\n\n";
+
+    // 写入标签（每行一个）
+    for (int classId : manualLabels_) {
+        out << classId << "\n";
+    }
+
+    file.close();
+    statusBar()->showMessage("标注结果已导出: " + fileName);
+    QMessageBox::information(this, "成功", "标注结果已成功导出");
+}
+
+void MainWindow::onReset() {
+    // 确认对话框
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        "确认重置",
+        "确定要清除所有操作吗？\n这将清除预测结果和标注数据，但不会关闭STEP文件。",
+        QMessageBox::Yes | QMessageBox::No);
+
+    if (reply != QMessageBox::Yes) return;
+
+    // 清除数据
+    predictions_.clear();
+    manualLabels_.clear();
+    groundTruthLabels_.clear();
+    errorFaceIndices_.clear();
+
+    // 恢复灰色显示
+    viewer_->resetAllFaceColors();
+    viewer_->clearErrorHighlights();
+
+    // 切换到无模式
+    setWorkMode(WorkMode::None);
+
+    // 重置UI
+    lblPredictionAccuracy_->setText("准确率: --");
+    lblSelectedFace_->setText("选中面: --");
+    txtStatistics_->setPlainText("等待操作...");
+
+    statusBar()->showMessage("已重置");
 }
 
 std::vector<int> MainWindow::loadLabelsFromFile(const QString& filePath) {
@@ -601,7 +845,7 @@ void MainWindow::updateComparisonResults() {
     }
 
     if (predictions_.size() != groundTruthLabels_.size()) {
-        lblAccuracy_->setText("准确率: 数量不匹配");
+        lblPredictionAccuracy_->setText("准确率: 数量不匹配");
         return;
     }
 
@@ -620,7 +864,7 @@ void MainWindow::updateComparisonResults() {
     int total = static_cast<int>(predictions_.size());
     double accuracy = 100.0 * correct / total;
 
-    lblAccuracy_->setText(QString("准确率: %1% (%2/%3 正确)")
+    lblPredictionAccuracy_->setText(QString("准确率: %1% (%2/%3 正确)")
         .arg(accuracy, 0, 'f', 1)
         .arg(correct)
         .arg(total));

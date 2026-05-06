@@ -19,11 +19,20 @@
 #include "FaceClassifier.h"
 
 /**
+ * 工作模式枚举
+ */
+enum class WorkMode {
+    None,           // 未操作
+    Prediction,     // 预测模式
+    ManualLabeling  // 人工标注模式
+};
+
+/**
  * 主窗口
  * 功能：
  * 1. 组织整体UI布局（3D视图 + 控制面板）
  * 2. 协调各模块交互
- * 3. 管理工作流程（加载 → 显示 → 预测 → 着色）
+ * 3. 管理工作流程（加载 → 显示 → 预测/标注 → 着色）
  */
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -33,11 +42,21 @@ public:
     ~MainWindow();
 
 private slots:
-    // 按钮响应槽
+    // 文件操作
     void onLoadFile();
+
+    // 预测操作
     void onRunPrediction();
-    void onExportResults();
-    void onLoadLabels();
+    void onLoadPredictionLabels();
+    void onExportPrediction();
+
+    // 人工标注
+    void onLoadManualLabels();
+    void onModifyFaceClass();
+    void onExportManualLabels();
+
+    // 重置
+    void onReset();
 
     // 面选择响应槽
     void onFaceSelected(int faceIndex);
@@ -45,9 +64,10 @@ private slots:
 private:
     void setupUI();
     void setupConnections();
+    void setWorkMode(WorkMode mode);
     void updateModelInfo();
     void updatePredictionResults();
-    void displayStatistics();
+    void updateManualLabelingResults();
     void updateComparisonResults();
     std::vector<int> loadLabelsFromFile(const QString& filePath);
     void refreshLegendLayout();
@@ -59,17 +79,28 @@ protected:
     QSplitter* mainSplitter_;
     OCCTViewer* viewer_;
 
-    // 控制面板组件
+    // 文件操作区
     QPushButton* btnLoadFile_;
-    QPushButton* btnRunPrediction_;
-    QPushButton* btnExportResults_;
-    QPushButton* btnLoadLabels_;
 
+    // 预测操作区
+    QPushButton* btnRunPrediction_;
+    QPushButton* btnLoadPredictionLabels_;
+    QPushButton* btnExportPrediction_;
+    QLabel* lblPredictionAccuracy_;
+
+    // 人工标注区
+    QPushButton* btnLoadManualLabels_;
+    QPushButton* btnModifyFaceClass_;
+    QPushButton* btnExportManualLabels_;
+
+    // 重置区
+    QPushButton* btnReset_;
+
+    // 模型信息区
     QLabel* lblFileName_;
     QLabel* lblNumFaces_;
-    QLabel* lblStatus_;
+    QLabel* lblCurrentMode_;
     QLabel* lblSelectedFace_;
-    QLabel* lblAccuracy_;
 
     QTextEdit* txtStatistics_;
 
@@ -84,9 +115,11 @@ protected:
     std::unique_ptr<FaceClassifier> classifier_;
 
     // 当前状态
+    WorkMode currentMode_;
     QString currentFilePath_;
     std::vector<int> predictions_;
     std::vector<int> groundTruthLabels_;
+    std::vector<int> manualLabels_;
     std::vector<int> errorFaceIndices_;
     bool modelLoaded_;
 };

@@ -102,6 +102,23 @@ void OCCTViewer::updateAllFaceColors(const std::vector<Quantity_Color>& colors) 
     context_->UpdateCurrentViewer();
 }
 
+void OCCTViewer::updateSingleFaceColor(int faceIndex, const Quantity_Color& color) {
+    auto it = faceObjects_.find(faceIndex);
+    if (it != faceObjects_.end()) {
+        context_->SetColor(it->second, color, Standard_True);
+    }
+}
+
+void OCCTViewer::resetAllFaceColors() {
+    if (context_.IsNull()) return;
+
+    Quantity_Color grayColor(0.7, 0.7, 0.7, Quantity_TOC_RGB);
+    for (auto& pair : faceObjects_) {
+        context_->SetColor(pair.second, grayColor, Standard_False);
+    }
+    context_->UpdateCurrentViewer();
+}
+
 void OCCTViewer::highlightErrorFaces(const std::vector<int>& errorIndices, bool highlight) {
     if (context_.IsNull()) return;
 
