@@ -234,7 +234,7 @@ public:
         if (Xc.size(0) > 1) Xc.sub_(mean_c).div_(std_c);
     }
 
-    Tensor FaceGridsGlobal; // 存储提取的全局 Grid 数据 [N, 7, 10, 10]
+    Tensor FaceGridsGlobal; // 存储提取的全局 Grid 数据 [N, 9, 20, 20]
     Tensor EdgeGridsGlobal;
     Tensor CoedgeGridsGlobal;
     bool use_uvnet = false;
@@ -275,7 +275,7 @@ public:
     }
 
     // 存储局部坐标系下的数据
-    Tensor FaceGridsLocal;   // [N_c, 2, 9, 10, 10]
+    Tensor FaceGridsLocal;   // [N_c, 2, 9, 20, 20]
     Tensor EdgeGridsLocal;    // 实际没用到
     Tensor CoedgeGridsLocal;  // 实际没用到
 
@@ -507,10 +507,10 @@ private:
 
     // BRepPipeline.h: generate_global_face_grid()
     Tensor generate_global_face_grid(const TopoDS_Face& face) {
-        int num_u = 10;
-        int num_v = 10;
+        int num_u = 20;
+        int num_v = 20;
 
-        // Shape: [9, 10, 10]
+        // Shape: [9, 20, 20]
         Tensor grid = breptorch::zeros({ 9, num_u, num_v }, breptorch::kFloat32);
 
         static int debug_face_count = 0;
@@ -597,8 +597,8 @@ private:
             face_right = TopoDS::Face(unique_faces.FindKey(mate_face_idx + 1));
         }
 
-        // 2. 准备 Tensor [13, 10]
-        int num_u = 10;
+        // 2. 准备 Tensor [13, 20]
+        int num_u = 20;
         Tensor grid = breptorch::zeros({13, num_u}, breptorch::kFloat32);
 
         // ✅ 【关键修复】检查curve是否为NULL
@@ -1212,7 +1212,7 @@ private:
         f_list.reserve(num_c);
 
         for (int i = 0; i < num_c; ++i) {
-            Tensor pair = breptorch::zeros({ 2, 9, 10, 10 }, breptorch::kFloat32);
+            Tensor pair = breptorch::zeros({ 2, 9, 20, 20 }, breptorch::kFloat32);
 
             // Left Face
             int f_idx = coedges[i].face_idx;
@@ -1304,7 +1304,7 @@ private:
             if (selected_coedge != -1 && selected_coedge < CoedgeGridsLocal.size(0)) {
                 e_list.push_back(get_slice(CoedgeGridsLocal, selected_coedge));
             } else {
-                e_list.push_back(breptorch::zeros({ 13, 10 }, CoedgeGridsLocal.options()));
+                e_list.push_back(breptorch::zeros({ 13, 20 }, CoedgeGridsLocal.options()));
             }
         }
 

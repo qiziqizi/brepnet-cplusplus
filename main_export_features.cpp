@@ -138,13 +138,13 @@ void run_inference_with_export(const std::string& step_file,
         return;
     }
 
-    // 提取Face UV Grids (Coedge格式: [num_coedges*2, 9, 10, 10])
+    // 提取Face UV Grids (Coedge格式: [num_coedges*2, 9, 20, 20])
     int num_coedges_topo = (int)pipeline.coedges.size();
     // 必须clone()，避免数据污染。后续操作可能修改张量，影响原始数据
-    Tensor all_face_grids = pipeline.FaceGridsLocal.clone().view({num_coedges_topo * 2, 9, 10, 10});  // [380, 9, 10, 10]
+    Tensor all_face_grids = pipeline.FaceGridsLocal.clone().view({num_coedges_topo * 2, 9, 20, 20});  // [380, 9, 20, 20]
 
     // 展平为 [380, 900]
-    Tensor flattened_face_grids = all_face_grids.view({num_coedges_topo * 2, 9 * 10 * 10});
+    Tensor flattened_face_grids = all_face_grids.view({num_coedges_topo * 2, 9 * 20 * 20});
 
     if (EXPORT_ENABLED) {
         // 创建输出目录
@@ -173,7 +173,7 @@ void run_inference_with_export(const std::string& step_file,
         if (pipeline.EdgeGridsLocal.defined()) {
             int num_edges_topo = (int)pipeline.EdgeGridsLocal.size(0);
             // 必须clone()，避免数据污染
-            Tensor flattened_edge_grids = pipeline.EdgeGridsLocal.clone().view({num_edges_topo, 13 * 10});
+            Tensor flattened_edge_grids = pipeline.EdgeGridsLocal.clone().view({num_edges_topo, 13 * 20});
 
             std::string edge_uv_file = "cpp_uv_grids/edge_uv_grids_" + base_name + ".txt";
             std::ofstream edge_uv_out(edge_uv_file, std::ios::out);
@@ -246,8 +246,8 @@ void run_inference_with_export(const std::string& step_file,
                 int row_idx = coedge_id * 2;  // parent_face行索引
 
                 for (int c = 0; c < 9; ++c) {
-                    for (int i = 0; i < 10; ++i) {
-                        for (int j = 0; j < 10; ++j) {
+                    for (int i = 0; i < 20; ++i) {
+                        for (int j = 0; j < 20; ++j) {
                             face_uv_grids[face_id].push_back(all_face_grids.at({row_idx, c, i, j}));
                         }
                     }
@@ -263,7 +263,7 @@ void run_inference_with_export(const std::string& step_file,
         for (int f = 0; f < num_faces; ++f) {
             if (face_uv_grids[f].empty()) {
                 // 该face没有coedge，填充0
-                for (int i = 0; i < 900; ++i) {
+                for (int i = 0; i < 3600; ++i) {
                     if (i > 0) face_uv_out << " ";
                     face_uv_out << 0.0f;
                 }

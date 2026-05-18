@@ -22,7 +22,7 @@ public:
 
         // 1. 提取所有面特征
         Tensor face_grids_cloned = pipeline.FaceGridsLocal.clone();
-        Tensor all_face_grids = face_grids_cloned.view({num_coedges * 2, 9, 10, 10});
+        Tensor all_face_grids = face_grids_cloned.view({num_coedges * 2, 9, 20, 20});
 
         // DEBUG: Print Face 6 related grids for Coedges 27-30 (all 9 channels)
         if (DebugControl::instance().shouldDebug()) {
@@ -32,7 +32,7 @@ public:
                     DBG_CERR << "\n>>> UVNet Input: Coedge " << c << " Parent Face (row " << row << "):" << std::endl;
                     DBG_CERR << "    Point[0] (u=0,v=0, boundary), Point[11] (u=1,v=1, interior), Point[12] (u=1,v=2, interior)" << std::endl;
                     float* data = all_face_grids.data_ptr<float>();
-                    int N = 100;  // 10x10 grid
+                    int N = 400;  // 20x20 grid
                     int test_points[3] = {0, 11, 12};  // boundary + 2 interior points
                     for (int ch = 0; ch < 9; ++ch) {
                         std::ostringstream oss;

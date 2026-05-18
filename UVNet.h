@@ -397,7 +397,7 @@ public:
     }
 
     breptorch::Tensor forward(breptorch::Tensor x) {
-        // x: [N, 13, 10]
+        // x: [N, 13, 20]
         // Check if weights are loaded
         if (params.find("curve_encoder.conv1.0.weight") == params.end()) {
             ERR_LOG << "[Error] curve_encoder weights not loaded!" << std::endl;
