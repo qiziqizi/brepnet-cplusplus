@@ -9,6 +9,7 @@
 #include <Prs3d_Drawer.hxx>
 #include <Graphic3d_MaterialAspect.hxx>
 #include <Prs3d_LineAspect.hxx>
+#include <Prs3d_IsoAspect.hxx>
 
 OCCTViewer::OCCTViewer(QWidget* parent)
     : QWidget(parent)
@@ -75,6 +76,9 @@ void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces) {
         aisShape->SetMaterial(Graphic3d_NOM_PLASTIC);
         aisShape->SetDisplayMode(AIS_Shaded);
         aisShape->Attributes()->SetFaceBoundaryDraw(true);
+        aisShape->Attributes()->SetIsoOnTriangulation(Standard_False);
+        aisShape->Attributes()->UIsoAspect()->SetNumber(0);
+        aisShape->Attributes()->VIsoAspect()->SetNumber(0);
         context_->Display(aisShape, Standard_False);
         faceObjects_[static_cast<int>(i)] = aisShape;
     }
