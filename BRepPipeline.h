@@ -1162,7 +1162,7 @@ private:
             }
             // ===== LCS调试结束 =====
 
-            if (std::abs(breptorch::det(mat)) < 1e-6) {
+            if (std::abs(breptorch::det(mat)) < 1e-10) {
                 mat = breptorch::eye(4);
             }
 
