@@ -100,10 +100,11 @@ void MainWindow::refreshLegendLayout() {
     int cols = std::max(1, availableWidth / itemWidth);
 
     // 计算总行数
-    int rows = (27 + cols - 1) / cols;  // 向上取整
+    int numClasses = colorMapper_->getNumClasses();
+    int rows = (numClasses + cols - 1) / cols;  // 向上取整
 
     // 添加图例到 grid
-    for (int i = 0; i < 27; ++i) {
+    for (int i = 0; i < numClasses; ++i) {
         int row = i / cols;
         int col = i % cols;
         legendGrid_->addWidget(legendItems_[i], row, col, Qt::AlignTop | Qt::AlignLeft);
@@ -239,7 +240,7 @@ void MainWindow::setupUI() {
     legendGrid_->setContentsMargins(4, 0, 0, 0);  // 左边距4px
 
     // 创建所有图例项（每个项目包含正方形+文字，固定宽度）
-    for (int i = 0; i < 27; ++i) {
+    for (int i = 0; i < colorMapper_->getNumClasses(); ++i) {
         // 创建图例项容器
         QWidget* itemWidget = new QWidget();
         QHBoxLayout* itemLayout = new QHBoxLayout(itemWidget);
@@ -396,17 +397,22 @@ void MainWindow::onLoadFile() {
     currentFilePath_ = fileName;
     predictions_.clear();
     groundTruthLabels_.clear();
-    manualLabels_.clear();
     errorFaceIndices_.clear();
     lblPredictionAccuracy_->setText("准确率: --");
-    txtStatistics_->setPlainText("等待操作...");
     lblSelectedFace_->setText("选中面: --");
     updateModelInfo();
 
-    // 重置为无模式
-    setWorkMode(WorkMode::None);
+    // 默认所有面初始化为"其他"(类别 3)，并自动上色，进入标注模式
+    int numFaces = loader_->getNumFaces();
+    manualLabels_.assign(numFaces, 3);
+    std::vector<Quantity_Color> colors(numFaces, colorMapper_->getColor(3));
+    viewer_->updateAllFaceColors(colors);
 
-    statusBar()->showMessage("加载成功: " + QString::fromStdString(loader_->getFileName()));
+    setWorkMode(WorkMode::ManualLabeling);
+    updateManualLabelingResults();
+
+    statusBar()->showMessage("加载成功: " + QString::fromStdString(loader_->getFileName())
+        + QString("（%1 个面默认标注为 other）").arg(numFaces));
 }
 
 void MainWindow::onRunPrediction() {
@@ -471,7 +477,7 @@ void MainWindow::onLoadPredictionLabels() {
         this,
         "导入真实标签文件(对比)",
         "inference_data/step_files",
-        "Label Files (*.labels *.txt);;All Files (*)");
+        "Segmentation Files (*.seg);;All Files (*)");
 
     if (fileName.isEmpty()) {
         return;
@@ -651,7 +657,7 @@ void MainWindow::onLoadManualLabels() {
         this,
         "导入标签文件",
         "inference_data/step_files",
-        "Label Files (*.labels *.txt);;All Files (*)");
+        "Segmentation Files (*.seg);;All Files (*)");
 
     if (fileName.isEmpty()) {
         return;
@@ -707,12 +713,12 @@ void MainWindow::onModifyFaceClass() {
     int newClass = QInputDialog::getInt(
         this,
         "修改面类别",
-        QString("当前面 #%1\n当前类别: %2 (%3)\n\n请输入新类别 (0-26):")
+        QString("当前面 #%1\n当前类别: %2 (%3)\n\n请输入新类别 (0-3):")
             .arg(selectedFace)
             .arg(currentClass)
             .arg(currentClassName),
         currentClass,  // 默认值
-        0, 26, 1, &ok);
+        0, 3, 1, &ok);
 
     if (!ok) return;
 
@@ -746,8 +752,8 @@ void MainWindow::onExportManualLabels() {
     QString fileName = QFileDialog::getSaveFileName(
         this,
         "导出标注结果",
-        "manual_labels.txt",
-        "Label Files (*.labels *.txt);;All Files (*)");
+        "manual_labels.seg",
+        "Segmentation Files (*.seg);;All Files (*)");
 
     if (fileName.isEmpty()) return;
 
@@ -764,7 +770,7 @@ void MainWindow::onExportManualLabels() {
     out << "# BRepNet 人工标注结果\n";
     out << "# 文件: " << currentFilePath_ << "\n";
     out << "# 面数: " << loader_->getNumFaces() << "\n";
-    out << "# 格式: 每行一个整数 (0-26)\n\n";
+    out << "# 格式: 每行一个整数 (0=chamfer, 1=round, 2=hole, 3=other)\n\n";
 
     // 写入标签（每行一个）
     for (int classId : manualLabels_) {
@@ -826,7 +832,7 @@ std::vector<int> MainWindow::loadLabelsFromFile(const QString& filePath) {
 
         bool ok;
         int classId = line.toInt(&ok);
-        if (ok && classId >= 0 && classId < 27) {
+        if (ok && classId >= 0 && classId < 4) {
             labels.push_back(classId);
         } else {
             // 遇到无效数据，返回空

@@ -27,7 +27,7 @@ public:
     const std::vector<std::string>& getAllClassNames() const;
 
     // 获取类别数量
-    int getNumClasses() const { return 27; }
+    int getNumClasses() const { return 4; }
 
 private:
     void initializeColors();
