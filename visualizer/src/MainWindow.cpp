@@ -13,6 +13,9 @@
 #include <QResizeEvent>
 #include <QTimer>
 #include <QInputDialog>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFileInfo>
 #include <Quantity_Color.hxx>
 #include <algorithm>
 #include <map>
@@ -339,7 +342,7 @@ void MainWindow::setWorkMode(WorkMode mode) {
     btnExportPrediction_->setEnabled(isPredMode);
 
     // 人工标注区
-    btnLoadManualLabels_->setEnabled(isNone && hasFile);
+    btnLoadManualLabels_->setEnabled((isNone || isManualMode) && hasFile);
     btnModifyFaceClass_->setEnabled(isManualMode);
     btnExportManualLabels_->setEnabled(isManualMode);
 
@@ -705,22 +708,51 @@ void MainWindow::onModifyFaceClass() {
         return;
     }
 
-    // 弹出输入框
-    bool ok;
     int currentClass = manualLabels_[selectedFace];
     QString currentClassName = QString::fromStdString(colorMapper_->getClassName(currentClass));
 
-    int newClass = QInputDialog::getInt(
-        this,
-        "修改面类别",
-        QString("当前面 #%1\n当前类别: %2 (%3)\n\n请输入新类别 (0-3):")
-            .arg(selectedFace)
-            .arg(currentClass)
-            .arg(currentClassName),
-        currentClass,  // 默认值
-        0, 3, 1, &ok);
+    // 自定义对话框：4 个彩色按钮
+    QDialog dlg(this);
+    dlg.setWindowTitle("修改面类别");
+    QVBoxLayout* dlgLayout = new QVBoxLayout(&dlg);
 
-    if (!ok) return;
+    QLabel* infoLbl = new QLabel(
+        QString("当前面 #%1\n当前类别: %2 (%3)\n\n请选择新类别:")
+            .arg(selectedFace).arg(currentClass).arg(currentClassName), &dlg);
+    dlgLayout->addWidget(infoLbl);
+
+    int newClass = -1;
+    int numClasses = colorMapper_->getNumClasses();
+    for (int i = 0; i < numClasses; ++i) {
+        Quantity_Color qc = colorMapper_->getColor(i);
+        int r = static_cast<int>(qc.Red() * 255);
+        int g = static_cast<int>(qc.Green() * 255);
+        int b = static_cast<int>(qc.Blue() * 255);
+        // 根据背景亮度选择文字颜色（深色背景白字、浅色背景黑字）
+        double luma = 0.299 * qc.Red() + 0.587 * qc.Green() + 0.114 * qc.Blue();
+        QString textColor = (luma > 0.55) ? "black" : "white";
+
+        QPushButton* btn = new QPushButton(
+            QString("%1 - %2").arg(i).arg(QString::fromStdString(colorMapper_->getClassName(i))),
+            &dlg);
+        btn->setStyleSheet(
+            QString("QPushButton { background-color: rgb(%1,%2,%3); color: %4; "
+                    "font-size: 14px; font-weight: bold; padding: 10px; border: 1px solid #444; border-radius: 4px; }"
+                    "QPushButton:hover { border: 2px solid #000; }")
+                .arg(r).arg(g).arg(b).arg(textColor));
+        btn->setMinimumHeight(40);
+        connect(btn, &QPushButton::clicked, &dlg, [&dlg, &newClass, i]() {
+            newClass = i;
+            dlg.accept();
+        });
+        dlgLayout->addWidget(btn);
+    }
+
+    QPushButton* cancelBtn = new QPushButton("取消", &dlg);
+    connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
+    dlgLayout->addWidget(cancelBtn);
+
+    if (dlg.exec() != QDialog::Accepted || newClass < 0) return;
 
     // 更新标签
     manualLabels_[selectedFace] = newClass;
@@ -749,13 +781,17 @@ void MainWindow::onExportManualLabels() {
         return;
     }
 
-    QString fileName = QFileDialog::getSaveFileName(
-        this,
-        "导出标注结果",
-        "manual_labels.seg",
-        "Segmentation Files (*.seg);;All Files (*)");
-
-    if (fileName.isEmpty()) return;
+    // 默认保存在 STEP 文件同目录，文件名为 STEP 文件名（.seg 扩展名）
+    // 如已存在则追加序号 _1、_2 ... 避免覆盖
+    QFileInfo stepInfo(currentFilePath_);
+    QString baseDir = stepInfo.absolutePath();
+    QString baseName = stepInfo.completeBaseName();
+    QString fileName = baseDir + "/" + baseName + ".seg";
+    int suffix = 1;
+    while (QFileInfo::exists(fileName)) {
+        fileName = QString("%1/%2_%3.seg").arg(baseDir, baseName).arg(suffix);
+        ++suffix;
+    }
 
     QFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -779,7 +815,7 @@ void MainWindow::onExportManualLabels() {
 
     file.close();
     statusBar()->showMessage("标注结果已导出: " + fileName);
-    QMessageBox::information(this, "成功", "标注结果已成功导出");
+    QMessageBox::information(this, "成功", "标注结果已导出至:\n" + fileName);
 }
 
 void MainWindow::onReset() {
