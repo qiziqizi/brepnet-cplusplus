@@ -802,13 +802,7 @@ void MainWindow::onExportManualLabels() {
     QTextStream out(&file);
     out.setCodec("UTF-8");
 
-    // 写入文件头
-    out << "# BRepNet 人工标注结果\n";
-    out << "# 文件: " << currentFilePath_ << "\n";
-    out << "# 面数: " << loader_->getNumFaces() << "\n";
-    out << "# 格式: 每行一个整数 (0=chamfer, 1=round, 2=hole, 3=other)\n\n";
-
-    // 写入标签（每行一个）
+    // 直接写入标签（每行一个，无文件头注释）
     for (int classId : manualLabels_) {
         out << classId << "\n";
     }

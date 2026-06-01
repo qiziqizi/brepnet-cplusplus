@@ -956,6 +956,19 @@ void run_inference_with_export(const std::string& step_file,
 
     DBG_LOG << "  [Export] Results saved to: " << results_path << " (original face order)" << std::endl;
 
+    // ========================================================================
+    // 导出 .seg 分类结果到 cpp_results/ — 始终执行
+    // 格式：每行一个整数（face 类别 id），从第一行开始，无注释
+    // ========================================================================
+    std::string seg_path = "cpp_results/" + base_name + ".seg";
+    std::ofstream seg_file(seg_path);
+    for (int original_id = 0; original_id < num_faces; ++original_id) {
+        seg_file << predictions_original_order[original_id] << "\n";
+    }
+    seg_file.close();
+
+    DBG_LOG << "  [Export] Seg saved to: " << seg_path << std::endl;
+
     INFO_LOG << " -> [✓] F:" << num_faces << " E:" << num_edges << std::endl;
 
     // ========================================================================
