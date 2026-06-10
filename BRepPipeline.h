@@ -5,7 +5,9 @@
 #include <map>
 #include <string>
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 
 // LibTorch
 //#include <torch/torch.h>
@@ -234,7 +236,8 @@ public:
         if (Xc.size(0) > 1) Xc.sub_(mean_c).div_(std_c);
     }
 
-    Tensor FaceGridsGlobal; // 存储提取的全局 Grid 数据 [N, 9, 20, 20]
+    Tensor FaceGridsGlobal; // 存储提取的全局 Grid 数据 [N, 9, 40, 40]
+    std::vector<std::array<float, 3>> coedge_origins_; // 每条 coedge 的中点坐标（退化边存 {-2000,-2000,-2000}）
     Tensor EdgeGridsGlobal;
     Tensor CoedgeGridsGlobal;
     bool use_uvnet = false;
@@ -507,10 +510,10 @@ private:
 
     // BRepPipeline.h: generate_global_face_grid()
     Tensor generate_global_face_grid(const TopoDS_Face& face) {
-        int num_u = 20;
-        int num_v = 20;
+        int num_u = 40;
+        int num_v = 40;
 
-        // Shape: [9, 20, 20]
+        // Shape: [9, 40, 40]
         Tensor grid = breptorch::zeros({ 9, num_u, num_v }, breptorch::kFloat32);
 
         static int debug_face_count = 0;
@@ -870,6 +873,7 @@ private:
 
         // 检查曲线是否有效（退化边可能没有曲线）
         if (curve.IsNull()) {
+            coedge_origins_[coedge_idx] = {-2000.0f, -2000.0f, -2000.0f};
             Tensor lcs_inv = breptorch::eye(4);
             return lcs_inv;
         }
@@ -880,6 +884,7 @@ private:
         gp_Vec tangent;
 
         curve->D1(u_mid, p, tangent);
+        coedge_origins_[coedge_idx] = {(float)p.X(), (float)p.Y(), (float)p.Z()};
 
         // 【步骤2】使用 pcurve + GeomLProp_SLProps 计算法线（与Python一致）
         gp_Vec normal;
@@ -1113,6 +1118,7 @@ private:
         int num_c = coedges.size();
         lcs_invs.clear();
         lcs_invs.reserve(num_c);
+        coedge_origins_.resize(num_c);
 
         for (int i = 0; i < num_c; ++i) {
             Tensor mat = compute_coedge_lcs(i);
@@ -1205,30 +1211,118 @@ private:
         CoedgeGridsLocal = breptorch::stack(c_list);
     }
 
-    // 生成Face局部网格
+    // ---- Face Grid 裁剪辅助结构（与 Python new/ 版本对应）----
+    struct CropRange { int row_min, row_max, col_min, col_max; };
+
+    // 在 40×40 全局 face grid 中找离 target_point 最近的格点，
+    // 以该点为中心计算 20×20 裁剪范围（精确复刻 Python new/ 逻辑）。
+    // 退化边（target_point[0] <= -1000）返回左上角 {0,20,0,20}。
+    CropRange compute_crop_range(Tensor face_grid_global,
+                                  const std::array<float, 3>& target_point)
+    {
+        const int grid_h = 40, grid_w = 40, samplesize = 20;
+
+        if (target_point[0] <= -1000.0f) {
+            return {0, samplesize, 0, samplesize};
+        }
+
+        const float* data = face_grid_global.data_ptr<float>();
+        const int N = grid_h * grid_w;
+        float min_dist_sq = std::numeric_limits<float>::max();
+        int best_row = 0, best_col = 0;
+        for (int i = 0; i < grid_h; ++i) {
+            for (int j = 0; j < grid_w; ++j) {
+                int idx = i * grid_w + j;
+                float dx = data[0 * N + idx] - target_point[0];
+                float dy = data[1 * N + idx] - target_point[1];
+                float dz = data[2 * N + idx] - target_point[2];
+                float d2 = dx*dx + dy*dy + dz*dz;
+                if (d2 < min_dist_sq) { min_dist_sq = d2; best_row = i; best_col = j; }
+            }
+        }
+
+        // 与 Python 逐维裁剪逻辑完全一致
+        auto calc_range = [&](int pos, int size) -> std::pair<int,int> {
+            int d0 = pos;
+            int d1 = size - pos - 1;
+            int min_d = std::min(d0, d1);
+            bool closer_to_start = (d0 <= d1);
+            int rmin, rmax;
+            if (min_d >= samplesize / 2 - 1) {
+                rmin = min_d - samplesize / 2 + 1;
+                rmax = rmin + samplesize - 1;
+            } else {
+                if (closer_to_start) {
+                    rmin = 0; rmax = samplesize - 1;
+                } else {
+                    rmax = size - 1; rmin = rmax - samplesize + 1;
+                }
+            }
+            return {rmin, rmax + 1};  // rmax+1 对应 Python 切片上界
+        };
+
+        auto [row_min, row_max] = calc_range(best_row, grid_h);
+        auto [col_min, col_max] = calc_range(best_col, grid_w);
+        return {row_min, row_max, col_min, col_max};
+    }
+
+    // 从 [9, 40, 40] tensor 中裁剪出 [9, 20, 20]
+    Tensor crop_face_grid(Tensor t, const CropRange& cr, int samplesize) {
+        Tensor out = breptorch::zeros({ 9, samplesize, samplesize }, breptorch::kFloat32);
+        const float* src = t.data_ptr<float>();
+        float* dst = out.data_ptr<float>();
+        const int grid_w = 40;
+        const int out_w = samplesize;
+        for (int c = 0; c < 9; ++c) {
+            for (int r = cr.row_min; r < cr.row_max; ++r) {
+                for (int col = cr.col_min; col < cr.col_max; ++col) {
+                    int src_idx = c * grid_w * grid_w + r * grid_w + col;
+                    int dst_r = r - cr.row_min;
+                    int dst_c = col - cr.col_min;
+                    int dst_idx = c * out_w * out_w + dst_r * out_w + dst_c;
+                    dst[dst_idx] = src[src_idx];
+                }
+            }
+        }
+        return out;
+    }
+
+    // 生成Face局部网格（以 Coedge 中点为中心裁剪 20×20，与 Python new/ 版本一致）
     void generate_face_local_grids(std::vector<Tensor>& lcs_invs) {
         int num_c = coedges.size();
         std::vector<Tensor> f_list;
         f_list.reserve(num_c);
 
-        for (int i = 0; i < num_c; ++i) {
-            Tensor pair = breptorch::zeros({ 2, 9, 20, 20 }, breptorch::kFloat32);
+        const int samplesize = 20;
 
-            // Left Face
+        for (int i = 0; i < num_c; ++i) {
+            Tensor pair = breptorch::zeros({ 2, 9, samplesize, samplesize }, breptorch::kFloat32);
+
+            // Left Face (parent face of coedge i)
             int f_idx = coedges[i].face_idx;
             if (FaceGridsGlobal.defined() && f_idx < FaceGridsGlobal.size(0)) {
-                Tensor global_grid = get_slice(FaceGridsGlobal, f_idx);
-                Tensor t = transform_grid_to_local(global_grid, lcs_invs[i], true);
-                set_slice(pair, 0, t);
+                bool is_degenerate = (coedge_origins_[i][0] <= -1000.0f);
+                if (!is_degenerate) {
+                    Tensor global_grid = get_slice(FaceGridsGlobal, f_idx);  // [9, 40, 40]
+                    CropRange cr = compute_crop_range(global_grid, coedge_origins_[i]);
+                    Tensor t = transform_grid_to_local(global_grid, lcs_invs[i], true);
+                    set_slice(pair, 0, crop_face_grid(t, cr, samplesize));
+                }
+                // 退化时 pair[0] 保持全零
             }
 
-            // Right Face (Mate)
+            // Right Face (mate face)
             int mate_idx = coedges[i].mate_idx;
             if (mate_idx != -1) {
                 int mf_idx = coedges[mate_idx].face_idx;
                 if (FaceGridsGlobal.defined() && mf_idx < FaceGridsGlobal.size(0)) {
-                    Tensor t = transform_grid_to_local(get_slice(FaceGridsGlobal, mf_idx), lcs_invs[mate_idx], true);
-                    set_slice(pair, 1, t);
+                    bool is_degenerate_m = (coedge_origins_[mate_idx][0] <= -1000.0f);
+                    if (!is_degenerate_m) {
+                        Tensor global_grid_m = get_slice(FaceGridsGlobal, mf_idx);
+                        CropRange cr_m = compute_crop_range(global_grid_m, coedge_origins_[mate_idx]);
+                        Tensor tm = transform_grid_to_local(global_grid_m, lcs_invs[mate_idx], true);
+                        set_slice(pair, 1, crop_face_grid(tm, cr_m, samplesize));
+                    }
                 }
             }
 
