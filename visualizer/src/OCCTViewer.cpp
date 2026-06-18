@@ -14,7 +14,8 @@
 OCCTViewer::OCCTViewer(QWidget* parent)
     : QWidget(parent)
     , currentMode_(None)
-    , selectedFaceIndex_(-1) {
+    , selectedFaceIndex_(-1)
+    , previousSelectedFaceIndex_(-1) {
 
     setAttribute(Qt::WA_PaintOnScreen, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
@@ -70,6 +71,7 @@ void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces) {
     if (context_.IsNull()) return;
     clearAll();
 
+    Quantity_Color grayColor(0.7, 0.7, 0.7, Quantity_TOC_RGB);
     for (size_t i = 0; i < faces.size(); ++i) {
         Handle(AIS_Shape) aisShape = new AIS_Shape(faces[i]);
         aisShape->SetColor(Quantity_NOC_GRAY70);
@@ -81,6 +83,7 @@ void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces) {
         aisShape->Attributes()->VIsoAspect()->SetNumber(0);
         context_->Display(aisShape, Standard_False);
         faceObjects_[static_cast<int>(i)] = aisShape;
+        faceColors_[static_cast<int>(i)] = grayColor;
     }
 
     context_->UpdateCurrentViewer();
@@ -90,6 +93,7 @@ void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces) {
 void OCCTViewer::updateFaceColor(int faceIndex, const Quantity_Color& color) {
     auto it = faceObjects_.find(faceIndex);
     if (it != faceObjects_.end()) {
+        faceColors_[faceIndex] = color;
         context_->SetColor(it->second, color, Standard_True);
     }
 }
@@ -98,18 +102,36 @@ void OCCTViewer::updateAllFaceColors(const std::vector<Quantity_Color>& colors) 
     if (colors.size() != faceObjects_.size()) return;
 
     for (size_t i = 0; i < colors.size(); ++i) {
-        auto it = faceObjects_.find(static_cast<int>(i));
+        int idx = static_cast<int>(i);
+        auto it = faceObjects_.find(idx);
         if (it != faceObjects_.end()) {
+            faceColors_[idx] = colors[i];
             context_->SetColor(it->second, colors[i], Standard_False);
         }
     }
+
+    // 如果当前有选中的面，重新应用透明度（保持其半透明效果）
+    if (previousSelectedFaceIndex_ >= 0) {
+        auto selIt = faceObjects_.find(previousSelectedFaceIndex_);
+        if (selIt != faceObjects_.end()) {
+            context_->SetTransparency(selIt->second, 0.3, Standard_False);
+        }
+    }
+
     context_->UpdateCurrentViewer();
 }
 
 void OCCTViewer::updateSingleFaceColor(int faceIndex, const Quantity_Color& color) {
     auto it = faceObjects_.find(faceIndex);
     if (it != faceObjects_.end()) {
-        context_->SetColor(it->second, color, Standard_True);
+        faceColors_[faceIndex] = color;
+        context_->SetColor(it->second, color, Standard_False);
+        // 此面恰好被选中时，需重新应用透明度
+        if (faceIndex == previousSelectedFaceIndex_) {
+            context_->SetTransparency(it->second, 0.3, Standard_True);
+        } else {
+            context_->UpdateCurrentViewer();
+        }
     }
 }
 
@@ -118,8 +140,14 @@ void OCCTViewer::resetAllFaceColors() {
 
     Quantity_Color grayColor(0.7, 0.7, 0.7, Quantity_TOC_RGB);
     for (auto& pair : faceObjects_) {
+        faceColors_[pair.first] = grayColor;
         context_->SetColor(pair.second, grayColor, Standard_False);
+        context_->UnsetTransparency(pair.second, Standard_False);
     }
+
+    // 清除选中状态
+    previousSelectedFaceIndex_ = -1;
+    selectedFaceIndex_ = -1;
     context_->UpdateCurrentViewer();
 }
 
@@ -169,6 +197,9 @@ void OCCTViewer::clearAll() {
         context_->Remove(pair.second, Standard_False);
     }
     faceObjects_.clear();
+    faceColors_.clear();
+    previousSelectedFaceIndex_ = -1;
+    selectedFaceIndex_ = -1;
     context_->UpdateCurrentViewer();
 }
 
@@ -254,8 +285,29 @@ void OCCTViewer::handleSelection() {
         Handle(AIS_InteractiveObject) obj = context_->DetectedInteractive();
         for (auto& pair : faceObjects_) {
             if (pair.second == obj) {
-                selectedFaceIndex_ = pair.first;
-                emit faceSelected(selectedFaceIndex_);
+                int newIndex = pair.first;
+
+                // 点击同一个面 → 不做任何变化（与 Python 行为一致）
+                if (newIndex == previousSelectedFaceIndex_) {
+                    emit faceSelected(newIndex);
+                    return;
+                }
+
+                // 1. 恢复上一个选中面：移除透明度（颜色保持不变）
+                if (previousSelectedFaceIndex_ >= 0) {
+                    auto prevIt = faceObjects_.find(previousSelectedFaceIndex_);
+                    if (prevIt != faceObjects_.end()) {
+                        context_->UnsetTransparency(prevIt->second, Standard_False);
+                    }
+                }
+
+                // 2. 设置新选中面：半透明（颜色保留）
+                context_->SetTransparency(pair.second, 0.3, Standard_False);
+                previousSelectedFaceIndex_ = newIndex;
+                selectedFaceIndex_ = newIndex;
+
+                context_->UpdateCurrentViewer();
+                emit faceSelected(newIndex);
                 return;
             }
         }

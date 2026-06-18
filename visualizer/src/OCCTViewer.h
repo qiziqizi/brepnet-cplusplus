@@ -60,11 +60,13 @@ private:
 #endif
 
     std::map<int, Handle(AIS_Shape)> faceObjects_;
+    std::map<int, Quantity_Color> faceColors_;     // 每个面当前颜色
 
     enum MouseMode { None, Rotate, Pan };
     MouseMode currentMode_;
     QPoint lastMousePos_;
     int selectedFaceIndex_;
+    int previousSelectedFaceIndex_;                 // 上一次选中的面索引
 };
 
 #endif
