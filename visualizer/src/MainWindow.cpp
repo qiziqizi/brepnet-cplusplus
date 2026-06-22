@@ -17,6 +17,8 @@
 #include <QDialogButtonBox>
 #include <QFileInfo>
 #include <Quantity_Color.hxx>
+#include <QPixmap>
+#include <QPainter>
 #include <algorithm>
 #include <map>
 
@@ -253,13 +255,38 @@ void MainWindow::setupUI() {
         // 正方形
         QLabel* colorSwatch = new QLabel();
         colorSwatch->setFixedSize(20, 20);
-        Quantity_Color qc = colorMapper_->getColor(i);
-        int r = static_cast<int>(qc.Red() * 255);
-        int g = static_cast<int>(qc.Green() * 255);
-        int b = static_cast<int>(qc.Blue() * 255);
-        colorSwatch->setStyleSheet(
-            QString("background-color: rgb(%1,%2,%3); border: 1px solid #888;")
-                .arg(r).arg(g).arg(b));
+
+        // 未标注类别（i == 4）显示多种颜色的条纹，表达"每个面以不同颜色区分"
+        if (i == 4) {
+            QPixmap pixmap(20, 20);
+            pixmap.fill(Qt::transparent);
+            {
+                QPainter painter(&pixmap);
+                int numStripes = 5;
+                for (int s = 0; s < numStripes; ++s) {
+                    double hue = s * 72.0;  // 360/5 = 72°
+                    Quantity_Color stripColor(hue, 0.65, 0.85, Quantity_TOC_HLS);
+                    QColor qc(
+                        static_cast<int>(stripColor.Red() * 255),
+                        static_cast<int>(stripColor.Green() * 255),
+                        static_cast<int>(stripColor.Blue() * 255));
+                    int sw = (s < numStripes - 1) ? 20 / numStripes
+                                                  : 20 - s * (20 / numStripes);
+                    painter.fillRect(s * (20 / numStripes), 0, sw, 20, qc);
+                }
+                painter.setPen(QColor(0x88, 0x88, 0x88));
+                painter.drawRect(0, 0, 19, 19);
+            }
+            colorSwatch->setPixmap(pixmap);
+        } else {
+            Quantity_Color qc = colorMapper_->getColor(i);
+            int r = static_cast<int>(qc.Red() * 255);
+            int g = static_cast<int>(qc.Green() * 255);
+            int b = static_cast<int>(qc.Blue() * 255);
+            colorSwatch->setStyleSheet(
+                QString("background-color: rgb(%1,%2,%3); border: 1px solid #888;")
+                    .arg(r).arg(g).arg(b));
+        }
 
         // 文字
         QLabel* nameLabel = new QLabel(
@@ -405,17 +432,17 @@ void MainWindow::onLoadFile() {
     lblSelectedFace_->setText("选中面: --");
     updateModelInfo();
 
-    // 默认所有面初始化为"其他"(类别 3)，并自动上色，进入标注模式
+    // 给每个面分配不同的颜色（均匀色相），便于区分相邻面
     int numFaces = loader_->getNumFaces();
-    manualLabels_.assign(numFaces, 3);
-    std::vector<Quantity_Color> colors(numFaces, colorMapper_->getColor(3));
-    viewer_->updateAllFaceColors(colors);
+    manualLabels_.assign(numFaces, 4);
+    auto distinctColors = ColorMapper::generateDistinctColors(numFaces);
+    viewer_->updateAllFaceColors(distinctColors);
 
     setWorkMode(WorkMode::ManualLabeling);
     updateManualLabelingResults();
 
     statusBar()->showMessage("加载成功: " + QString::fromStdString(loader_->getFileName())
-        + QString("（%1 个面默认标注为 other）").arg(numFaces));
+        + QString("（%1 个面以区分色显示）").arg(numFaces));
 }
 
 void MainWindow::onRunPrediction() {
@@ -711,7 +738,7 @@ void MainWindow::onModifyFaceClass() {
     int currentClass = manualLabels_[selectedFace];
     QString currentClassName = QString::fromStdString(colorMapper_->getClassName(currentClass));
 
-    // 自定义对话框：4 个彩色按钮
+    // 自定义对话框：5 个彩色按钮
     QDialog dlg(this);
     dlg.setWindowTitle("修改面类别");
     QVBoxLayout* dlgLayout = new QVBoxLayout(&dlg);
@@ -828,9 +855,13 @@ void MainWindow::onReset() {
     groundTruthLabels_.clear();
     errorFaceIndices_.clear();
 
-    // 恢复灰色显示
+    // 恢复区分色显示（而非灰色），便于再次区分相邻面
     viewer_->resetAllFaceColors();
     viewer_->clearErrorHighlights();
+    if (loader_ && loader_->getNumFaces() > 0) {
+        auto distinctColors = ColorMapper::generateDistinctColors(loader_->getNumFaces());
+        viewer_->updateAllFaceColors(distinctColors);
+    }
 
     // 切换到无模式
     setWorkMode(WorkMode::None);
@@ -862,7 +893,7 @@ std::vector<int> MainWindow::loadLabelsFromFile(const QString& filePath) {
 
         bool ok;
         int classId = line.toInt(&ok);
-        if (ok && classId >= 0 && classId < 4) {
+        if (ok && classId >= 0 && classId < 5) {
             labels.push_back(classId);
         } else {
             // 遇到无效数据，返回空

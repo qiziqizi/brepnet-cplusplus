@@ -26,8 +26,13 @@ public:
     // 获取所有类别名称
     const std::vector<std::string>& getAllClassNames() const;
 
+    // 生成 N 个视觉上互不相同的颜色（用于推理前的面区分显示）
+    // 使用黄金角（Golden Angle ≈ 137.508°）色相分布 + 亮度/饱和度微变，
+    // 确保任意连续面的色相都接近互补色，杜绝"相邻面颜色一致"的问题
+    static std::vector<Quantity_Color> generateDistinctColors(int count);
+
     // 获取类别数量
-    int getNumClasses() const { return 4; }
+    int getNumClasses() const { return 5; }
 
 private:
     void initializeColors();
