@@ -17,7 +17,7 @@
 | **Python BRepNet** | `D:\BRepNet_MFTRe` | 训练 + 推理，使用 PyTorch + occwl 库 |
 | **本项目（C++）** | `d:\brepnet-cplusplus` | **仅推理**，不训练。从 Python 端导出的 `.npz` 权重文件加载参数 |
 
-关键约束：C++ 端的输出 logits 必须与 Python 端在数值上尽可能一致（目标：绝对误差 < 0.01）。python项目是基准文件，本项目是模仿python项目生成的。
+关键约束：C++ 端的输出 logits 必须与 Python 端在数值上尽可能一致。python项目是基准文件，本项目是模仿python项目生成的。
 
 ### 1.3 核心依赖
 
