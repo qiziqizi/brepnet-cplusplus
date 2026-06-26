@@ -24,8 +24,8 @@ void ColorMapper::initializeColors() {
     std::vector<std::tuple<float, float, float>> colors = {
         {0.90f, 0.15f, 0.15f},  // 0: chamfer   (倒角) - 红
         {0.15f, 0.45f, 0.95f},  // 1: round     (圆角) - 蓝
-        {0.20f, 0.75f, 0.30f},  // 2: hole      (孔)   - 绿
-        {0.95f, 0.60f, 0.15f},  // 3: other     (其他) - 橙
+        {0.45f, 0.12f, 0.60f},  // 2: hole      (孔)   - 深紫（与 other 的玫红拉开亮度）
+        {0.85f, 0.25f, 0.55f},  // 3: other     (其他) - 玫红（与 unlabeled 色域拉开距离）
         {0.75f, 0.75f, 0.75f}   // 4: unlabeled (未标注) - 浅灰
     };
 
@@ -63,15 +63,15 @@ std::vector<Quantity_Color> ColorMapper::generateDistinctColors(int count) {
     if (count <= 0) return colors;
 
     colors.reserve(count);
-    // 黄金角 ≈ 137.508° = 360 / φ² (φ ≈ 1.618)
-    // 每次加黄金角能保证：连续两个面色相始终相差 ~137.5°（接近互补色），
-    // 彻底避免相邻面颜色一致的问题，也不会形成彩虹渐变。
-    // 使用 HLS 色彩空间，Lightness 设在 0.60~0.75 之间保证颜色鲜明。
+    // 限定在橙黄→纯青（30°~180°），避开四类色相（红0°/玫红340°/蓝220°/紫280°），
+    // 150° 跨度覆盖橙/黄/绿/青，不含蓝色成分。
     const double goldenAngle = 137.508;
+    const double hueStart = 30.0;
+    const double hueRange = 150.0;
     for (int i = 0; i < count; ++i) {
-        double hue = std::fmod(i * goldenAngle, 360.0);
-        double lightness  = 0.60 + 0.12 * std::sin(i * 1.3);
-        double saturation = 0.80 + 0.12 * std::cos(i * 0.7);
+        double hue = hueStart + std::fmod(i * goldenAngle, hueRange);
+        double lightness  = 0.72 + 0.10 * std::sin(i * 1.3);
+        double saturation = 0.82 + 0.12 * std::cos(i * 0.7);
         colors.emplace_back(hue, lightness, saturation, Quantity_TOC_HLS);
     }
     return colors;

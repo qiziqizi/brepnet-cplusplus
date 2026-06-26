@@ -256,15 +256,15 @@ void MainWindow::setupUI() {
         QLabel* colorSwatch = new QLabel();
         colorSwatch->setFixedSize(20, 20);
 
-        // 未标注类别（i == 4）显示多种颜色的条纹，表达"每个面以不同颜色区分"
+        // unlabeled 显示橙黄→纯青（30°~180°）区间条纹，不含蓝色成分
         if (i == 4) {
             QPixmap pixmap(20, 20);
             pixmap.fill(Qt::transparent);
             {
                 QPainter painter(&pixmap);
-                int numStripes = 5;
+                int numStripes = 7;
                 for (int s = 0; s < numStripes; ++s) {
-                    double hue = s * 72.0;  // 360/5 = 72°
+                    double hue = 30.0 + s * 25.0;  // 30, 55, 80, 105, 130, 155, 180
                     Quantity_Color stripColor(hue, 0.65, 0.85, Quantity_TOC_HLS);
                     QColor qc(
                         static_cast<int>(stripColor.Red() * 255),
