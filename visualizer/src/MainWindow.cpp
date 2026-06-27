@@ -32,7 +32,8 @@
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
     , currentMode_(WorkMode::None)
-    , modelLoaded_(false) {
+    , modelLoaded_(false)
+    , prevHoveredGlobalEdgeId_(-1) {
 
     // 调试输出：显示当前工作目录
     std::cout << "[调试] 当前工作目录: " << QDir::currentPath().toStdString() << std::endl;
@@ -220,19 +221,29 @@ void MainWindow::setupUI() {
 
     panelLayout->addWidget(infoGroup);
 
-    // === 区域5b: 悬停信息 ===
-    QGroupBox* hoverGroup = new QGroupBox("悬停信息", controlPanel);
-    QVBoxLayout* hoverLayout = new QVBoxLayout(hoverGroup);
+    // === 区域5b: 悬停信息（面 + 边左右并排） ===
+    hoverGroup_ = new QGroupBox("悬停信息", controlPanel);
+    QHBoxLayout* hoverRowLayout = new QHBoxLayout(hoverGroup_);
 
-    lblHoveredFace_ = new QLabel("悬停面: 无", hoverGroup);
-    lblHoverEdgeCount_ = new QLabel("Edge 数: --", hoverGroup);
-    lblHoverEdgeTypes_ = new QLabel("Edge 类型: --", hoverGroup);
+    // 左列：面信息
+    QVBoxLayout* hoverLeftCol = new QVBoxLayout();
+    lblHoverFaceIndex_ = new QLabel("面索引: --", hoverGroup_);
+    lblHoverEdgeCount_ = new QLabel("Edge 数: --", hoverGroup_);
+    lblHoverFaceEdgeIds_ = new QLabel("Edge ID: --", hoverGroup_);
+    hoverLeftCol->addWidget(lblHoverFaceIndex_);
+    hoverLeftCol->addWidget(lblHoverEdgeCount_);
+    hoverLeftCol->addWidget(lblHoverFaceEdgeIds_);
 
-    hoverLayout->addWidget(lblHoveredFace_);
-    hoverLayout->addWidget(lblHoverEdgeCount_);
-    hoverLayout->addWidget(lblHoverEdgeTypes_);
+    // 右列：边信息
+    QVBoxLayout* hoverRightCol = new QVBoxLayout();
+    lblHoverEdgeId_ = new QLabel("Edge ID: --", hoverGroup_);
+    lblHoverEdgeType_ = new QLabel("类型: --", hoverGroup_);
+    hoverRightCol->addWidget(lblHoverEdgeId_);
+    hoverRightCol->addWidget(lblHoverEdgeType_);
 
-    panelLayout->addWidget(hoverGroup);
+    hoverRowLayout->addLayout(hoverLeftCol);
+    hoverRowLayout->addLayout(hoverRightCol);
+    panelLayout->addWidget(hoverGroup_);
 
     // === 区域6: 结果统计 ===
     QGroupBox* resultGroup = new QGroupBox("结果统计", controlPanel);
@@ -386,7 +397,7 @@ void MainWindow::setWorkMode(WorkMode mode) {
     bool hasFile = !currentFilePath_.isEmpty();
 
     // 预测操作区
-    btnRunPrediction_->setEnabled(isNone && modelLoaded_ && hasFile);
+    btnRunPrediction_->setEnabled(!isPredMode && modelLoaded_ && hasFile);
     btnLoadPredictionLabels_->setEnabled(isPredMode);
     btnExportPrediction_->setEnabled(isPredMode);
 
@@ -452,7 +463,29 @@ void MainWindow::onLoadFile() {
     errorFaceIndices_.clear();
     lblPredictionAccuracy_->setText("准确率: --");
     lblSelectedFace_->setText("选中面: --");
+    lblHoverFaceIndex_->setText("面索引: --");
+    lblHoverEdgeCount_->setText("Edge 数: --");
+    lblHoverFaceEdgeIds_->setText("Edge ID: --");
+    lblHoverEdgeId_->setText("Edge ID: --");
+    lblHoverEdgeType_->setText("类型: --");
+    prevHoveredGlobalEdgeId_ = -1;
     updateModelInfo();
+
+    // 构建全局 Edge ID 映射（TShape hash → 全局 ID）
+    edgeGlobalIdMap_.clear();
+    {
+        int globalId = 0;
+        for (int fi = 0; fi < loader_->getNumFaces(); ++fi) {
+            const TopoDS_Face& f = loader_->getFaces()[fi];
+            for (TopExp_Explorer exp(f, TopAbs_EDGE); exp.More(); exp.Next()) {
+                const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
+                const TopoDS_TShape* key = e.TShape().operator->();
+                if (edgeGlobalIdMap_.find(key) == edgeGlobalIdMap_.end()) {
+                    edgeGlobalIdMap_[key] = globalId++;
+                }
+            }
+        }
+    }
 
     // 给每个面分配不同的颜色（均匀色相），便于区分相邻面
     int numFaces = loader_->getNumFaces();
@@ -649,31 +682,59 @@ void MainWindow::onFaceSelected(int faceIndex) {
 
 void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
     if (faceIndex < 0 || !loader_ || faceIndex >= loader_->getNumFaces()) {
-        lblHoveredFace_->setText("悬停面: 无");
+        lblHoverFaceIndex_->setText("面索引: --");
         lblHoverEdgeCount_->setText("Edge 数: --");
-        lblHoverEdgeTypes_->setText("Edge 类型: --");
+        lblHoverFaceEdgeIds_->setText("Edge ID: --");
+        lblHoverEdgeId_->setText("Edge ID: --");
+        lblHoverEdgeType_->setText("类型: --");
+        prevHoveredGlobalEdgeId_ = -1;
         return;
     }
 
-    // 在屏幕空间中找离鼠标最近的 edge
+    // ========== 1. 悬停面：面索引 + Edge 总数 + Edge ID 列表 ==========
     const TopoDS_Face& face = loader_->getFaces()[faceIndex];
+    lblHoverFaceIndex_->setText(QString("面索引: #%1").arg(faceIndex));
+
+    QStringList faceEdgeIdStr;
+    int edgeCount = 0;
+    for (TopExp_Explorer exp(face, TopAbs_EDGE); exp.More(); exp.Next()) {
+        const TopoDS_Edge& edge = TopoDS::Edge(exp.Current());
+        if (BRep_Tool::Degenerated(edge)) continue;
+        int gid = -1;
+        auto it = edgeGlobalIdMap_.find(edge.TShape().operator->());
+        if (it != edgeGlobalIdMap_.end()) gid = it->second;
+        faceEdgeIdStr << QString::number(gid);
+        edgeCount++;
+    }
+    lblHoverEdgeCount_->setText(QString("Edge 数: %1").arg(edgeCount));
+    lblHoverFaceEdgeIds_->setText("Edge ID: " + (faceEdgeIdStr.isEmpty()
+        ? QString("--") : faceEdgeIdStr.join(", ")));
+
+    // ========== 2. 屏幕投影找出当前鼠标下最近 Edge ==========
     const Handle(V3d_View)& view = viewer_->getView();
     if (view.IsNull()) return;
 
-    const double thresholdPixels = 12.0;
-    int bestEdgeLocalIdx = -1;
-    double bestDist = thresholdPixels;
-    BRepAdaptor_Curve bestCurve;
-    int edgeLocalIdx = 0;
+    // 检测阈值 + 滞回阈值（离开展示的边时需要更远距离）
+    const double enterThreshold = 12.0;
+    const double leaveThreshold = 22.0;
+    double useThreshold = (prevHoveredGlobalEdgeId_ >= 0) ? leaveThreshold : enterThreshold;
 
-    for (TopExp_Explorer exp(face, TopAbs_EDGE); exp.More(); exp.Next(), ++edgeLocalIdx) {
+    int bestGlobalEdgeId = -1;
+    double bestDist = useThreshold;
+    BRepAdaptor_Curve bestCurve;
+
+    for (TopExp_Explorer exp(face, TopAbs_EDGE); exp.More(); exp.Next()) {
         const TopoDS_Edge& edge = TopoDS::Edge(exp.Current());
         if (BRep_Tool::Degenerated(edge)) continue;
+
+        int gid = -1;
+        auto it = edgeGlobalIdMap_.find(edge.TShape().operator->());
+        if (it != edgeGlobalIdMap_.end()) gid = it->second;
 
         BRepAdaptor_Curve curveAdaptor(edge);
         Standard_Real tFirst = curveAdaptor.FirstParameter();
         Standard_Real tLast  = curveAdaptor.LastParameter();
-        const int numSamples = 9;  // 每条 edge 采样 9 个点
+        const int numSamples = 9;
         for (int s = 0; s < numSamples; ++s) {
             Standard_Real t = tFirst + (tLast - tFirst) * s / (numSamples - 1);
             gp_Pnt pt3d = curveAdaptor.Value(t);
@@ -684,15 +745,14 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
             double dist = sqrt(dx * dx + dy * dy);
             if (dist < bestDist) {
                 bestDist = dist;
-                bestEdgeLocalIdx = edgeLocalIdx;
+                bestGlobalEdgeId = gid;
                 bestCurve = curveAdaptor;
             }
         }
     }
 
-    // 更新面板
-    if (bestEdgeLocalIdx >= 0) {
-        // 找到特定 edge → 高亮显示该 edge 信息
+    // ========== 3. 悬停边：显示全局 Edge ID + 类型 ==========
+    if (bestGlobalEdgeId >= 0) {
         QString edgeTypeStr;
         switch (bestCurve.GetType()) {
             case GeomAbs_Line:       edgeTypeStr = "直线";  break;
@@ -701,35 +761,13 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
             case GeomAbs_BSplineCurve: edgeTypeStr = "B样条"; break;
             default:                 edgeTypeStr = "其他";  break;
         }
-        lblHoveredFace_->setText(QString("面#%1 → Edge #%2")
-            .arg(faceIndex).arg(bestEdgeLocalIdx));
-        lblHoverEdgeTypes_->setText(QString("Edge 类型: %1").arg(edgeTypeStr));
-        lblHoverEdgeCount_->setText(QString("距离: %1px").arg(bestDist, 0, 'f', 1));
+        lblHoverEdgeId_->setText(QString("Edge ID: #%1").arg(bestGlobalEdgeId));
+        lblHoverEdgeType_->setText(QString("类型: %1").arg(edgeTypeStr));
+        prevHoveredGlobalEdgeId_ = bestGlobalEdgeId;
     } else {
-        // 没有特定 edge → 显示 face 级汇总
-        lblHoveredFace_->setText(QString("面 #%1（无特定 Edge）").arg(faceIndex));
-        int edgeCount = 0;
-        int lineCount = 0, circleCount = 0, bsplineCount = 0, otherC = 0;
-        for (TopExp_Explorer exp(face, TopAbs_EDGE); exp.More(); exp.Next()) {
-            const TopoDS_Edge& edge = TopoDS::Edge(exp.Current());
-            if (BRep_Tool::Degenerated(edge)) continue;
-            edgeCount++;
-            BRepAdaptor_Curve ca(edge);
-            switch (ca.GetType()) {
-                case GeomAbs_Line:       lineCount++;   break;
-                case GeomAbs_Circle:     circleCount++; break;
-                case GeomAbs_BSplineCurve: bsplineCount++; break;
-                default:                 otherC++;      break;
-            }
-        }
-        lblHoverEdgeCount_->setText(QString("Edge 数: %1").arg(edgeCount));
-        QStringList typeParts;
-        if (lineCount > 0)   typeParts << QString("直线%1").arg(lineCount);
-        if (circleCount > 0) typeParts << QString("圆弧%1").arg(circleCount);
-        if (bsplineCount > 0) typeParts << QString("B样条%1").arg(bsplineCount);
-        if (otherC > 0)      typeParts << QString("其他%1").arg(otherC);
-        lblHoverEdgeTypes_->setText("Edge 类型: " + (typeParts.isEmpty()
-            ? QString("--") : typeParts.join(" / ")));
+        lblHoverEdgeId_->setText("Edge ID: --");
+        lblHoverEdgeType_->setText("类型: --");
+        prevHoveredGlobalEdgeId_ = -1;
     }
 }
 
@@ -977,6 +1015,12 @@ void MainWindow::onReset() {
     // 重置UI
     lblPredictionAccuracy_->setText("准确率: --");
     lblSelectedFace_->setText("选中面: --");
+    lblHoverFaceIndex_->setText("面索引: --");
+    lblHoverEdgeCount_->setText("Edge 数: --");
+    lblHoverFaceEdgeIds_->setText("Edge ID: --");
+    lblHoverEdgeId_->setText("Edge ID: --");
+    lblHoverEdgeType_->setText("类型: --");
+    prevHoveredGlobalEdgeId_ = -1;
     txtStatistics_->setPlainText("等待操作...");
 
     statusBar()->showMessage("已重置");

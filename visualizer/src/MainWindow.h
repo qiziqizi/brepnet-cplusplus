@@ -103,10 +103,17 @@ protected:
     QLabel* lblCurrentMode_;
     QLabel* lblSelectedFace_;
 
-    // 悬停信息区
-    QLabel* lblHoveredFace_;
+    // 悬停信息（面 + 边左右并排）
+    QGroupBox* hoverGroup_;
+    QLabel* lblHoverFaceIndex_;       // 左列：面信息
     QLabel* lblHoverEdgeCount_;
-    QLabel* lblHoverEdgeTypes_;
+    QLabel* lblHoverFaceEdgeIds_;     // "Edge ID: 0, 2, 5, 7"
+    QLabel* lblHoverEdgeId_;          // 右列：边信息
+    QLabel* lblHoverEdgeType_;
+
+    // 全局 Edge ID 映射：TShape 裸指针 → 全局 ID（同一 Edge 跨面共享同一 TShape 对象）
+    std::map<const TopoDS_TShape*, int> edgeGlobalIdMap_;
+    int prevHoveredGlobalEdgeId_;     // -1 = 无，用于滞回
 
     QTextEdit* txtStatistics_;
 

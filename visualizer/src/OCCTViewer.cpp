@@ -253,12 +253,12 @@ void OCCTViewer::mouseMoveEvent(QMouseEvent* event) {
 
     if (view_.IsNull()) return;
 
-    lastMousePos_ = pos;
     if (currentMode_ == Rotate) {
         view_->Rotation(pos.x(), pos.y());
     } else if (currentMode_ == Pan) {
         view_->Pan(pos.x() - lastMousePos_.x(), lastMousePos_.y() - pos.y());
     }
+    lastMousePos_ = pos;
     view_->Redraw();
 }
 
