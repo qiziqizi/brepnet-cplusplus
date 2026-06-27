@@ -58,8 +58,9 @@ private slots:
     // 重置
     void onReset();
 
-    // 面选择响应槽
+    // 面选择/悬停响应槽
     void onFaceSelected(int faceIndex);
+    void onFaceHovered(int faceIndex);
 
 private:
     void setupUI();
@@ -101,6 +102,11 @@ protected:
     QLabel* lblNumFaces_;
     QLabel* lblCurrentMode_;
     QLabel* lblSelectedFace_;
+
+    // 悬停信息区
+    QLabel* lblHoveredFace_;
+    QLabel* lblHoverEdgeCount_;
+    QLabel* lblHoverEdgeTypes_;
 
     QTextEdit* txtStatistics_;
 

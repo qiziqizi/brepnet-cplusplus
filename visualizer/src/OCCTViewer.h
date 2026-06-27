@@ -37,6 +37,7 @@ public:
 
 signals:
     void faceSelected(int faceIndex);
+    void faceHovered(int faceIndex);  // -1 = 离开所有面
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -51,6 +52,7 @@ protected:
 private:
     void initOCCT();
     void handleSelection();
+    void checkHoveredFace();
 
     Handle(V3d_Viewer) viewer_;
     Handle(V3d_View) view_;
@@ -67,6 +69,7 @@ private:
     QPoint lastMousePos_;
     int selectedFaceIndex_;
     int previousSelectedFaceIndex_;                 // 上一次选中的面索引
+    int hoveredFaceIndex_;                          // -1 = 未悬停
 };
 
 #endif

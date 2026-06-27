@@ -16,7 +16,13 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFileInfo>
+#include <QStringList>
 #include <Quantity_Color.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS_Edge.hxx>
+#include <TopoDS.hxx>
+#include <BRepAdaptor_Curve.hxx>
+#include <BRep_Tool.hxx>
 #include <QPixmap>
 #include <QPainter>
 #include <algorithm>
@@ -213,6 +219,20 @@ void MainWindow::setupUI() {
 
     panelLayout->addWidget(infoGroup);
 
+    // === 区域5b: 悬停信息 ===
+    QGroupBox* hoverGroup = new QGroupBox("悬停信息", controlPanel);
+    QVBoxLayout* hoverLayout = new QVBoxLayout(hoverGroup);
+
+    lblHoveredFace_ = new QLabel("悬停面: 无", hoverGroup);
+    lblHoverEdgeCount_ = new QLabel("Edge 数: --", hoverGroup);
+    lblHoverEdgeTypes_ = new QLabel("Edge 类型: --", hoverGroup);
+
+    hoverLayout->addWidget(lblHoveredFace_);
+    hoverLayout->addWidget(lblHoverEdgeCount_);
+    hoverLayout->addWidget(lblHoverEdgeTypes_);
+
+    panelLayout->addWidget(hoverGroup);
+
     // === 区域6: 结果统计 ===
     QGroupBox* resultGroup = new QGroupBox("结果统计", controlPanel);
     QVBoxLayout* resultLayout = new QVBoxLayout(resultGroup);
@@ -352,6 +372,7 @@ void MainWindow::setupConnections() {
 
     // 面选择
     connect(viewer_, &OCCTViewer::faceSelected, this, &MainWindow::onFaceSelected);
+    connect(viewer_, &OCCTViewer::faceHovered, this, &MainWindow::onFaceHovered);
 }
 
 void MainWindow::setWorkMode(WorkMode mode) {
@@ -623,6 +644,47 @@ void MainWindow::onFaceSelected(int faceIndex) {
     }
 
     lblSelectedFace_->setText(info);
+}
+
+void MainWindow::onFaceHovered(int faceIndex) {
+    if (faceIndex < 0 || !loader_ || faceIndex >= loader_->getNumFaces()) {
+        lblHoveredFace_->setText("悬停面: 无");
+        lblHoverEdgeCount_->setText("Edge 数: --");
+        lblHoverEdgeTypes_->setText("Edge 类型: --");
+        return;
+    }
+
+    lblHoveredFace_->setText(QString("悬停面: #%1").arg(faceIndex));
+
+    // 从 TopoDS_Face 提取 Edge 信息
+    const TopoDS_Face& face = loader_->getFaces()[faceIndex];
+    int edgeCount = 0;
+    int lineCount = 0, circleCount = 0, bsplineCount = 0, otherCount = 0;
+
+    for (TopExp_Explorer exp(face, TopAbs_EDGE); exp.More(); exp.Next()) {
+        const TopoDS_Edge& edge = TopoDS::Edge(exp.Current());
+        if (BRep_Tool::Degenerated(edge)) continue;
+
+        edgeCount++;
+        BRepAdaptor_Curve curveAdaptor(edge);
+        switch (curveAdaptor.GetType()) {
+            case GeomAbs_Line:     lineCount++;   break;
+            case GeomAbs_Circle:   circleCount++; break;
+            case GeomAbs_BSplineCurve: bsplineCount++; break;
+            default:               otherCount++;  break;
+        }
+    }
+
+    lblHoverEdgeCount_->setText(QString("Edge 数: %1").arg(edgeCount));
+
+    // 组装类型描述
+    QStringList typeParts;
+    if (lineCount > 0)   typeParts << QString("直线%1").arg(lineCount);
+    if (circleCount > 0) typeParts << QString("圆弧%1").arg(circleCount);
+    if (bsplineCount > 0) typeParts << QString("B样条%1").arg(bsplineCount);
+    if (otherCount > 0)  typeParts << QString("其他%1").arg(otherCount);
+    lblHoverEdgeTypes_->setText("Edge 类型: " + (typeParts.isEmpty()
+        ? QString("--") : typeParts.join(" / ")));
 }
 
 void MainWindow::updateModelInfo() {

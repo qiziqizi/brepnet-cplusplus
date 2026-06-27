@@ -15,7 +15,8 @@ OCCTViewer::OCCTViewer(QWidget* parent)
     : QWidget(parent)
     , currentMode_(None)
     , selectedFaceIndex_(-1)
-    , previousSelectedFaceIndex_(-1) {
+    , previousSelectedFaceIndex_(-1)
+    , hoveredFaceIndex_(-1) {
 
     setAttribute(Qt::WA_PaintOnScreen, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
@@ -238,14 +239,25 @@ void OCCTViewer::mouseDoubleClickEvent(QMouseEvent* event) {
 }
 
 void OCCTViewer::mouseMoveEvent(QMouseEvent* event) {
-    if (currentMode_ == None || view_.IsNull()) return;
-
     QPoint pos = event->pos();
+
+    if (currentMode_ == None) {
+        // 无按键按下 → 悬停检测（用 3px 阈值限频）
+        if (!view_.IsNull() && (pos - lastMousePos_).manhattanLength() > 3) {
+            lastMousePos_ = pos;
+            context_->MoveTo(pos.x(), pos.y(), view_, Standard_True);
+            checkHoveredFace();
+        }
+        return;
+    }
+
+    if (view_.IsNull()) return;
+
+    lastMousePos_ = pos;
     if (currentMode_ == Rotate) {
         view_->Rotation(pos.x(), pos.y());
     } else if (currentMode_ == Pan) {
         view_->Pan(pos.x() - lastMousePos_.x(), lastMousePos_.y() - pos.y());
-        lastMousePos_ = pos;
     }
     view_->Redraw();
 }
@@ -273,6 +285,29 @@ void OCCTViewer::wheelEvent(QWheelEvent* event) {
     if (view_.IsNull()) return;
     view_->SetZoom(event->angleDelta().y() > 0 ? 1.1 : 0.9);
     view_->Redraw();
+}
+
+void OCCTViewer::checkHoveredFace() {
+    if (context_.IsNull()) return;
+
+    if (context_->HasDetected()) {
+        Handle(AIS_InteractiveObject) obj = context_->DetectedInteractive();
+        for (auto& pair : faceObjects_) {
+            if (pair.second == obj) {
+                if (pair.first != hoveredFaceIndex_) {
+                    hoveredFaceIndex_ = pair.first;
+                    emit faceHovered(hoveredFaceIndex_);
+                }
+                return;
+            }
+        }
+    }
+
+    // 没有检测到物体 → 清空悬停
+    if (hoveredFaceIndex_ != -1) {
+        hoveredFaceIndex_ = -1;
+        emit faceHovered(-1);
+    }
 }
 
 void OCCTViewer::handleSelection() {
