@@ -63,15 +63,15 @@ std::vector<Quantity_Color> ColorMapper::generateDistinctColors(int count) {
     if (count <= 0) return colors;
 
     colors.reserve(count);
-    // 限定在橙黄→纯青（30°~180°），避开四类色相（红0°/玫红340°/蓝220°/紫280°），
-    // 150° 跨度覆盖橙/黄/绿/青，不含蓝色成分。
+    // 限定在橙→绿（30°~130°），暖色占60%，与偏冷的四类标注色形成对比。
+    // 降低饱和度、提高明度，呈现浅淡暖调，符合导师建议。
     const double goldenAngle = 137.508;
     const double hueStart = 30.0;
-    const double hueRange = 150.0;
+    const double hueRange = 100.0;
     for (int i = 0; i < count; ++i) {
         double hue = hueStart + std::fmod(i * goldenAngle, hueRange);
-        double lightness  = 0.72 + 0.10 * std::sin(i * 1.3);
-        double saturation = 0.82 + 0.12 * std::cos(i * 0.7);
+        double lightness  = 0.82 + 0.06 * std::sin(i * 1.3);
+        double saturation = 0.65 + 0.08 * std::cos(i * 0.7);
         colors.emplace_back(hue, lightness, saturation, Quantity_TOC_HLS);
     }
     return colors;

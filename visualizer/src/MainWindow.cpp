@@ -256,7 +256,7 @@ void MainWindow::setupUI() {
         QLabel* colorSwatch = new QLabel();
         colorSwatch->setFixedSize(20, 20);
 
-        // unlabeled 显示橙黄→纯青（30°~180°）区间条纹，不含蓝色成分
+        // unlabeled 显示橙→绿（30°~130°）区间条纹，暖调浅色
         if (i == 4) {
             QPixmap pixmap(20, 20);
             pixmap.fill(Qt::transparent);
@@ -264,8 +264,8 @@ void MainWindow::setupUI() {
                 QPainter painter(&pixmap);
                 int numStripes = 7;
                 for (int s = 0; s < numStripes; ++s) {
-                    double hue = 30.0 + s * 25.0;  // 30, 55, 80, 105, 130, 155, 180
-                    Quantity_Color stripColor(hue, 0.65, 0.85, Quantity_TOC_HLS);
+                    double hue = 30.0 + s * (100.0 / 6.0);  // 30, 47, 63, 80, 97, 113, 130
+                    Quantity_Color stripColor(hue, 0.82, 0.65, Quantity_TOC_HLS);
                     QColor qc(
                         static_cast<int>(stripColor.Red() * 255),
                         static_cast<int>(stripColor.Green() * 255),
