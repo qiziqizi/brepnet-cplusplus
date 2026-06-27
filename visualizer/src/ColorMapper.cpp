@@ -9,26 +9,25 @@ ColorMapper::ColorMapper() {
 }
 
 void ColorMapper::initializeClassNames() {
-    // 5个类别名称
+    // 4个类别名称
     classNames_ = {
         "chamfer",    // 0 倒角
         "round",      // 1 圆角
         "hole",       // 2 孔
-        "other",      // 3 其他
-        "unlabeled"   // 4 未标注
+        "other",      // 3 其他（暖色系随面变化）
     };
 }
 
 void ColorMapper::initializeColors() {
-    // 定义5种视觉上差异化大的颜色（RGB值）
+    // 4类别颜色：前3冷色系，other用彩色fallback（实际着色时每个面单独生成红→青绿色）
     std::vector<std::tuple<float, float, float>> colors = {
-        {0.90f, 0.15f, 0.15f},  // 0: chamfer   (倒角) - 红
-        {0.15f, 0.45f, 0.95f},  // 1: round     (圆角) - 蓝
-        {0.45f, 0.12f, 0.60f},  // 2: hole      (孔)   - 深紫（与 other 的玫红拉开亮度）
-        {0.85f, 0.25f, 0.55f},  // 3: other     (其他) - 玫红（与 unlabeled 色域拉开距离）
-        {0.75f, 0.75f, 0.75f}   // 4: unlabeled (未标注) - 浅灰
+        {0.20f, 0.70f, 0.75f},  // 0: chamfer (倒角) - 青/cyan (冷)
+        {0.15f, 0.35f, 0.85f},  // 1: round   (圆角) - 蓝 (冷)
+        {0.45f, 0.15f, 0.65f},  // 2: hole    (孔)   - 紫 (冷)
+        {0.85f, 0.50f, 0.15f},  // 3: other   (其他) - 暖橙 fallback
     };
 
+    colorMap_.clear();
     for (int i = 0; i < static_cast<int>(colors.size()); ++i) {
         auto [r, g, b] = colors[i];
         colorMap_[i] = Quantity_Color(r, g, b, Quantity_TOC_RGB);
@@ -71,6 +70,24 @@ std::vector<Quantity_Color> ColorMapper::generateDistinctColors(int count) {
     for (int i = 0; i < count; ++i) {
         double hue = hueStart + std::fmod(i * goldenAngle, hueRange);
         double lightness  = 0.82 + 0.06 * std::sin(i * 1.3);
+        double saturation = 0.65 + 0.08 * std::cos(i * 0.7);
+        colors.emplace_back(hue, lightness, saturation, Quantity_TOC_HLS);
+    }
+    return colors;
+}
+
+std::vector<Quantity_Color> ColorMapper::generateOtherColors(int count) {
+    std::vector<Quantity_Color> colors;
+    if (count <= 0) return colors;
+
+    colors.reserve(count);
+    // 红色→绿色（0°~120°），覆盖暖色+绿色，每面不同
+    const double goldenAngle = 137.508;
+    const double hueStart = 0.0;
+    const double hueRange = 120.0;
+    for (int i = 0; i < count; ++i) {
+        double hue = hueStart + std::fmod(i * goldenAngle, hueRange);
+        double lightness  = 0.78 + 0.06 * std::sin(i * 1.3);
         double saturation = 0.65 + 0.08 * std::cos(i * 0.7);
         colors.emplace_back(hue, lightness, saturation, Quantity_TOC_HLS);
     }

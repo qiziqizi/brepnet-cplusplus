@@ -31,8 +31,12 @@ public:
     // 确保任意连续面的色相都接近互补色，杜绝"相邻面颜色一致"的问题
     static std::vector<Quantity_Color> generateDistinctColors(int count);
 
+    // 生成 N 个互不相同的颜色（用于 other 面）
+    // 覆盖红色→青绿（0°~180°），每面色相不同
+    static std::vector<Quantity_Color> generateOtherColors(int count);
+
     // 获取类别数量
-    int getNumClasses() const { return 5; }
+    int getNumClasses() const { return 4; }
 
 private:
     void initializeColors();

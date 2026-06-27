@@ -147,63 +147,60 @@ void MainWindow::setupUI() {
     QWidget* controlPanel = new QWidget(mainSplitter_);
     QVBoxLayout* panelLayout = new QVBoxLayout(controlPanel);
 
-    // === 区域1: 文件操作 ===
-    QGroupBox* fileGroup = new QGroupBox("文件操作", controlPanel);
-    QVBoxLayout* fileLayout = new QVBoxLayout(fileGroup);
+    // === 顶部2×2网格：文件操作+预测操作 / 重置+人工标注 ===
+    QGridLayout* topGrid = new QGridLayout();
+    topGrid->setSpacing(4);
+    topGrid->setColumnStretch(0, 1);
+    topGrid->setColumnStretch(1, 3);
 
+    // 第0行：文件操作 | 预测操作
+    // 文件操作
+    QGroupBox* fileGroup = new QGroupBox("文件操作", controlPanel);
+    QHBoxLayout* fileLayout = new QHBoxLayout(fileGroup);
     btnLoadFile_ = new QPushButton("加载STEP文件", fileGroup);
     fileLayout->addWidget(btnLoadFile_);
+    topGrid->addWidget(fileGroup, 0, 0);
 
-    panelLayout->addWidget(fileGroup);
-
-    // === 区域2: 预测操作 ===
+    // 预测操作
     QGroupBox* predGroup = new QGroupBox("预测操作", controlPanel);
-    QVBoxLayout* predLayout = new QVBoxLayout(predGroup);
-
+    QHBoxLayout* predLayout = new QHBoxLayout(predGroup);
     btnRunPrediction_ = new QPushButton("运行预测", predGroup);
     btnRunPrediction_->setEnabled(false);
     predLayout->addWidget(btnRunPrediction_);
-
     btnLoadPredictionLabels_ = new QPushButton("导入真实标签(对比)", predGroup);
     btnLoadPredictionLabels_->setEnabled(false);
     predLayout->addWidget(btnLoadPredictionLabels_);
-
     btnExportPrediction_ = new QPushButton("导出结果", predGroup);
     btnExportPrediction_->setEnabled(false);
     predLayout->addWidget(btnExportPrediction_);
-
     lblPredictionAccuracy_ = new QLabel("准确率: --", predGroup);
     predLayout->addWidget(lblPredictionAccuracy_);
+    topGrid->addWidget(predGroup, 0, 1);
 
-    panelLayout->addWidget(predGroup);
-
-    // === 区域3: 人工标注 ===
-    QGroupBox* manualGroup = new QGroupBox("人工标注", controlPanel);
-    QVBoxLayout* manualLayout = new QVBoxLayout(manualGroup);
-
-    btnLoadManualLabels_ = new QPushButton("导入标签并上色", manualGroup);
-    btnLoadManualLabels_->setEnabled(false);
-    manualLayout->addWidget(btnLoadManualLabels_);
-
-    btnModifyFaceClass_ = new QPushButton("修改当前面类别", manualGroup);
-    btnModifyFaceClass_->setEnabled(false);
-    manualLayout->addWidget(btnModifyFaceClass_);
-
-    btnExportManualLabels_ = new QPushButton("导出标注结果", manualGroup);
-    btnExportManualLabels_->setEnabled(false);
-    manualLayout->addWidget(btnExportManualLabels_);
-
-    panelLayout->addWidget(manualGroup);
-
-    // === 区域4: 重置 ===
+    // 第1行：重置 | 人工标注
+    // 重置
     QGroupBox* resetGroup = new QGroupBox("重置", controlPanel);
-    QVBoxLayout* resetLayout = new QVBoxLayout(resetGroup);
-
+    QHBoxLayout* resetLayout = new QHBoxLayout(resetGroup);
     btnReset_ = new QPushButton("清除所有操作", resetGroup);
     btnReset_->setEnabled(false);
     resetLayout->addWidget(btnReset_);
+    topGrid->addWidget(resetGroup, 1, 0);
 
-    panelLayout->addWidget(resetGroup);
+    // 人工标注
+    QGroupBox* manualGroup = new QGroupBox("人工标注", controlPanel);
+    QHBoxLayout* manualLayout = new QHBoxLayout(manualGroup);
+    btnLoadManualLabels_ = new QPushButton("导入标签并上色", manualGroup);
+    btnLoadManualLabels_->setEnabled(false);
+    manualLayout->addWidget(btnLoadManualLabels_);
+    btnModifyFaceClass_ = new QPushButton("修改当前面类别", manualGroup);
+    btnModifyFaceClass_->setEnabled(false);
+    manualLayout->addWidget(btnModifyFaceClass_);
+    btnExportManualLabels_ = new QPushButton("导出标注结果", manualGroup);
+    btnExportManualLabels_->setEnabled(false);
+    manualLayout->addWidget(btnExportManualLabels_);
+    topGrid->addWidget(manualGroup, 1, 1);
+
+    panelLayout->addLayout(topGrid);
 
     // === 区域5: 模型信息 ===
     QGroupBox* infoGroup = new QGroupBox("模型信息", controlPanel);
@@ -230,6 +227,7 @@ void MainWindow::setupUI() {
     lblHoverFaceIndex_ = new QLabel("面索引: --", hoverGroup_);
     lblHoverEdgeCount_ = new QLabel("Edge 数: --", hoverGroup_);
     lblHoverFaceEdgeIds_ = new QLabel("Edge ID: --", hoverGroup_);
+    lblHoverFaceEdgeIds_->setWordWrap(true);
     hoverLeftCol->addWidget(lblHoverFaceIndex_);
     hoverLeftCol->addWidget(lblHoverEdgeCount_);
     hoverLeftCol->addWidget(lblHoverFaceEdgeIds_);
@@ -241,8 +239,15 @@ void MainWindow::setupUI() {
     hoverRightCol->addWidget(lblHoverEdgeId_);
     hoverRightCol->addWidget(lblHoverEdgeType_);
 
-    hoverRowLayout->addLayout(hoverLeftCol);
-    hoverRowLayout->addLayout(hoverRightCol);
+    hoverRowLayout->addLayout(hoverLeftCol, 1);
+
+    // 分隔线
+    QFrame* separator = new QFrame(hoverGroup_);
+    separator->setFrameShape(QFrame::VLine);
+    separator->setFrameShadow(QFrame::Sunken);
+    hoverRowLayout->addWidget(separator);
+
+    hoverRowLayout->addLayout(hoverRightCol, 1);
     panelLayout->addWidget(hoverGroup_);
 
     // === 区域6: 结果统计 ===
@@ -288,16 +293,16 @@ void MainWindow::setupUI() {
         QLabel* colorSwatch = new QLabel();
         colorSwatch->setFixedSize(20, 20);
 
-        // unlabeled 显示橙→绿（30°~130°）区间条纹，暖调浅色
-        if (i == 4) {
+        // other 显示红→绿（0°~120°）区间条纹，表示该面为彩色系中的某一种
+        if (i == 3) {
             QPixmap pixmap(20, 20);
             pixmap.fill(Qt::transparent);
             {
                 QPainter painter(&pixmap);
                 int numStripes = 7;
                 for (int s = 0; s < numStripes; ++s) {
-                    double hue = 30.0 + s * (100.0 / 6.0);  // 30, 47, 63, 80, 97, 113, 130
-                    Quantity_Color stripColor(hue, 0.82, 0.65, Quantity_TOC_HLS);
+                    double hue = 0.0 + s * (120.0 / 6.0);  // 0, 20, 40, 60, 80, 100, 120
+                    Quantity_Color stripColor(hue, 0.80, 0.65, Quantity_TOC_HLS);
                     QColor qc(
                         static_cast<int>(stripColor.Red() * 255),
                         static_cast<int>(stripColor.Green() * 255),
@@ -346,9 +351,13 @@ void MainWindow::setupUI() {
     // 延迟初始化图例布局，确保窗口已完成布局
     QTimer::singleShot(100, this, &MainWindow::refreshLegendLayout);
 
-    // 设置分割比例（70% vs 30%）
-    mainSplitter_->setStretchFactor(0, 7);
-    mainSplitter_->setStretchFactor(1, 3);
+    // 左右1:1等分（窗口resize后仍保持比例）
+    mainSplitter_->setStretchFactor(0, 1);
+    mainSplitter_->setStretchFactor(1, 1);
+    QTimer::singleShot(0, [this]() {
+        int w = mainSplitter_->width();
+        if (w > 0) mainSplitter_->setSizes({w / 2, w / 2});
+    });
 
     // 设置主布局
     QHBoxLayout* mainLayout = new QHBoxLayout(centralWidget);
@@ -487,11 +496,11 @@ void MainWindow::onLoadFile() {
         }
     }
 
-    // 给每个面分配不同的颜色（均匀色相），便于区分相邻面
+    // 给每个面分配暖色（全部视为 other），便于区分相邻面
     int numFaces = loader_->getNumFaces();
-    manualLabels_.assign(numFaces, 4);
-    auto distinctColors = ColorMapper::generateDistinctColors(numFaces);
-    viewer_->updateAllFaceColors(distinctColors);
+    manualLabels_.assign(numFaces, 3);
+    warmOtherColors_ = ColorMapper::generateOtherColors(numFaces);
+    viewer_->updateAllFaceColors(warmOtherColors_);
 
     setWorkMode(WorkMode::ManualLabeling);
     updateManualLabelingResults();
@@ -856,10 +865,24 @@ void MainWindow::onLoadManualLabels() {
         return;
     }
 
-    // 上色
+    // 旧标签中的 4(unlabeled) → 3(other)
+    for (int& classId : manualLabels_) {
+        if (classId == 4) classId = 3;
+    }
+
+    // 生成暖色系颜色，给 other(3) 的面使用
+    int numFaces = loader_->getNumFaces();
+    warmOtherColors_ = ColorMapper::generateOtherColors(numFaces);
+
+    // 上色：other 用暖色系该面的颜色，其余用固定类颜色
     std::vector<Quantity_Color> colors;
-    for (int classId : manualLabels_) {
-        colors.push_back(colorMapper_->getColor(classId));
+    for (int i = 0; i < numFaces; ++i) {
+        int classId = manualLabels_[i];
+        if (classId == 3) {
+            colors.push_back(warmOtherColors_[i]);
+        } else {
+            colors.push_back(colorMapper_->getColor(classId));
+        }
     }
     viewer_->updateAllFaceColors(colors);
 
@@ -930,8 +953,13 @@ void MainWindow::onModifyFaceClass() {
     // 更新标签
     manualLabels_[selectedFace] = newClass;
 
-    // 更新颜色
-    Quantity_Color newColor = colorMapper_->getColor(newClass);
+    // 更新颜色：other 用暖色系中该面的颜色，其余用固定类颜色
+    Quantity_Color newColor;
+    if (newClass == 3 && selectedFace >= 0 && selectedFace < (int)warmOtherColors_.size()) {
+        newColor = warmOtherColors_[selectedFace];
+    } else {
+        newColor = colorMapper_->getColor(newClass);
+    }
     viewer_->updateSingleFaceColor(selectedFace, newColor);
 
     // 更新选中面信息
@@ -997,20 +1025,24 @@ void MainWindow::onReset() {
 
     // 清除数据
     predictions_.clear();
-    manualLabels_.clear();
     groundTruthLabels_.clear();
     errorFaceIndices_.clear();
 
-    // 恢复区分色显示（而非灰色），便于再次区分相邻面
-    viewer_->resetAllFaceColors();
-    viewer_->clearErrorHighlights();
-    if (loader_ && loader_->getNumFaces() > 0) {
-        auto distinctColors = ColorMapper::generateDistinctColors(loader_->getNumFaces());
-        viewer_->updateAllFaceColors(distinctColors);
+    // 回到全 other 状态（与刚加载时一致）
+    int numFaces = loader_ ? loader_->getNumFaces() : 0;
+    if (numFaces > 0) {
+        manualLabels_.assign(numFaces, 3);
+        warmOtherColors_ = ColorMapper::generateOtherColors(numFaces);
+        viewer_->resetAllFaceColors();
+        viewer_->updateAllFaceColors(warmOtherColors_);
+    } else {
+        manualLabels_.clear();
+        warmOtherColors_.clear();
     }
+    viewer_->clearErrorHighlights();
 
-    // 切换到无模式
-    setWorkMode(WorkMode::None);
+    // 回到标注模式
+    setWorkMode(WorkMode::ManualLabeling);
 
     // 重置UI
     lblPredictionAccuracy_->setText("准确率: --");

@@ -115,6 +115,9 @@ protected:
     std::map<const TopoDS_TShape*, int> edgeGlobalIdMap_;
     int prevHoveredGlobalEdgeId_;     // -1 = 无，用于滞回
 
+    // "other" 面的暖色系颜色（每面不同）
+    std::vector<Quantity_Color> warmOtherColors_;
+
     QTextEdit* txtStatistics_;
 
     // 颜色图例组件
