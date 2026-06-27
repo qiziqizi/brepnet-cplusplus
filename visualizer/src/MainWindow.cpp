@@ -18,6 +18,7 @@
 #include <QFileInfo>
 #include <QStringList>
 #include <Quantity_Color.hxx>
+#include <gp_Pnt.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS.hxx>
@@ -646,7 +647,7 @@ void MainWindow::onFaceSelected(int faceIndex) {
     lblSelectedFace_->setText(info);
 }
 
-void MainWindow::onFaceHovered(int faceIndex) {
+void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
     if (faceIndex < 0 || !loader_ || faceIndex >= loader_->getNumFaces()) {
         lblHoveredFace_->setText("悬停面: 无");
         lblHoverEdgeCount_->setText("Edge 数: --");
@@ -654,37 +655,82 @@ void MainWindow::onFaceHovered(int faceIndex) {
         return;
     }
 
-    lblHoveredFace_->setText(QString("悬停面: #%1").arg(faceIndex));
-
-    // 从 TopoDS_Face 提取 Edge 信息
+    // 在屏幕空间中找离鼠标最近的 edge
     const TopoDS_Face& face = loader_->getFaces()[faceIndex];
-    int edgeCount = 0;
-    int lineCount = 0, circleCount = 0, bsplineCount = 0, otherCount = 0;
+    const Handle(V3d_View)& view = viewer_->getView();
+    if (view.IsNull()) return;
 
-    for (TopExp_Explorer exp(face, TopAbs_EDGE); exp.More(); exp.Next()) {
+    const double thresholdPixels = 12.0;
+    int bestEdgeLocalIdx = -1;
+    double bestDist = thresholdPixels;
+    BRepAdaptor_Curve bestCurve;
+    int edgeLocalIdx = 0;
+
+    for (TopExp_Explorer exp(face, TopAbs_EDGE); exp.More(); exp.Next(), ++edgeLocalIdx) {
         const TopoDS_Edge& edge = TopoDS::Edge(exp.Current());
         if (BRep_Tool::Degenerated(edge)) continue;
 
-        edgeCount++;
         BRepAdaptor_Curve curveAdaptor(edge);
-        switch (curveAdaptor.GetType()) {
-            case GeomAbs_Line:     lineCount++;   break;
-            case GeomAbs_Circle:   circleCount++; break;
-            case GeomAbs_BSplineCurve: bsplineCount++; break;
-            default:               otherCount++;  break;
+        Standard_Real tFirst = curveAdaptor.FirstParameter();
+        Standard_Real tLast  = curveAdaptor.LastParameter();
+        const int numSamples = 9;  // 每条 edge 采样 9 个点
+        for (int s = 0; s < numSamples; ++s) {
+            Standard_Real t = tFirst + (tLast - tFirst) * s / (numSamples - 1);
+            gp_Pnt pt3d = curveAdaptor.Value(t);
+            Standard_Integer sx, sy;
+            view->Convert(pt3d.X(), pt3d.Y(), pt3d.Z(), sx, sy);
+            double dx = sx - mouseX;
+            double dy = sy - mouseY;
+            double dist = sqrt(dx * dx + dy * dy);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestEdgeLocalIdx = edgeLocalIdx;
+                bestCurve = curveAdaptor;
+            }
         }
     }
 
-    lblHoverEdgeCount_->setText(QString("Edge 数: %1").arg(edgeCount));
-
-    // 组装类型描述
-    QStringList typeParts;
-    if (lineCount > 0)   typeParts << QString("直线%1").arg(lineCount);
-    if (circleCount > 0) typeParts << QString("圆弧%1").arg(circleCount);
-    if (bsplineCount > 0) typeParts << QString("B样条%1").arg(bsplineCount);
-    if (otherCount > 0)  typeParts << QString("其他%1").arg(otherCount);
-    lblHoverEdgeTypes_->setText("Edge 类型: " + (typeParts.isEmpty()
-        ? QString("--") : typeParts.join(" / ")));
+    // 更新面板
+    if (bestEdgeLocalIdx >= 0) {
+        // 找到特定 edge → 高亮显示该 edge 信息
+        QString edgeTypeStr;
+        switch (bestCurve.GetType()) {
+            case GeomAbs_Line:       edgeTypeStr = "直线";  break;
+            case GeomAbs_Circle:     edgeTypeStr = "圆弧";  break;
+            case GeomAbs_Ellipse:    edgeTypeStr = "椭圆";  break;
+            case GeomAbs_BSplineCurve: edgeTypeStr = "B样条"; break;
+            default:                 edgeTypeStr = "其他";  break;
+        }
+        lblHoveredFace_->setText(QString("面#%1 → Edge #%2")
+            .arg(faceIndex).arg(bestEdgeLocalIdx));
+        lblHoverEdgeTypes_->setText(QString("Edge 类型: %1").arg(edgeTypeStr));
+        lblHoverEdgeCount_->setText(QString("距离: %1px").arg(bestDist, 0, 'f', 1));
+    } else {
+        // 没有特定 edge → 显示 face 级汇总
+        lblHoveredFace_->setText(QString("面 #%1（无特定 Edge）").arg(faceIndex));
+        int edgeCount = 0;
+        int lineCount = 0, circleCount = 0, bsplineCount = 0, otherC = 0;
+        for (TopExp_Explorer exp(face, TopAbs_EDGE); exp.More(); exp.Next()) {
+            const TopoDS_Edge& edge = TopoDS::Edge(exp.Current());
+            if (BRep_Tool::Degenerated(edge)) continue;
+            edgeCount++;
+            BRepAdaptor_Curve ca(edge);
+            switch (ca.GetType()) {
+                case GeomAbs_Line:       lineCount++;   break;
+                case GeomAbs_Circle:     circleCount++; break;
+                case GeomAbs_BSplineCurve: bsplineCount++; break;
+                default:                 otherC++;      break;
+            }
+        }
+        lblHoverEdgeCount_->setText(QString("Edge 数: %1").arg(edgeCount));
+        QStringList typeParts;
+        if (lineCount > 0)   typeParts << QString("直线%1").arg(lineCount);
+        if (circleCount > 0) typeParts << QString("圆弧%1").arg(circleCount);
+        if (bsplineCount > 0) typeParts << QString("B样条%1").arg(bsplineCount);
+        if (otherC > 0)      typeParts << QString("其他%1").arg(otherC);
+        lblHoverEdgeTypes_->setText("Edge 类型: " + (typeParts.isEmpty()
+            ? QString("--") : typeParts.join(" / ")));
+    }
 }
 
 void MainWindow::updateModelInfo() {

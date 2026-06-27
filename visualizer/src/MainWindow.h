@@ -60,7 +60,7 @@ private slots:
 
     // 面选择/悬停响应槽
     void onFaceSelected(int faceIndex);
-    void onFaceHovered(int faceIndex);
+    void onFaceHovered(int faceIndex, int mouseX, int mouseY);
 
 private:
     void setupUI();

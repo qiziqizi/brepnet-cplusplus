@@ -34,10 +34,11 @@ public:
     void fitAll();
     int getNumFaces() const { return static_cast<int>(faceObjects_.size()); }
     int getSelectedFaceIndex() const { return selectedFaceIndex_; }
+    const Handle(V3d_View)& getView() const { return view_; }
 
 signals:
     void faceSelected(int faceIndex);
-    void faceHovered(int faceIndex);  // -1 = 离开所有面
+    void faceHovered(int faceIndex, int mouseX, int mouseY);  // faceIndex=-1 = 离开
 
 protected:
     void paintEvent(QPaintEvent* event) override;

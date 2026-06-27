@@ -296,7 +296,7 @@ void OCCTViewer::checkHoveredFace() {
             if (pair.second == obj) {
                 if (pair.first != hoveredFaceIndex_) {
                     hoveredFaceIndex_ = pair.first;
-                    emit faceHovered(hoveredFaceIndex_);
+                    emit faceHovered(pair.first, lastMousePos_.x(), lastMousePos_.y());
                 }
                 return;
             }
@@ -306,7 +306,7 @@ void OCCTViewer::checkHoveredFace() {
     // 没有检测到物体 → 清空悬停
     if (hoveredFaceIndex_ != -1) {
         hoveredFaceIndex_ = -1;
-        emit faceHovered(-1);
+        emit faceHovered(-1, 0, 0);
     }
 }
 
