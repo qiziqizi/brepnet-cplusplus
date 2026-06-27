@@ -236,8 +236,10 @@ void MainWindow::setupUI() {
     QVBoxLayout* hoverRightCol = new QVBoxLayout();
     lblHoverEdgeId_ = new QLabel("Edge ID: --", hoverGroup_);
     lblHoverEdgeType_ = new QLabel("类型: --", hoverGroup_);
+    lblHoverCoedgeId_ = new QLabel("Coedge ID(Face): --", hoverGroup_);
     hoverRightCol->addWidget(lblHoverEdgeId_);
     hoverRightCol->addWidget(lblHoverEdgeType_);
+    hoverRightCol->addWidget(lblHoverCoedgeId_);
 
     hoverRowLayout->addLayout(hoverLeftCol, 1);
 
@@ -496,6 +498,30 @@ void MainWindow::onLoadFile() {
         }
     }
 
+    // 构建 coedge 映射
+    faceEdgeCoedge_.clear();
+    edgeToCoedges_.clear();
+    {
+        int numFaces = loader_->getNumFaces();
+        faceEdgeCoedge_.resize(numFaces);
+        for (int fi = 0; fi < numFaces; ++fi) {
+            const TopoDS_Face& f = loader_->getFaces()[fi];
+            int coedgeIdx = 0;
+            for (TopExp_Explorer exp(f, TopAbs_EDGE); exp.More(); exp.Next()) {
+                const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
+                if (BRep_Tool::Degenerated(e)) continue;
+                const TopoDS_TShape* key = e.TShape().operator->();
+                auto it = edgeGlobalIdMap_.find(key);
+                if (it != edgeGlobalIdMap_.end()) {
+                    int gid = it->second;
+                    faceEdgeCoedge_[fi].push_back(gid);
+                    edgeToCoedges_[gid].emplace_back(fi, coedgeIdx);
+                }
+                ++coedgeIdx;
+            }
+        }
+    }
+
     // 给每个面分配暖色（全部视为 other），便于区分相邻面
     int numFaces = loader_->getNumFaces();
     manualLabels_.assign(numFaces, 3);
@@ -691,33 +717,35 @@ void MainWindow::onFaceSelected(int faceIndex) {
 
 void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
     if (faceIndex < 0 || !loader_ || faceIndex >= loader_->getNumFaces()) {
-        lblHoverFaceIndex_->setText("面索引: --");
-        lblHoverEdgeCount_->setText("Edge 数: --");
-        lblHoverFaceEdgeIds_->setText("Edge ID: --");
-        lblHoverEdgeId_->setText("Edge ID: --");
-        lblHoverEdgeType_->setText("类型: --");
+        // 没有模型时清空
+        if (!loader_) {
+            lblHoverFaceIndex_->setText("面索引: --");
+            lblHoverEdgeCount_->setText("Edge 数: --");
+            lblHoverFaceEdgeIds_->setText("Edge ID(coedge): --");
+            lblHoverEdgeId_->setText("Edge ID: --");
+            lblHoverEdgeType_->setText("类型: --");
+            lblHoverCoedgeId_->setText("Coedge ID(Face): --");
+            prevHoveredGlobalEdgeId_ = -1;
+            return;
+        }
+        // 鼠标离开视图区域：保留上次信息不清空，仅清除边高亮
         prevHoveredGlobalEdgeId_ = -1;
         return;
     }
 
-    // ========== 1. 悬停面：面索引 + Edge 总数 + Edge ID 列表 ==========
+    // ========== 1. 悬停面：面索引 + Edge 总数 + Edge ID(coedge)列表 ==========
     const TopoDS_Face& face = loader_->getFaces()[faceIndex];
     lblHoverFaceIndex_->setText(QString("面索引: #%1").arg(faceIndex));
 
-    QStringList faceEdgeIdStr;
-    int edgeCount = 0;
-    for (TopExp_Explorer exp(face, TopAbs_EDGE); exp.More(); exp.Next()) {
-        const TopoDS_Edge& edge = TopoDS::Edge(exp.Current());
-        if (BRep_Tool::Degenerated(edge)) continue;
-        int gid = -1;
-        auto it = edgeGlobalIdMap_.find(edge.TShape().operator->());
-        if (it != edgeGlobalIdMap_.end()) gid = it->second;
-        faceEdgeIdStr << QString::number(gid);
-        edgeCount++;
+    const auto& coedgeList = faceEdgeCoedge_[faceIndex];
+    lblHoverEdgeCount_->setText(QString("Edge 数: %1").arg(coedgeList.size()));
+
+    QStringList faceEdgeCoedgeStr;
+    for (size_t ci = 0; ci < coedgeList.size(); ++ci) {
+        faceEdgeCoedgeStr << QString("%1(%2)").arg(coedgeList[ci]).arg(ci + 1);
     }
-    lblHoverEdgeCount_->setText(QString("Edge 数: %1").arg(edgeCount));
-    lblHoverFaceEdgeIds_->setText("Edge ID: " + (faceEdgeIdStr.isEmpty()
-        ? QString("--") : faceEdgeIdStr.join(", ")));
+    lblHoverFaceEdgeIds_->setText("Edge ID(coedge): " + (faceEdgeCoedgeStr.isEmpty()
+        ? QString("--") : faceEdgeCoedgeStr.join(", ")));
 
     // ========== 2. 屏幕投影找出当前鼠标下最近 Edge ==========
     const Handle(V3d_View)& view = viewer_->getView();
@@ -760,7 +788,7 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
         }
     }
 
-    // ========== 3. 悬停边：显示全局 Edge ID + 类型 ==========
+    // ========== 3. 悬停边：显示全局 Edge ID + 类型 + Coedge 归属 ==========
     if (bestGlobalEdgeId >= 0) {
         QString edgeTypeStr;
         switch (bestCurve.GetType()) {
@@ -772,10 +800,24 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
         }
         lblHoverEdgeId_->setText(QString("Edge ID: #%1").arg(bestGlobalEdgeId));
         lblHoverEdgeType_->setText(QString("类型: %1").arg(edgeTypeStr));
+
+        // Coedge 归属信息
+        auto cit = edgeToCoedges_.find(bestGlobalEdgeId);
+        if (cit != edgeToCoedges_.end()) {
+            QStringList coedgeParts;
+            for (const auto& p : cit->second) {
+                coedgeParts << QString("%1(%2)").arg(p.second + 1).arg(p.first);
+            }
+            lblHoverCoedgeId_->setText("Coedge ID(Face): " + coedgeParts.join(", "));
+        } else {
+            lblHoverCoedgeId_->setText("Coedge ID(Face): --");
+        }
+
         prevHoveredGlobalEdgeId_ = bestGlobalEdgeId;
     } else {
         lblHoverEdgeId_->setText("Edge ID: --");
         lblHoverEdgeType_->setText("类型: --");
+        lblHoverCoedgeId_->setText("Coedge ID(Face): --");
         prevHoveredGlobalEdgeId_ = -1;
     }
 }
@@ -791,22 +833,27 @@ void MainWindow::updateManualLabelingResults() {
         return;
     }
 
-    // 统计每个类别的数量
-    std::map<int, int> distribution;
-    for (int classId : manualLabels_) {
-        distribution[classId]++;
+    // 统计每个类别的面ID及数量
+    std::map<int, std::vector<int>> classToFaces;
+    for (int i = 0; i < manualLabels_.size(); ++i) {
+        classToFaces[manualLabels_[i]].push_back(i);
     }
 
     // 生成统计报告
     QString report = "标注类别分布\n";
-    report += "============\n\n";
+    report += "============\n";
 
-    for (const auto& pair : distribution) {
+    for (const auto& pair : classToFaces) {
         QString className = QString::fromStdString(colorMapper_->getClassName(pair.first));
-        report += QString("%1: %2\n").arg(className, -25).arg(pair.second);
+        report += QString("%1(%2): ").arg(className).arg(pair.second.size());
+        QStringList faceIds;
+        for (int fid : pair.second) {
+            faceIds << QString::number(fid);
+        }
+        report += faceIds.join(", ") + "\n";
     }
 
-    report += QString("\n总计: %1 个面\n").arg(manualLabels_.size());
+    report += QString("总计: %1个面").arg(manualLabels_.size());
 
     txtStatistics_->setPlainText(report);
 }
@@ -817,22 +864,27 @@ void MainWindow::updatePredictionResults() {
         return;
     }
 
-    // 统计每个类别的数量
-    std::map<int, int> distribution;
-    for (int classId : predictions_) {
-        distribution[classId]++;
+    // 统计每个类别的面ID及数量
+    std::map<int, std::vector<int>> classToFaces;
+    for (int i = 0; i < predictions_.size(); ++i) {
+        classToFaces[predictions_[i]].push_back(i);
     }
 
     // 生成统计报告
     QString report = "预测类别分布\n";
-    report += "============\n\n";
+    report += "============\n";
 
-    for (const auto& pair : distribution) {
+    for (const auto& pair : classToFaces) {
         QString className = QString::fromStdString(colorMapper_->getClassName(pair.first));
-        report += QString("%1: %2\n").arg(className, -25).arg(pair.second);
+        report += QString("%1(%2): ").arg(className).arg(pair.second.size());
+        QStringList faceIds;
+        for (int fid : pair.second) {
+            faceIds << QString::number(fid);
+        }
+        report += faceIds.join(", ") + "\n";
     }
 
-    report += QString("\n总计: %1 个面\n").arg(predictions_.size());
+    report += QString("总计: %1个面").arg(predictions_.size());
 
     txtStatistics_->setPlainText(report);
 }
@@ -1052,6 +1104,7 @@ void MainWindow::onReset() {
     lblHoverFaceEdgeIds_->setText("Edge ID: --");
     lblHoverEdgeId_->setText("Edge ID: --");
     lblHoverEdgeType_->setText("类型: --");
+    lblHoverCoedgeId_->setText("Coedge ID(Face): --");
     prevHoveredGlobalEdgeId_ = -1;
     txtStatistics_->setPlainText("等待操作...");
 

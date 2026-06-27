@@ -107,13 +107,19 @@ protected:
     QGroupBox* hoverGroup_;
     QLabel* lblHoverFaceIndex_;       // 左列：面信息
     QLabel* lblHoverEdgeCount_;
-    QLabel* lblHoverFaceEdgeIds_;     // "Edge ID: 0, 2, 5, 7"
+    QLabel* lblHoverFaceEdgeIds_;     // "Edge ID（coedge）: 60（1）, 2（2）..."
     QLabel* lblHoverEdgeId_;          // 右列：边信息
     QLabel* lblHoverEdgeType_;
+    QLabel* lblHoverCoedgeId_;        // "Coedge ID（Face）: 1（0）..."
 
     // 全局 Edge ID 映射：TShape 裸指针 → 全局 ID（同一 Edge 跨面共享同一 TShape 对象）
     std::map<const TopoDS_TShape*, int> edgeGlobalIdMap_;
     int prevHoveredGlobalEdgeId_;     // -1 = 无，用于滞回
+
+    // coedge 映射：[faceIndex][coedgeIndex] = globalEdgeId（仅非退化边，coedgeIndex 从0开始）
+    std::vector<std::vector<int>> faceEdgeCoedge_;
+    // 全局 Edge → {(faceIndex, coedgeIndex)}
+    std::map<int, std::vector<std::pair<int, int>>> edgeToCoedges_;
 
     // "other" 面的暖色系颜色（每面不同）
     std::vector<Quantity_Color> warmOtherColors_;

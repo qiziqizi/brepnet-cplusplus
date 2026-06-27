@@ -81,10 +81,10 @@ std::vector<Quantity_Color> ColorMapper::generateOtherColors(int count) {
     if (count <= 0) return colors;
 
     colors.reserve(count);
-    // 红色→绿色（0°~120°），覆盖暖色+绿色，每面不同
+    // 红色→黄绿（0°~80°），覆盖暖色到黄绿，不进入纯绿色，每面不同
     const double goldenAngle = 137.508;
     const double hueStart = 0.0;
-    const double hueRange = 120.0;
+    const double hueRange = 80.0;
     for (int i = 0; i < count; ++i) {
         double hue = hueStart + std::fmod(i * goldenAngle, hueRange);
         double lightness  = 0.78 + 0.06 * std::sin(i * 1.3);
