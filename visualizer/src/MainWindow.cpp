@@ -479,6 +479,7 @@ void MainWindow::onLoadFile() {
     lblHoverFaceEdgeIds_->setText("Edge ID: --");
     lblHoverEdgeId_->setText("Edge ID: --");
     lblHoverEdgeType_->setText("类型: --");
+    lblHoverCoedgeId_->setText("Coedge ID(Face): --");
     prevHoveredGlobalEdgeId_ = -1;
     updateModelInfo();
 
@@ -835,13 +836,9 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
         }
 
         prevHoveredGlobalEdgeId_ = bestGlobalEdgeId;
-    } else {
-        // 进入新面且未检测到任何 Edge → 清空（避免残留上个面的边信息）
-        lblHoverEdgeId_->setText("Edge ID: --");
-        lblHoverEdgeType_->setText("类型: --");
-        lblHoverCoedgeId_->setText("Coedge ID(Face): --");
-        prevHoveredGlobalEdgeId_ = -1;
     }
+    // 未检测到 Edge → 保留上次 Edge 信息，不主动清空
+    //（仅在加载新模型 / 重置时由外部清零）
 }
 
 void MainWindow::updateModelInfo() {
