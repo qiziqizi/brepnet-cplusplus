@@ -10,11 +10,9 @@
 #include <Graphic3d_MaterialAspect.hxx>
 #include <Prs3d_LineAspect.hxx>
 #include <Prs3d_IsoAspect.hxx>
-#include <GeomAPI_IntCS.hxx>
+#include <IntCurvesFace_Intersector.hxx>
 #include <BRep_Tool.hxx>
-#include <BRepTools.hxx>
-#include <Geom_Line.hxx>
-#include <Geom_Surface.hxx>
+#include <Precision.hxx>
 
 OCCTViewer::OCCTViewer(QWidget* parent)
     : QWidget(parent)
@@ -221,6 +219,8 @@ void OCCTViewer::fitAll() {
 
 void OCCTViewer::mousePressEvent(QMouseEvent* event) {
     lastMousePos_ = event->pos();
+    double dpr = devicePixelRatio();
+    QPoint devPos = event->pos() * dpr;
     
     // 检查是否左右键同时按下（平移模式）
     Qt::MouseButtons buttons = event->buttons();
@@ -234,7 +234,7 @@ void OCCTViewer::mousePressEvent(QMouseEvent* event) {
         handleSelection();
     } else if (event->button() == Qt::RightButton) {
         currentMode_ = Rotate;
-        view_->StartRotation(lastMousePos_.x(), lastMousePos_.y());
+        view_->StartRotation(devPos.x(), devPos.y());
     } else if (event->button() == Qt::MiddleButton) {
         currentMode_ = Pan;
     }
@@ -248,13 +248,17 @@ void OCCTViewer::mouseDoubleClickEvent(QMouseEvent* event) {
 
 void OCCTViewer::mouseMoveEvent(QMouseEvent* event) {
     QPoint pos = event->pos();
+    double dpr = devicePixelRatio();
+    QPoint devPos(pos.x() * dpr, pos.y() * dpr);
 
     if (currentMode_ == None) {
         // 无按键按下 → 悬停检测（用 3px 阈值限频）
         if (!view_.IsNull() && (pos - lastMousePos_).manhattanLength() > 3) {
             lastMousePos_ = pos;
-            context_->MoveTo(pos.x(), pos.y(), view_, Standard_True);
+            context_->MoveTo(devPos.x(), devPos.y(), view_, Standard_True);
             checkHoveredFace();
+            // 清除 OCCT 内建的检测高亮（蓝色圆圈标记），不影响手动 SetCustomColor 高亮
+            context_->ClearDetected(Standard_True);
         }
         return;
     }
@@ -262,9 +266,10 @@ void OCCTViewer::mouseMoveEvent(QMouseEvent* event) {
     if (view_.IsNull()) return;
 
     if (currentMode_ == Rotate) {
-        view_->Rotation(pos.x(), pos.y());
+        view_->Rotation(devPos.x(), devPos.y());
     } else if (currentMode_ == Pan) {
-        view_->Pan(pos.x() - lastMousePos_.x(), lastMousePos_.y() - pos.y());
+        view_->Pan(devPos.x() - lastMousePos_.x() * dpr,
+                   lastMousePos_.y() * dpr - devPos.y());
     }
     lastMousePos_ = pos;
     view_->Redraw();
@@ -298,6 +303,10 @@ void OCCTViewer::wheelEvent(QWheelEvent* event) {
 void OCCTViewer::checkHoveredFace() {
     if (context_.IsNull()) return;
 
+    double dpr = devicePixelRatio();
+    Standard_Integer devX = lastMousePos_.x() * dpr;
+    Standard_Integer devY = lastMousePos_.y() * dpr;
+
     int pickedFace = -1;
 
     // 方法一：通过 MainSelector 遍历所有检测到的实体
@@ -322,7 +331,7 @@ void OCCTViewer::checkHoveredFace() {
 
     // 方法二：如果选取器没找到面 → 用几何求交（光线投射）
     if (pickedFace < 0) {
-        pickedFace = pickFaceByRay(lastMousePos_.x(), lastMousePos_.y());
+        pickedFace = pickFaceByRay(devX, devY);
     }
 
     // 更新悬停状态
@@ -372,41 +381,32 @@ int OCCTViewer::pickFaceByRay(int mouseX, int mouseY) {
 
     gp_Pnt origin(X, Y, Z);
     gp_Dir direction(DX, DY, DZ);
-
-    // 创建射线几何线（在所有面之外创建一次）
-    Handle(Geom_Line) geomLine = new Geom_Line(origin, direction);
+    gp_Lin ray(origin, direction);
 
     // 遍历所有面，找出与射线最近的面
     TopExp_Explorer exp(fullShape_, TopAbs_FACE);
     int idx = 0;
     int closestFace = -1;
     Standard_Real minDist = std::numeric_limits<double>::max();
+    const Standard_Real tolerance = Precision::Confusion();
 
     for (; exp.More(); exp.Next(), ++idx) {
         const TopoDS_Face& face = TopoDS::Face(exp.Current());
 
-        // 获取面的几何曲面
-        Handle(Geom_Surface) surface = BRep_Tool::Surface(face);
-        if (surface.IsNull()) continue;
+        // IntCurvesFace_Intersector 直接处理 FACE（含裁剪），比 GeomAPI_IntCS 更鲁棒
+        IntCurvesFace_Intersector intersector(face, tolerance, Standard_True, Standard_True);
+        intersector.Perform(ray, -RealLast(), +RealLast());
 
-        // 计算射线与面的交点
-        GeomAPI_IntCS intCS(geomLine, surface);
-        if (intCS.IsDone() && intCS.NbPoints() > 0) {
-            for (int pi = 1; pi <= intCS.NbPoints(); ++pi) {
-                gp_Pnt hitPoint = intCS.Point(pi);
-                // 检查交点是否在面前方（沿射线方向为正）
+        if (intersector.IsDone() && intersector.NbPnt() > 0) {
+            for (int pi = 1; pi <= intersector.NbPnt(); ++pi) {
+                // State() 返回 TopAbs_IN（内部）或 TopAbs_ON（边界上）
+                TopAbs_State ptState = intersector.State(pi);
+                if (ptState == TopAbs_OUT) continue;
+
+                gp_Pnt hitPoint = intersector.Pnt(pi);
                 gp_Vec diff(origin, hitPoint);
                 Standard_Real projDist = diff.Dot(gp_Vec(direction));
                 if (projDist <= 0) continue;
-
-                // 检查交点是否在面的参数域内（带容差）
-                Standard_Real u, v, w;
-                intCS.Parameters(pi, u, v, w);
-                Standard_Real uMin, uMax, vMin, vMax;
-                BRepTools::UVBounds(face, uMin, uMax, vMin, vMax);
-                const Standard_Real uvTol = 1e-4;
-                if (u < uMin - uvTol || u > uMax + uvTol ||
-                    v < vMin - uvTol || v > vMax + uvTol) continue;
 
                 if (projDist < minDist) {
                     minDist = projDist;
@@ -422,7 +422,11 @@ int OCCTViewer::pickFaceByRay(int mouseX, int mouseY) {
 void OCCTViewer::handleSelection() {
     if (context_.IsNull() || view_.IsNull()) return;
 
-    context_->MoveTo(lastMousePos_.x(), lastMousePos_.y(), view_, Standard_False);
+    double dpr = devicePixelRatio();
+    Standard_Integer devX = lastMousePos_.x() * dpr;
+    Standard_Integer devY = lastMousePos_.y() * dpr;
+
+    context_->MoveTo(devX, devY, view_, Standard_False);
     context_->Select(Standard_True);
 
     int pickedFace = -1;
@@ -449,7 +453,7 @@ void OCCTViewer::handleSelection() {
 
     // 方法二：几何求交
     if (pickedFace < 0) {
-        pickedFace = pickFaceByRay(lastMousePos_.x(), lastMousePos_.y());
+        pickedFace = pickFaceByRay(devX, devY);
     }
 
     if (pickedFace >= 0) {
