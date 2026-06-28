@@ -744,7 +744,24 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
 
     QStringList faceEdgeCoedgeStr;
     for (size_t ci = 0; ci < coedgeList.size(); ++ci) {
-        faceEdgeCoedgeStr << QString("%1(%2)").arg(coedgeList[ci]).arg(ci + 1);
+        int gid = coedgeList[ci];
+        int thisIdx = static_cast<int>(ci) + 1;
+        // 查找该 edge 的另一个 coedge 的局部索引
+        int otherIdx = -1;
+        auto cit = edgeToCoedges_.find(gid);
+        if (cit != edgeToCoedges_.end()) {
+            for (const auto& p : cit->second) {
+                if (p.first != faceIndex) {
+                    otherIdx = p.second + 1;
+                    break;
+                }
+            }
+        }
+        if (otherIdx >= 0) {
+            faceEdgeCoedgeStr << QString("%1(%2,%3)").arg(gid).arg(thisIdx).arg(otherIdx);
+        } else {
+            faceEdgeCoedgeStr << QString("%1(%2)").arg(gid).arg(thisIdx);
+        }
     }
     lblHoverFaceEdgeIds_->setText("Edge ID(coedge): " + (faceEdgeCoedgeStr.isEmpty()
         ? QString("--") : faceEdgeCoedgeStr.join(", ")));
