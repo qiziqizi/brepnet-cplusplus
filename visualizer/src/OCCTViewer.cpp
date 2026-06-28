@@ -68,7 +68,7 @@ void OCCTViewer::resizeEvent(QResizeEvent*) {
     if (!view_.IsNull()) view_->MustBeResized();
 }
 
-void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces) {
+void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces, const TopoDS_Shape& fullShape) {
     if (context_.IsNull()) return;
     clearAll();
 
@@ -85,6 +85,23 @@ void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces) {
         context_->Display(aisShape, Standard_False);
         faceObjects_[static_cast<int>(i)] = aisShape;
         faceColors_[static_cast<int>(i)] = grayColor;
+    }
+
+    // 整模型线框叠加层：所有 edge 从同一离散化生成，连续不断
+    if (!fullShape.IsNull()) {
+        wireframeShape_ = new AIS_Shape(fullShape);
+        wireframeShape_->SetDisplayMode(AIS_WireFrame);
+        wireframeShape_->SetColor(Quantity_NOC_BLACK);
+        wireframeShape_->SetWidth(1.0);
+        // 关键：关闭三角化模式，强制使用曲线离散走 StdPrs_WFShape
+        // （默认 StdPrs_WFPoly 用三角化边界画线，和 FaceBoundaryDraw 一样有不对齐问题）
+        wireframeShape_->Attributes()->SetAutoTriangulation(Standard_False);
+        // 极精细的曲线离散参数
+        wireframeShape_->Attributes()->SetDeviationAngle(0.2);
+        wireframeShape_->Attributes()->SetDeviationCoefficient(0.0005);
+        // 设置高的显示优先级，确保线框在彩色面上方
+        context_->Display(wireframeShape_, Standard_False);
+        context_->SetDisplayPriority(wireframeShape_, 10);
     }
 
     context_->UpdateCurrentViewer();
@@ -199,6 +216,11 @@ void OCCTViewer::clearAll() {
     }
     faceObjects_.clear();
     faceColors_.clear();
+    // 移除线框叠加层
+    if (!wireframeShape_.IsNull()) {
+        context_->Remove(wireframeShape_, Standard_False);
+        wireframeShape_.Nullify();
+    }
     previousSelectedFaceIndex_ = -1;
     selectedFaceIndex_ = -1;
     context_->UpdateCurrentViewer();

@@ -463,7 +463,7 @@ void MainWindow::onLoadFile() {
     }
 
     // 显示面（灰色）
-    viewer_->displayFaces(loader_->getFaces());
+    viewer_->displayFaces(loader_->getFaces(), loader_->getShape());
 
     QApplication::restoreOverrideCursor();
 

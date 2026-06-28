@@ -23,7 +23,7 @@ public:
     explicit OCCTViewer(QWidget* parent = nullptr);
     ~OCCTViewer();
 
-    void displayFaces(const std::vector<TopoDS_Face>& faces);
+    void displayFaces(const std::vector<TopoDS_Face>& faces, const TopoDS_Shape& fullShape);
     void updateFaceColor(int faceIndex, const Quantity_Color& color);
     void updateAllFaceColors(const std::vector<Quantity_Color>& colors);
     void updateSingleFaceColor(int faceIndex, const Quantity_Color& color);
@@ -64,6 +64,7 @@ private:
 
     std::map<int, Handle(AIS_Shape)> faceObjects_;
     std::map<int, Quantity_Color> faceColors_;     // 每个面当前颜色
+    Handle(AIS_Shape) wireframeShape_;              // 整个模型的线框叠加层
 
     enum MouseMode { None, Rotate, Pan };
     MouseMode currentMode_;
