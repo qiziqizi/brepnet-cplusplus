@@ -5,11 +5,16 @@
 
 #include <Aspect_DisplayConnection.hxx>
 #include <OpenGl_GraphicDriver.hxx>
-#include <AIS_Shape.hxx>
+#include <TopExp_Explorer.hxx>
 #include <Prs3d_Drawer.hxx>
 #include <Graphic3d_MaterialAspect.hxx>
 #include <Prs3d_LineAspect.hxx>
 #include <Prs3d_IsoAspect.hxx>
+#include <GeomAPI_IntCS.hxx>
+#include <BRep_Tool.hxx>
+#include <BRepTools.hxx>
+#include <Geom_Line.hxx>
+#include <Geom_Surface.hxx>
 
 OCCTViewer::OCCTViewer(QWidget* parent)
     : QWidget(parent)
@@ -31,9 +36,7 @@ OCCTViewer::OCCTViewer(QWidget* parent)
 
 OCCTViewer::~OCCTViewer() {
     if (!context_.IsNull()) {
-        for (auto& pair : faceObjects_) {
-            context_->Remove(pair.second, Standard_False);
-        }
+        clearAll();
     }
 }
 
@@ -72,155 +75,138 @@ void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces, const TopoD
     if (context_.IsNull()) return;
     clearAll();
 
+    fullShape_ = fullShape;
+
+    // 单个 AIS_ColoredShape：整个模型一个三角化，边界天然连续
+    coloredShape_ = new AIS_ColoredShape(fullShape);
+    coloredShape_->SetDisplayMode(AIS_Shaded);
+    coloredShape_->SetMaterial(Graphic3d_NOM_PLASTIC);
+    // 开启 FaceBoundaryDraw：来自单一三角化，共享 edge 只画一次
+    coloredShape_->Attributes()->SetFaceBoundaryDraw(true);
+    coloredShape_->Attributes()->SetIsoOnTriangulation(Standard_False);
+    coloredShape_->Attributes()->UIsoAspect()->SetNumber(0);
+    coloredShape_->Attributes()->VIsoAspect()->SetNumber(0);
+    coloredShape_->Attributes()->SetDeviationAngle(1.0);
+    coloredShape_->Attributes()->SetDeviationCoefficient(0.001);
+    // 边界线颜色：中灰，细线
+    Handle(Prs3d_LineAspect) boundaryAspect = new Prs3d_LineAspect(
+        Quantity_NOC_GRAY50, Aspect_TOL_SOLID, 1.0);
+    coloredShape_->Attributes()->SetFaceBoundaryAspect(boundaryAspect);
+
+    // 为每个面设置初始颜色（灰色）
     Quantity_Color grayColor(0.7, 0.7, 0.7, Quantity_TOC_RGB);
     for (size_t i = 0; i < faces.size(); ++i) {
-        Handle(AIS_Shape) aisShape = new AIS_Shape(faces[i]);
-        aisShape->SetColor(Quantity_NOC_GRAY70);
-        aisShape->SetMaterial(Graphic3d_NOM_PLASTIC);
-        aisShape->SetDisplayMode(AIS_Shaded);
-        aisShape->Attributes()->SetFaceBoundaryDraw(true);
-        aisShape->Attributes()->SetIsoOnTriangulation(Standard_False);
-        aisShape->Attributes()->UIsoAspect()->SetNumber(0);
-        aisShape->Attributes()->VIsoAspect()->SetNumber(0);
-        context_->Display(aisShape, Standard_False);
-        faceObjects_[static_cast<int>(i)] = aisShape;
+        coloredShape_->SetCustomColor(faces[i], grayColor);
         faceColors_[static_cast<int>(i)] = grayColor;
     }
 
-    // 整模型线框叠加层：所有 edge 从同一离散化生成，连续不断
-    if (!fullShape.IsNull()) {
-        wireframeShape_ = new AIS_Shape(fullShape);
-        wireframeShape_->SetDisplayMode(AIS_WireFrame);
-        wireframeShape_->SetColor(Quantity_NOC_BLACK);
-        wireframeShape_->SetWidth(1.0);
-        // 关键：关闭三角化模式，强制使用曲线离散走 StdPrs_WFShape
-        // （默认 StdPrs_WFPoly 用三角化边界画线，和 FaceBoundaryDraw 一样有不对齐问题）
-        wireframeShape_->Attributes()->SetAutoTriangulation(Standard_False);
-        // 极精细的曲线离散参数
-        wireframeShape_->Attributes()->SetDeviationAngle(0.2);
-        wireframeShape_->Attributes()->SetDeviationCoefficient(0.0005);
-        // 设置高的显示优先级，确保线框在彩色面上方
-        context_->Display(wireframeShape_, Standard_False);
-        context_->SetDisplayPriority(wireframeShape_, 10);
-    }
-
+    // Display 使用默认显示模式（shaded），默认选择模式（mode 0，整模型）
+    context_->Display(coloredShape_, Standard_True);
+    // 额外激活面级选择模式（mode 1），使悬停/点击可检测到具体面
+    context_->Activate(coloredShape_, 1);
     context_->UpdateCurrentViewer();
     fitAll();
 }
 
 void OCCTViewer::updateFaceColor(int faceIndex, const Quantity_Color& color) {
-    auto it = faceObjects_.find(faceIndex);
-    if (it != faceObjects_.end()) {
-        faceColors_[faceIndex] = color;
-        context_->SetColor(it->second, color, Standard_True);
-    }
+    if (coloredShape_.IsNull() || fullShape_.IsNull()) return;
+    applyFaceColor(faceIndex, color);
+    context_->Redisplay(coloredShape_, Standard_False);
+    context_->UpdateCurrentViewer();
 }
 
 void OCCTViewer::updateAllFaceColors(const std::vector<Quantity_Color>& colors) {
-    if (colors.size() != faceObjects_.size()) return;
+    if (coloredShape_.IsNull() || fullShape_.IsNull()) return;
+    if (colors.size() != faceColors_.size()) return;
 
-    for (size_t i = 0; i < colors.size(); ++i) {
-        int idx = static_cast<int>(i);
-        auto it = faceObjects_.find(idx);
-        if (it != faceObjects_.end()) {
-            faceColors_[idx] = colors[i];
-            context_->SetColor(it->second, colors[i], Standard_False);
-        }
+    TopExp_Explorer exp(fullShape_, TopAbs_FACE);
+    int idx = 0;
+    for (; exp.More(); exp.Next(), ++idx) {
+        faceColors_[idx] = colors[idx];
+        coloredShape_->SetCustomColor(exp.Current(), colors[idx]);
     }
 
-    // 如果当前有选中的面，重新应用透明度（保持其半透明效果）
-    if (previousSelectedFaceIndex_ >= 0) {
-        auto selIt = faceObjects_.find(previousSelectedFaceIndex_);
-        if (selIt != faceObjects_.end()) {
-            context_->SetTransparency(selIt->second, 0.3, Standard_False);
-        }
-    }
-
+    context_->Redisplay(coloredShape_, Standard_False);
     context_->UpdateCurrentViewer();
 }
 
 void OCCTViewer::updateSingleFaceColor(int faceIndex, const Quantity_Color& color) {
-    auto it = faceObjects_.find(faceIndex);
-    if (it != faceObjects_.end()) {
-        faceColors_[faceIndex] = color;
-        context_->SetColor(it->second, color, Standard_False);
-        // 此面恰好被选中时，需重新应用透明度
-        if (faceIndex == previousSelectedFaceIndex_) {
-            context_->SetTransparency(it->second, 0.3, Standard_True);
-        } else {
-            context_->UpdateCurrentViewer();
-        }
-    }
+    if (coloredShape_.IsNull() || fullShape_.IsNull()) return;
+    applyFaceColor(faceIndex, color);
+    context_->Redisplay(coloredShape_, Standard_False);
+    context_->UpdateCurrentViewer();
 }
 
 void OCCTViewer::resetAllFaceColors() {
-    if (context_.IsNull()) return;
+    if (context_.IsNull() || coloredShape_.IsNull() || fullShape_.IsNull()) return;
 
     Quantity_Color grayColor(0.7, 0.7, 0.7, Quantity_TOC_RGB);
-    for (auto& pair : faceObjects_) {
-        faceColors_[pair.first] = grayColor;
-        context_->SetColor(pair.second, grayColor, Standard_False);
-        context_->UnsetTransparency(pair.second, Standard_False);
+    TopExp_Explorer exp(fullShape_, TopAbs_FACE);
+    int idx = 0;
+    for (; exp.More(); exp.Next(), ++idx) {
+        faceColors_[idx] = grayColor;
+        coloredShape_->SetCustomColor(exp.Current(), grayColor);
     }
 
     // 清除选中状态
     previousSelectedFaceIndex_ = -1;
     selectedFaceIndex_ = -1;
+    savedFaceColors_.clear();
+
+    context_->Redisplay(coloredShape_, Standard_False);
     context_->UpdateCurrentViewer();
 }
 
 void OCCTViewer::highlightErrorFaces(const std::vector<int>& errorIndices, bool highlight) {
-    if (context_.IsNull()) return;
+    if (context_.IsNull() || coloredShape_.IsNull() || fullShape_.IsNull()) return;
 
-    Quantity_Color errorBoundaryColor(1.0, 0.0, 0.0, Quantity_TOC_RGB);  // Red
-
-    for (int idx : errorIndices) {
-        auto it = faceObjects_.find(idx);
-        if (it != faceObjects_.end()) {
-            Handle(Prs3d_Drawer) drawer = it->second->Attributes();
-            if (highlight) {
-                drawer->SetFaceBoundaryDraw(true);
-                Handle(Prs3d_LineAspect) lineAspect = new Prs3d_LineAspect(
-                    errorBoundaryColor, Aspect_TOL_SOLID, 3.0);
-                drawer->SetFaceBoundaryAspect(lineAspect);
-            } else {
-                drawer->SetFaceBoundaryDraw(true);
-                Handle(Prs3d_LineAspect) lineAspect = new Prs3d_LineAspect(
-                    Quantity_NOC_BLACK, Aspect_TOL_SOLID, 1.0);
-                drawer->SetFaceBoundaryAspect(lineAspect);
+    if (highlight) {
+        // 保存原色并设为淡红
+        Quantity_Color errorColor(1.0, 0.6, 0.6, Quantity_TOC_RGB);
+        for (int idx : errorIndices) {
+            auto it = faceColors_.find(idx);
+            if (it != faceColors_.end()) {
+                savedFaceColors_[idx] = it->second;  // 保存原色
+                applyFaceColor(idx, errorColor);
             }
-            context_->Redisplay(it->second, Standard_False);
+        }
+    } else {
+        // 恢复原色
+        for (int idx : errorIndices) {
+            auto savedIt = savedFaceColors_.find(idx);
+            if (savedIt != savedFaceColors_.end()) {
+                applyFaceColor(idx, savedIt->second);
+                savedFaceColors_.erase(savedIt);
+            }
         }
     }
+
+    context_->Redisplay(coloredShape_, Standard_False);
     context_->UpdateCurrentViewer();
 }
 
 void OCCTViewer::clearErrorHighlights() {
-    if (context_.IsNull()) return;
+    if (context_.IsNull() || coloredShape_.IsNull() || fullShape_.IsNull()) return;
 
-    for (auto& pair : faceObjects_) {
-        Handle(Prs3d_Drawer) drawer = pair.second->Attributes();
-        drawer->SetFaceBoundaryDraw(true);
-        Handle(Prs3d_LineAspect) lineAspect = new Prs3d_LineAspect(
-            Quantity_NOC_BLACK, Aspect_TOL_SOLID, 1.0);
-        drawer->SetFaceBoundaryAspect(lineAspect);
-        context_->Redisplay(pair.second, Standard_False);
+    // 恢复所有保存的原色
+    for (auto& pair : savedFaceColors_) {
+        applyFaceColor(pair.first, pair.second);
     }
+    savedFaceColors_.clear();
+
+    context_->Redisplay(coloredShape_, Standard_False);
     context_->UpdateCurrentViewer();
 }
 
 void OCCTViewer::clearAll() {
     if (context_.IsNull()) return;
-    for (auto& pair : faceObjects_) {
-        context_->Remove(pair.second, Standard_False);
+    if (!coloredShape_.IsNull()) {
+        context_->Remove(coloredShape_, Standard_False);
+        coloredShape_.Nullify();
     }
-    faceObjects_.clear();
+    fullShape_.Nullify();
     faceColors_.clear();
-    // 移除线框叠加层
-    if (!wireframeShape_.IsNull()) {
-        context_->Remove(wireframeShape_, Standard_False);
-        wireframeShape_.Nullify();
-    }
+    savedFaceColors_.clear();
     previousSelectedFaceIndex_ = -1;
     selectedFaceIndex_ = -1;
     context_->UpdateCurrentViewer();
@@ -312,24 +298,125 @@ void OCCTViewer::wheelEvent(QWheelEvent* event) {
 void OCCTViewer::checkHoveredFace() {
     if (context_.IsNull()) return;
 
-    if (context_->HasDetected()) {
-        Handle(AIS_InteractiveObject) obj = context_->DetectedInteractive();
-        for (auto& pair : faceObjects_) {
-            if (pair.second == obj) {
-                if (pair.first != hoveredFaceIndex_) {
-                    hoveredFaceIndex_ = pair.first;
-                    emit faceHovered(pair.first, lastMousePos_.x(), lastMousePos_.y());
+    int pickedFace = -1;
+
+    // 方法一：通过 MainSelector 遍历所有检测到的实体
+    const Handle(StdSelect_ViewerSelector3d)& aSelector = context_->MainSelector();
+    if (!aSelector.IsNull()) {
+        for (Standard_Integer i = 1; i <= aSelector->NbPicked(); i++) {
+            Handle(SelectMgr_EntityOwner) anOwner = aSelector->Picked(i);
+            Handle(StdSelect_BRepOwner) aBRepOwner =
+                Handle(StdSelect_BRepOwner)::DownCast(anOwner);
+            if (!aBRepOwner.IsNull()) {
+                TopoDS_Shape aShape = aBRepOwner->Shape();
+                if (!aShape.IsNull()) {
+                    int idx = findFaceIndex(aShape);
+                    if (idx >= 0) {
+                        pickedFace = idx;
+                        break;
+                    }
                 }
-                return;
             }
         }
     }
 
-    // 没有检测到物体 → 清空悬停
-    if (hoveredFaceIndex_ != -1) {
+    // 方法二：如果选取器没找到面 → 用几何求交（光线投射）
+    if (pickedFace < 0) {
+        pickedFace = pickFaceByRay(lastMousePos_.x(), lastMousePos_.y());
+    }
+
+    // 更新悬停状态
+    if (pickedFace >= 0 && pickedFace != hoveredFaceIndex_) {
+        // 恢复上一个悬停面
+        if (hoveredFaceIndex_ >= 0) {
+            setCustomFaceColor(hoveredFaceIndex_, hoverSavedColor_);
+        }
+        // 高亮新面
+        auto it = faceColors_.find(pickedFace);
+        if (it != faceColors_.end()) {
+            hoverSavedColor_ = it->second;
+            setCustomFaceColor(pickedFace, Quantity_NOC_LIGHTBLUE);
+            hoveredFaceIndex_ = pickedFace;
+            context_->RecomputePrsOnly(coloredShape_, Standard_False, Standard_False);
+            context_->UpdateCurrentViewer();
+            emit faceHovered(pickedFace, lastMousePos_.x(), lastMousePos_.y());
+        }
+        return;
+    }
+
+    // 同一个面，无需更新
+    if (pickedFace == hoveredFaceIndex_) {
+        return;
+    }
+
+    // 没有检测到任何面 → 清空悬停
+    restoreHoveredFace();
+}
+
+void OCCTViewer::restoreHoveredFace() {
+    if (hoveredFaceIndex_ >= 0) {
+        setCustomFaceColor(hoveredFaceIndex_, hoverSavedColor_);
         hoveredFaceIndex_ = -1;
+        context_->RecomputePrsOnly(coloredShape_, Standard_False, Standard_False);
+        context_->UpdateCurrentViewer();
         emit faceHovered(-1, 0, 0);
     }
+}
+
+int OCCTViewer::pickFaceByRay(int mouseX, int mouseY) {
+    if (view_.IsNull() || fullShape_.IsNull()) return -1;
+
+    // 将 2D 鼠标位置转换为 3D 射线
+    Standard_Real X, Y, Z, DX, DY, DZ;
+    view_->ConvertWithProj(mouseX, mouseY, X, Y, Z, DX, DY, DZ);
+
+    gp_Pnt origin(X, Y, Z);
+    gp_Dir direction(DX, DY, DZ);
+
+    // 创建射线几何线（在所有面之外创建一次）
+    Handle(Geom_Line) geomLine = new Geom_Line(origin, direction);
+
+    // 遍历所有面，找出与射线最近的面
+    TopExp_Explorer exp(fullShape_, TopAbs_FACE);
+    int idx = 0;
+    int closestFace = -1;
+    Standard_Real minDist = std::numeric_limits<double>::max();
+
+    for (; exp.More(); exp.Next(), ++idx) {
+        const TopoDS_Face& face = TopoDS::Face(exp.Current());
+
+        // 获取面的几何曲面
+        Handle(Geom_Surface) surface = BRep_Tool::Surface(face);
+        if (surface.IsNull()) continue;
+
+        // 计算射线与面的交点
+        GeomAPI_IntCS intCS(geomLine, surface);
+        if (intCS.IsDone() && intCS.NbPoints() > 0) {
+            for (int pi = 1; pi <= intCS.NbPoints(); ++pi) {
+                gp_Pnt hitPoint = intCS.Point(pi);
+                // 检查交点是否在面前方（沿射线方向为正）
+                gp_Vec diff(origin, hitPoint);
+                Standard_Real projDist = diff.Dot(gp_Vec(direction));
+                if (projDist <= 0) continue;
+
+                // 检查交点是否在面的参数域内（带容差）
+                Standard_Real u, v, w;
+                intCS.Parameters(pi, u, v, w);
+                Standard_Real uMin, uMax, vMin, vMax;
+                BRepTools::UVBounds(face, uMin, uMax, vMin, vMax);
+                const Standard_Real uvTol = 1e-4;
+                if (u < uMin - uvTol || u > uMax + uvTol ||
+                    v < vMin - uvTol || v > vMax + uvTol) continue;
+
+                if (projDist < minDist) {
+                    minDist = projDist;
+                    closestFace = idx;
+                }
+            }
+        }
+    }
+
+    return closestFace;
 }
 
 void OCCTViewer::handleSelection() {
@@ -338,35 +425,71 @@ void OCCTViewer::handleSelection() {
     context_->MoveTo(lastMousePos_.x(), lastMousePos_.y(), view_, Standard_False);
     context_->Select(Standard_True);
 
-    if (context_->HasDetected()) {
-        Handle(AIS_InteractiveObject) obj = context_->DetectedInteractive();
-        for (auto& pair : faceObjects_) {
-            if (pair.second == obj) {
-                int newIndex = pair.first;
+    int pickedFace = -1;
 
-                // 点击同一个面 → 不做任何变化（与 Python 行为一致）
-                if (newIndex == previousSelectedFaceIndex_) {
-                    emit faceSelected(newIndex);
-                    return;
-                }
-
-                // 1. 恢复上一个选中面：移除透明度（颜色保持不变）
-                if (previousSelectedFaceIndex_ >= 0) {
-                    auto prevIt = faceObjects_.find(previousSelectedFaceIndex_);
-                    if (prevIt != faceObjects_.end()) {
-                        context_->UnsetTransparency(prevIt->second, Standard_False);
+    // 方法一：遍历检测到的实体
+    const Handle(StdSelect_ViewerSelector3d)& aSelector = context_->MainSelector();
+    if (!aSelector.IsNull()) {
+        for (Standard_Integer i = 1; i <= aSelector->NbPicked(); i++) {
+            Handle(SelectMgr_EntityOwner) anOwner = aSelector->Picked(i);
+            Handle(StdSelect_BRepOwner) aBRepOwner =
+                Handle(StdSelect_BRepOwner)::DownCast(anOwner);
+            if (!aBRepOwner.IsNull()) {
+                TopoDS_Shape aShape = aBRepOwner->Shape();
+                if (!aShape.IsNull()) {
+                    int idx = findFaceIndex(aShape);
+                    if (idx >= 0) {
+                        pickedFace = idx;
+                        break;
                     }
                 }
-
-                // 2. 设置新选中面：半透明（颜色保留）
-                context_->SetTransparency(pair.second, 0.3, Standard_False);
-                previousSelectedFaceIndex_ = newIndex;
-                selectedFaceIndex_ = newIndex;
-
-                context_->UpdateCurrentViewer();
-                emit faceSelected(newIndex);
-                return;
             }
+        }
+    }
+
+    // 方法二：几何求交
+    if (pickedFace < 0) {
+        pickedFace = pickFaceByRay(lastMousePos_.x(), lastMousePos_.y());
+    }
+
+    if (pickedFace >= 0) {
+        if (pickedFace == previousSelectedFaceIndex_) {
+            emit faceSelected(pickedFace);
+            return;
+        }
+        previousSelectedFaceIndex_ = pickedFace;
+        selectedFaceIndex_ = pickedFace;
+        context_->UpdateCurrentViewer();
+        emit faceSelected(pickedFace);
+    }
+}
+
+int OCCTViewer::findFaceIndex(const TopoDS_Shape& subShape) const {
+    if (fullShape_.IsNull()) return -1;
+    TopExp_Explorer exp(fullShape_, TopAbs_FACE);
+    int idx = 0;
+    for (; exp.More(); exp.Next(), ++idx) {
+        if (exp.Current().IsSame(subShape)) {
+            return idx;
+        }
+    }
+    return -1;
+}
+
+void OCCTViewer::applyFaceColor(int faceIndex, const Quantity_Color& color) {
+    if (coloredShape_.IsNull() || fullShape_.IsNull()) return;
+    faceColors_[faceIndex] = color;
+    setCustomFaceColor(faceIndex, color);
+}
+
+void OCCTViewer::setCustomFaceColor(int faceIndex, const Quantity_Color& color) {
+    if (coloredShape_.IsNull() || fullShape_.IsNull()) return;
+    TopExp_Explorer exp(fullShape_, TopAbs_FACE);
+    int idx = 0;
+    for (; exp.More(); exp.Next(), ++idx) {
+        if (idx == faceIndex) {
+            coloredShape_->SetCustomColor(exp.Current(), color);
+            break;
         }
     }
 }
