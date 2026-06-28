@@ -734,7 +734,8 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
     }
 
     // ========== 1. 悬停面：面索引 + Edge 总数 + Edge ID(coedge)列表 ==========
-    const TopoDS_Face& face = loader_->getFaces()[faceIndex];
+    // 不清空 Edge 信息！等采样完成后决定：检测到新 Edge 就更新，否则保留旧信息或清空
+
     lblHoverFaceIndex_->setText(QString("面索引: #%1").arg(faceIndex));
 
     const auto& coedgeList = faceEdgeCoedge_[faceIndex];
@@ -760,6 +761,7 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
     double bestDist = useThreshold;
     BRepAdaptor_Curve bestCurve;
 
+    const TopoDS_Face& face = loader_->getFaces()[faceIndex];
     for (TopExp_Explorer exp(face, TopAbs_EDGE); exp.More(); exp.Next()) {
         const TopoDS_Edge& edge = TopoDS::Edge(exp.Current());
         if (BRep_Tool::Degenerated(edge)) continue;
@@ -771,7 +773,26 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
         BRepAdaptor_Curve curveAdaptor(edge);
         Standard_Real tFirst = curveAdaptor.FirstParameter();
         Standard_Real tLast  = curveAdaptor.LastParameter();
-        const int numSamples = 9;
+
+        // 估算曲线在屏幕上的像素长度，决定采样数（保证间隔 ≤6px，最多120点）
+        const int ESTIMATE_POINTS = 10;
+        int numSamples = 5;  // 最少 5 点
+        {
+            Standard_Real tPrev = tFirst;
+            Standard_Integer sxPrev, syPrev;
+            gp_Pnt ptPrev = curveAdaptor.Value(tPrev);
+            view->Convert(ptPrev.X(), ptPrev.Y(), ptPrev.Z(), sxPrev, syPrev);
+            double screenLen = 0.0;
+            for (int si = 1; si <= ESTIMATE_POINTS; ++si) {
+                double t = tFirst + (tLast - tFirst) * si / ESTIMATE_POINTS;
+                gp_Pnt pt = curveAdaptor.Value(t);
+                Standard_Integer sx, sy;
+                view->Convert(pt.X(), pt.Y(), pt.Z(), sx, sy);
+                screenLen += sqrt((double)((sx - sxPrev) * (sx - sxPrev) + (sy - syPrev) * (sy - syPrev)));
+                tPrev = t; sxPrev = sx; syPrev = sy;
+            }
+            numSamples = std::max(5, std::min(120, (int)(screenLen / 6.0 + 0.5)));
+        }
         for (int s = 0; s < numSamples; ++s) {
             Standard_Real t = tFirst + (tLast - tFirst) * s / (numSamples - 1);
             gp_Pnt pt3d = curveAdaptor.Value(t);
@@ -815,6 +836,7 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
 
         prevHoveredGlobalEdgeId_ = bestGlobalEdgeId;
     } else {
+        // 进入新面且未检测到任何 Edge → 清空（避免残留上个面的边信息）
         lblHoverEdgeId_->setText("Edge ID: --");
         lblHoverEdgeType_->setText("类型: --");
         lblHoverCoedgeId_->setText("Coedge ID(Face): --");
