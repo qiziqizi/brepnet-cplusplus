@@ -68,7 +68,11 @@ std::vector<Quantity_Color> ColorMapper::generateDistinctColors(int count) {
     const double hueStart = 30.0;
     const double hueRange = 100.0;
     for (int i = 0; i < count; ++i) {
-        double hue = hueStart + std::fmod(i * goldenAngle, hueRange);
+        // 先在 [0,360) 上用黄金角生成，再线性映射到 [0,hueRange]。
+        // 黄金角/360 = 1/φ² = 0.381966（最无理数），保证相邻索引色相差最大化且无周期性。
+        // 若直接 fmod(goldenAngle, hueRange)，有效步长 137.508 mod 100 = 37.508 ≈ 3/8×100，
+        // 退化为 ~8 周期的低质量分布。
+        double hue = hueStart + std::fmod(i * goldenAngle, 360.0) * hueRange / 360.0;
         double lightness  = 0.82 + 0.06 * std::sin(i * 1.3);
         double saturation = 0.65 + 0.08 * std::cos(i * 0.7);
         colors.emplace_back(hue, lightness, saturation, Quantity_TOC_HLS);
@@ -86,7 +90,12 @@ std::vector<Quantity_Color> ColorMapper::generateOtherColors(int count) {
     const double hueStart = 0.0;
     const double hueRange = 80.0;
     for (int i = 0; i < count; ++i) {
-        double hue = hueStart + std::fmod(i * goldenAngle, hueRange);
+        // 先在 [0,360) 上用黄金角生成，再线性映射到 [0,hueRange]。
+        // 黄金角/360 = 1/φ² = 0.381966（最无理数），保证相邻索引色相差最大化且无周期性。
+        // 若直接 fmod(goldenAngle, hueRange)，有效步长 137.508 mod 80 = 57.508 ≈ 5/7×80，
+        // 退化为 ~7 周期的低质量分布（相邻色相差交替为 57.5°/22.5°）。
+        // 修复后有效步长 = 137.508×80/360 = 30.557°，相邻色相差恒为 30.6° 或 49.4°。
+        double hue = hueStart + std::fmod(i * goldenAngle, 360.0) * hueRange / 360.0;
         double lightness  = 0.78 + 0.06 * std::sin(i * 1.3);
         double saturation = 0.65 + 0.08 * std::cos(i * 0.7);
         colors.emplace_back(hue, lightness, saturation, Quantity_TOC_HLS);
