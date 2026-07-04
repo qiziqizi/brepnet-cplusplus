@@ -81,6 +81,9 @@ void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces, const TopoD
     coloredShape_->SetMaterial(Graphic3d_NOM_PLASTIC);
     // 开启 FaceBoundaryDraw：来自单一三角化，共享 edge 只画一次
     coloredShape_->Attributes()->SetFaceBoundaryDraw(true);
+    // 过滤 seam edge（缝合边）：圆柱/球面等周期面的接缝在几何上 C1 连续，
+    // 设为 GeomAbs_C1 后只画 C0 及以下连续性的真实棱边，圆柱面竖线消失。
+    coloredShape_->Attributes()->SetFaceBoundaryUpperContinuity(GeomAbs_C1);
     coloredShape_->Attributes()->SetIsoOnTriangulation(Standard_False);
     coloredShape_->Attributes()->UIsoAspect()->SetNumber(0);
     coloredShape_->Attributes()->VIsoAspect()->SetNumber(0);
@@ -102,6 +105,9 @@ void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces, const TopoD
     context_->Display(coloredShape_, Standard_True);
     // 额外激活面级选择模式（mode 1），使悬停/点击可检测到具体面
     context_->Activate(coloredShape_, 1);
+    // 禁用 mode 0（整形状选择，含顶点敏感实体），避免鼠标悬停在边交点(顶点)时
+    // 出现 OCCT 内建的蓝色圆圈高亮。只保留 mode 1（面级）拾取。
+    context_->Deactivate(coloredShape_, 0);
     context_->UpdateCurrentViewer();
     fitAll();
 }
@@ -207,6 +213,7 @@ void OCCTViewer::clearAll() {
     savedFaceColors_.clear();
     previousSelectedFaceIndex_ = -1;
     selectedFaceIndex_ = -1;
+    hoveredFaceIndex_ = -1;
     context_->UpdateCurrentViewer();
 }
 
@@ -242,7 +249,23 @@ void OCCTViewer::mousePressEvent(QMouseEvent* event) {
 
 void OCCTViewer::mouseDoubleClickEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton) {
-        fitAll();  // Double-click to reset view
+        fitAll();  // 左键/中键双击：重置视图
+    } else if (event->button() == Qt::RightButton) {
+        // 右键双击：重新拾取当前鼠标位置的面（不复用旧 selectedFaceIndex_，避免改错面）
+        // 右键 press 只调 StartRotation（无拖动不旋转），双击不冲突
+        if (context_.IsNull() || view_.IsNull()) return;
+        double dpr = devicePixelRatio();
+        QPoint devPos = event->pos() * dpr;
+        lastMousePos_ = event->pos();
+        // MoveTo 检测当前位置实体（不改变选中状态），再用综合拾取取面索引
+        context_->MoveTo(devPos.x(), devPos.y(), view_, Standard_True);
+        int pickedFace = pickFaceAtPos(devPos.x(), devPos.y());
+        if (pickedFace >= 0) {
+            // 同步更新选中状态，确保后续操作一致
+            selectedFaceIndex_ = pickedFace;
+            previousSelectedFaceIndex_ = pickedFace;
+            emit faceModifyRequested(pickedFace);
+        }
     }
 }
 
@@ -257,7 +280,7 @@ void OCCTViewer::mouseMoveEvent(QMouseEvent* event) {
             lastMousePos_ = pos;
             context_->MoveTo(devPos.x(), devPos.y(), view_, Standard_True);
             checkHoveredFace();
-            // 清除 OCCT 内建的检测高亮（蓝色圆圈标记），不影响手动 SetCustomColor 高亮
+            // 屏蔽 OCCT 内建线框高亮，悬停视觉反馈完全由 hoverHighlight_ 透明叠加层负责
             context_->ClearDetected(Standard_True);
         }
         return;
@@ -307,49 +330,20 @@ void OCCTViewer::checkHoveredFace() {
     Standard_Integer devX = lastMousePos_.x() * dpr;
     Standard_Integer devY = lastMousePos_.y() * dpr;
 
-    int pickedFace = -1;
+    int pickedFace = pickFaceAtPos(devX, devY);
 
-    // 方法一：通过 MainSelector 遍历所有检测到的实体
-    const Handle(StdSelect_ViewerSelector3d)& aSelector = context_->MainSelector();
-    if (!aSelector.IsNull()) {
-        for (Standard_Integer i = 1; i <= aSelector->NbPicked(); i++) {
-            Handle(SelectMgr_EntityOwner) anOwner = aSelector->Picked(i);
-            Handle(StdSelect_BRepOwner) aBRepOwner =
-                Handle(StdSelect_BRepOwner)::DownCast(anOwner);
-            if (!aBRepOwner.IsNull()) {
-                TopoDS_Shape aShape = aBRepOwner->Shape();
-                if (!aShape.IsNull()) {
-                    int idx = findFaceIndex(aShape);
-                    if (idx >= 0) {
-                        pickedFace = idx;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    // 方法二：如果选取器没找到面 → 用几何求交（光线投射）
-    if (pickedFace < 0) {
-        pickedFace = pickFaceByRay(devX, devY);
-    }
-
-    // 更新悬停状态
+    // 更新悬停状态：让悬停面本身变透明（保留原色），透过它能看到模型内部结构
     if (pickedFace >= 0 && pickedFace != hoveredFaceIndex_) {
-        // 恢复上一个悬停面
+        // 恢复上一个悬停面的透明度
         if (hoveredFaceIndex_ >= 0) {
-            setCustomFaceColor(hoveredFaceIndex_, hoverSavedColor_);
+            setFaceTransparency(hoveredFaceIndex_, 0.0);
         }
-        // 高亮新面
-        auto it = faceColors_.find(pickedFace);
-        if (it != faceColors_.end()) {
-            hoverSavedColor_ = it->second;
-            setCustomFaceColor(pickedFace, Quantity_NOC_LIGHTBLUE);
-            hoveredFaceIndex_ = pickedFace;
-            context_->RecomputePrsOnly(coloredShape_, Standard_False, Standard_False);
-            context_->UpdateCurrentViewer();
-            emit faceHovered(pickedFace, lastMousePos_.x(), lastMousePos_.y());
-        }
+        // 让新悬停面变透明（0.5 = 50% 透明，既能看到内部又不至于太透）
+        setFaceTransparency(pickedFace, 0.5);
+        context_->Redisplay(coloredShape_, Standard_True);
+        context_->UpdateCurrentViewer();
+        hoveredFaceIndex_ = pickedFace;
+        emit faceHovered(pickedFace, lastMousePos_.x(), lastMousePos_.y());
         return;
     }
 
@@ -358,17 +352,30 @@ void OCCTViewer::checkHoveredFace() {
         return;
     }
 
-    // 没有检测到任何面 → 清空悬停
+    // 没有检测到任何面 → 恢复透明度
     restoreHoveredFace();
 }
 
 void OCCTViewer::restoreHoveredFace() {
     if (hoveredFaceIndex_ >= 0) {
-        setCustomFaceColor(hoveredFaceIndex_, hoverSavedColor_);
-        hoveredFaceIndex_ = -1;
-        context_->RecomputePrsOnly(coloredShape_, Standard_False, Standard_False);
+        setFaceTransparency(hoveredFaceIndex_, 0.0);
+        context_->Redisplay(coloredShape_, Standard_True);
         context_->UpdateCurrentViewer();
+        hoveredFaceIndex_ = -1;
         emit faceHovered(-1, 0, 0);
+    }
+}
+
+void OCCTViewer::setFaceTransparency(int faceIndex, Standard_Real transparency) {
+    if (coloredShape_.IsNull() || fullShape_.IsNull()) return;
+    TopExp_Explorer exp(fullShape_, TopAbs_FACE);
+    int idx = 0;
+    for (; exp.More(); exp.Next(), ++idx) {
+        if (idx == faceIndex) {
+            // AIS_ColoredShape 支持按子形状设置透明度，悬停面本身变透明
+            coloredShape_->SetCustomTransparency(exp.Current(), transparency);
+            break;
+        }
     }
 }
 
@@ -419,19 +426,12 @@ int OCCTViewer::pickFaceByRay(int mouseX, int mouseY) {
     return closestFace;
 }
 
-void OCCTViewer::handleSelection() {
-    if (context_.IsNull() || view_.IsNull()) return;
-
-    double dpr = devicePixelRatio();
-    Standard_Integer devX = lastMousePos_.x() * dpr;
-    Standard_Integer devY = lastMousePos_.y() * dpr;
-
-    context_->MoveTo(devX, devY, view_, Standard_False);
-    context_->Select(Standard_True);
+int OCCTViewer::pickFaceAtPos(int devX, int devY) {
+    if (context_.IsNull() || view_.IsNull()) return -1;
 
     int pickedFace = -1;
 
-    // 方法一：遍历检测到的实体
+    // 方法一：通过 MainSelector 遍历所有检测到的实体
     const Handle(StdSelect_ViewerSelector3d)& aSelector = context_->MainSelector();
     if (!aSelector.IsNull()) {
         for (Standard_Integer i = 1; i <= aSelector->NbPicked(); i++) {
@@ -455,6 +455,21 @@ void OCCTViewer::handleSelection() {
     if (pickedFace < 0) {
         pickedFace = pickFaceByRay(devX, devY);
     }
+
+    return pickedFace;
+}
+
+void OCCTViewer::handleSelection() {
+    if (context_.IsNull() || view_.IsNull()) return;
+
+    double dpr = devicePixelRatio();
+    Standard_Integer devX = lastMousePos_.x() * dpr;
+    Standard_Integer devY = lastMousePos_.y() * dpr;
+
+    context_->MoveTo(devX, devY, view_, Standard_False);
+    context_->Select(Standard_True);
+
+    int pickedFace = pickFaceAtPos(devX, devY);
 
     if (pickedFace >= 0) {
         if (pickedFace == previousSelectedFaceIndex_) {

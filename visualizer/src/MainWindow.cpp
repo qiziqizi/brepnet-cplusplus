@@ -396,6 +396,8 @@ void MainWindow::setupConnections() {
     // 面选择
     connect(viewer_, &OCCTViewer::faceSelected, this, &MainWindow::onFaceSelected);
     connect(viewer_, &OCCTViewer::faceHovered, this, &MainWindow::onFaceHovered);
+    // 右键双击：请求修改当前面类别（与按钮共用 onModifyFaceClass）
+    connect(viewer_, &OCCTViewer::faceModifyRequested, this, &MainWindow::onModifyFaceClass);
 }
 
 void MainWindow::setWorkMode(WorkMode mode) {
@@ -985,6 +987,11 @@ void MainWindow::onLoadManualLabels() {
 }
 
 void MainWindow::onModifyFaceClass() {
+    // 仅人工标注模式允许修改（右键双击与按钮共用此槽，需统一拦截）
+    if (currentMode_ != WorkMode::ManualLabeling) {
+        return;
+    }
+
     // 检查是否有选中的面
     int selectedFace = viewer_->getSelectedFaceIndex();
     if (selectedFace < 0) {

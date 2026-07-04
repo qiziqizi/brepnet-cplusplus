@@ -44,6 +44,7 @@ public:
 signals:
     void faceSelected(int faceIndex);
     void faceHovered(int faceIndex, int mouseX, int mouseY);  // faceIndex=-1 = 离开
+    void faceModifyRequested(int faceIndex);                  // 右键双击请求修改（仅人工标注模式生效）
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -62,8 +63,10 @@ private:
     int findFaceIndex(const TopoDS_Shape& subShape) const;
     void applyFaceColor(int faceIndex, const Quantity_Color& color);
     void setCustomFaceColor(int faceIndex, const Quantity_Color& color); // 仅设颜色，不更新 faceColors_
+    void setFaceTransparency(int faceIndex, Standard_Real transparency); // 按面设置透明度（悬停用）
     void restoreHoveredFace();
     int pickFaceByRay(int mouseX, int mouseY);                           // 几何光线求交
+    int pickFaceAtPos(int devX, int devY);                               // 综合拾取（选择器+光线），不改选中状态
 
     Handle(V3d_Viewer) viewer_;
     Handle(V3d_View) view_;
@@ -76,7 +79,6 @@ private:
     TopoDS_Shape fullShape_;                         // 原始完整形状，用于子面遍历
     std::map<int, Quantity_Color> faceColors_;       // 每个面当前颜色
     std::map<int, Quantity_Color> savedFaceColors_;  // 高亮前保存的面颜色
-    Quantity_Color hoverSavedColor_;                 // 悬停高亮前保存的面颜色
 
     enum MouseMode { None, Rotate, Pan };
     MouseMode currentMode_;
