@@ -13,6 +13,9 @@
 #include <IntCurvesFace_Intersector.hxx>
 #include <BRep_Tool.hxx>
 #include <Precision.hxx>
+#include <BRep_Builder.hxx>
+#include <TopoDS_Compound.hxx>
+#include <TopoDS_Edge.hxx>
 
 OCCTViewer::OCCTViewer(QWidget* parent)
     : QWidget(parent)
@@ -103,11 +106,20 @@ void OCCTViewer::displayFaces(const std::vector<TopoDS_Face>& faces, const TopoD
 
     // Display 使用默认显示模式（shaded），默认选择模式（mode 0，整模型）
     context_->Display(coloredShape_, Standard_True);
-    // 额外激活面级选择模式（mode 1），使悬停/点击可检测到具体面
+    // 先禁用所有已激活的选择模式（mode 0 含整形状/顶点敏感实体，可能还有边选择 mode 等），
+    // 避免鼠标悬停边/顶点时出现 OCCT 内建的蓝色高亮（圆圈或线条）。
+    context_->Deactivate(coloredShape_);
+    // 只激活面级选择模式（mode 1），使悬停/点击仅检测到具体面
     context_->Activate(coloredShape_, 1);
-    // 禁用 mode 0（整形状选择，含顶点敏感实体），避免鼠标悬停在边交点(顶点)时
-    // 出现 OCCT 内建的蓝色圆圈高亮。只保留 mode 1（面级）拾取。
-    context_->Deactivate(coloredShape_, 0);
+
+    // 创建悬停面边线高亮叠加层（与透明化配合，黑色细线显示该面轮廓）
+    if (hoverEdges_.IsNull()) {
+        hoverEdges_ = new AIS_Shape(TopoDS_Shape());
+        hoverEdges_->SetDisplayMode(AIS_WireFrame); // 线框模式，只显示边
+        hoverEdges_->SetColor(Quantity_Color(0.0, 0.0, 0.0, Quantity_TOC_RGB));
+        hoverEdges_->SetWidth(1.5);
+    }
+
     context_->UpdateCurrentViewer();
     fitAll();
 }
@@ -204,6 +216,10 @@ void OCCTViewer::clearErrorHighlights() {
 
 void OCCTViewer::clearAll() {
     if (context_.IsNull()) return;
+    if (!hoverEdges_.IsNull()) {
+        context_->Erase(hoverEdges_, Standard_False);
+        hoverEdges_.Nullify();
+    }
     if (!coloredShape_.IsNull()) {
         context_->Remove(coloredShape_, Standard_False);
         coloredShape_.Nullify();
@@ -341,6 +357,18 @@ void OCCTViewer::checkHoveredFace() {
         // 让新悬停面变透明（0.5 = 50% 透明，既能看到内部又不至于太透）
         setFaceTransparency(pickedFace, 0.5);
         context_->Redisplay(coloredShape_, Standard_True);
+        // 高亮显示该面的所有边线（红色粗线叠加层）
+        TopoDS_Compound edgesCompound = buildFaceEdgesCompound(pickedFace);
+        if (!edgesCompound.IsNull() && !hoverEdges_.IsNull()) {
+            hoverEdges_->Set(edgesCompound);
+            hoverEdges_->SetColor(Quantity_Color(0.0, 0.0, 0.0, Quantity_TOC_RGB)); // 黑色
+            hoverEdges_->SetWidth(1.5);
+            if (context_->IsDisplayed(hoverEdges_)) {
+                context_->Redisplay(hoverEdges_, Standard_True);
+            } else {
+                context_->Display(hoverEdges_, Standard_False);
+            }
+        }
         context_->UpdateCurrentViewer();
         hoveredFaceIndex_ = pickedFace;
         emit faceHovered(pickedFace, lastMousePos_.x(), lastMousePos_.y());
@@ -360,6 +388,10 @@ void OCCTViewer::restoreHoveredFace() {
     if (hoveredFaceIndex_ >= 0) {
         setFaceTransparency(hoveredFaceIndex_, 0.0);
         context_->Redisplay(coloredShape_, Standard_True);
+        // 隐藏边线高亮叠加层
+        if (!hoverEdges_.IsNull() && context_->IsDisplayed(hoverEdges_)) {
+            context_->Erase(hoverEdges_, Standard_False);
+        }
         context_->UpdateCurrentViewer();
         hoveredFaceIndex_ = -1;
         emit faceHovered(-1, 0, 0);
@@ -377,6 +409,44 @@ void OCCTViewer::setFaceTransparency(int faceIndex, Standard_Real transparency) 
             break;
         }
     }
+}
+
+TopoDS_Compound OCCTViewer::buildFaceEdgesCompound(int faceIndex) const {
+    TopoDS_Compound compound;
+    if (fullShape_.IsNull() || faceIndex < 0) return compound;
+
+    // 先定位到指定 face
+    TopExp_Explorer faceExp(fullShape_, TopAbs_FACE);
+    int idx = 0;
+    for (; faceExp.More(); faceExp.Next(), ++idx) {
+        if (idx == faceIndex) break;
+    }
+    if (!faceExp.More()) return compound; // 未找到
+
+    // 收集该 face 的所有 edge 到 compound
+    // 过滤 seam edge：用 BRep_Tool::IsClosed(edge, face) 检测。
+    // seam edge（圆柱/球面等周期面的缝合边）在 OCCT 中 IsClosed 返回 true，
+    // 这比 TShape 去重更可靠——seam edge 的两条拷贝方向不同导致 TShape 不同，
+    // 但 IsClosed 能正确识别它们的几何闭合特性。
+    BRep_Builder builder;
+    builder.MakeCompound(compound);
+    bool hasEdge = false;
+    const TopoDS_Face& face = TopoDS::Face(faceExp.Current());
+    for (TopExp_Explorer edgeExp(face, TopAbs_EDGE); edgeExp.More(); edgeExp.Next()) {
+        const TopoDS_Edge& edge = TopoDS::Edge(edgeExp.Current());
+        // 跳过 seam edge（周期面的缝合边）
+        if (BRep_Tool::IsClosed(edge, face)) {
+            continue;
+        }
+        builder.Add(compound, edge);
+        hasEdge = true;
+    }
+
+    if (!hasEdge) {
+        // 空的 compound，返回空（调用方会判 IsNull）
+        return TopoDS_Compound();
+    }
+    return compound;
 }
 
 int OCCTViewer::pickFaceByRay(int mouseX, int mouseY) {

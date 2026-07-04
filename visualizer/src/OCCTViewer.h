@@ -67,6 +67,7 @@ private:
     void restoreHoveredFace();
     int pickFaceByRay(int mouseX, int mouseY);                           // 几何光线求交
     int pickFaceAtPos(int devX, int devY);                               // 综合拾取（选择器+光线），不改选中状态
+    TopoDS_Compound buildFaceEdgesCompound(int faceIndex) const;         // 提取面的所有边组成 compound
 
     Handle(V3d_Viewer) viewer_;
     Handle(V3d_View) view_;
@@ -76,6 +77,7 @@ private:
 #endif
 
     Handle(AIS_ColoredShape) coloredShape_;          // 整模型，内部按面着色
+    Handle(AIS_Shape) hoverEdges_;                   // 悬停面边线高亮叠加层
     TopoDS_Shape fullShape_;                         // 原始完整形状，用于子面遍历
     std::map<int, Quantity_Color> faceColors_;       // 每个面当前颜色
     std::map<int, Quantity_Color> savedFaceColors_;  // 高亮前保存的面颜色
