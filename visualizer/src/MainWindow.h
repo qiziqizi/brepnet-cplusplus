@@ -120,6 +120,9 @@ protected:
     std::vector<std::vector<int>> faceEdgeCoedge_;
     // 全局 Edge → {(faceIndex, coedgeIndex)}
     std::map<int, std::vector<std::pair<int, int>>> edgeToCoedges_;
+    // 每个面的 coedge 全局偏移：faceCoedgeOffset_[fi] = 面0~fi-1 的 coedge 总数
+    // 全局 coedge 索引 = faceCoedgeOffset_[faceIdx] + coedgeIdx（从0开始）
+    std::vector<int> faceCoedgeOffset_;
 
     // "other" 面的暖色系颜色（每面不同）
     std::vector<Quantity_Color> warmOtherColors_;

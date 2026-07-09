@@ -504,21 +504,26 @@ void MainWindow::onLoadFile() {
     // 构建 coedge 映射
     faceEdgeCoedge_.clear();
     edgeToCoedges_.clear();
+    faceCoedgeOffset_.clear();
     {
         int numFaces = loader_->getNumFaces();
         faceEdgeCoedge_.resize(numFaces);
+        faceCoedgeOffset_.resize(numFaces, 0);
+        int globalCoedgeCounter = 0;
         for (int fi = 0; fi < numFaces; ++fi) {
+            faceCoedgeOffset_[fi] = globalCoedgeCounter;
             const TopoDS_Face& f = loader_->getFaces()[fi];
             int coedgeIdx = 0;
             for (TopExp_Explorer exp(f, TopAbs_EDGE); exp.More(); exp.Next()) {
                 const TopoDS_Edge& e = TopoDS::Edge(exp.Current());
-                if (BRep_Tool::Degenerated(e)) continue;
+                // 包含退化边，保证 coedge 全局编号与 Python npz 一致
                 const TopoDS_TShape* key = e.TShape().operator->();
                 auto it = edgeGlobalIdMap_.find(key);
                 if (it != edgeGlobalIdMap_.end()) {
                     int gid = it->second;
                     faceEdgeCoedge_[fi].push_back(gid);
                     edgeToCoedges_[gid].emplace_back(fi, coedgeIdx);
+                    ++globalCoedgeCounter;
                 }
                 ++coedgeIdx;
             }
@@ -747,22 +752,23 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
     QStringList faceEdgeCoedgeStr;
     for (size_t ci = 0; ci < coedgeList.size(); ++ci) {
         int gid = coedgeList[ci];
-        int thisIdx = static_cast<int>(ci) + 1;
-        // 查找该 edge 的另一个 coedge 的局部索引
-        int otherIdx = -1;
+        // 全局 coedge 索引（0-based，与 Python npz 一致）
+        int thisGlobalCoedge = faceCoedgeOffset_[faceIndex] + static_cast<int>(ci);
+        // 查找该 edge 的另一个 coedge 的全局索引
+        int otherGlobalCoedge = -1;
         auto cit = edgeToCoedges_.find(gid);
         if (cit != edgeToCoedges_.end()) {
             for (const auto& p : cit->second) {
                 if (p.first != faceIndex) {
-                    otherIdx = p.second + 1;
+                    otherGlobalCoedge = faceCoedgeOffset_[p.first] + p.second;
                     break;
                 }
             }
         }
-        if (otherIdx >= 0) {
-            faceEdgeCoedgeStr << QString("%1(%2,%3)").arg(gid).arg(thisIdx).arg(otherIdx);
+        if (otherGlobalCoedge >= 0) {
+            faceEdgeCoedgeStr << QString("%1(%2,%3)").arg(gid).arg(thisGlobalCoedge).arg(otherGlobalCoedge);
         } else {
-            faceEdgeCoedgeStr << QString("%1(%2)").arg(gid).arg(thisIdx);
+            faceEdgeCoedgeStr << QString("%1(%2)").arg(gid).arg(thisGlobalCoedge);
         }
     }
     lblHoverFaceEdgeIds_->setText("Edge ID(coedge): " + (faceEdgeCoedgeStr.isEmpty()
@@ -842,12 +848,14 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
         lblHoverEdgeId_->setText(QString("Edge ID: #%1").arg(bestGlobalEdgeId));
         lblHoverEdgeType_->setText(QString("类型: %1").arg(edgeTypeStr));
 
-        // Coedge 归属信息
+        // Coedge 归属信息（全局索引）
         auto cit = edgeToCoedges_.find(bestGlobalEdgeId);
         if (cit != edgeToCoedges_.end()) {
             QStringList coedgeParts;
             for (const auto& p : cit->second) {
-                coedgeParts << QString("%1(%2)").arg(p.second + 1).arg(p.first);
+                // 全局 coedge 索引（0-based，与 Python npz 一致）
+                int globalCoedge = faceCoedgeOffset_[p.first] + p.second;
+                coedgeParts << QString("%1(%2)").arg(globalCoedge).arg(p.first);
             }
             lblHoverCoedgeId_->setText("Coedge ID(Face): " + coedgeParts.join(", "));
         } else {
