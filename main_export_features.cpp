@@ -1,14 +1,12 @@
-﻿// 调试输出开关：通过 DebugControl.h 统一管理
+// 调试输出开关：通过 DebugControl.h 统一管理
 // 通过命令行参数控制，永远不需要注释/取消注释代码
 
 #include "DebugControl.h"
-#include "VersionConfig.h"
 #include "VersionConfig.h"
 #include "BRepNet.h"
 #include "BRepNetAdapter.h"
 #include "BRepPipeline.h"
 #include "FeatureMapExporter.h"
-#include "EdgeInputExporter.h"
 #include "OutputLogger.h"
 #include <iostream>
 #include <iomanip>
@@ -171,26 +169,6 @@ void run_inference_with_export(const std::string& step_file,
         coedge_uv_out.close();
         DBG_LOG << "  Exported: " << coedge_uv_file << " (" << flattened_face_grids.size(0) << " rows)" << std::endl;
 
-        // 还需要导出Edge UV Grids
-        if (pipeline.EdgeGridsLocal.defined()) {
-            int num_edges_topo = (int)pipeline.EdgeGridsLocal.size(0);
-            // 必须clone()，避免数据污染
-            Tensor flattened_edge_grids = pipeline.EdgeGridsLocal.clone().view({num_edges_topo, 13 * 20});
-
-            std::string edge_uv_file = "cpp_uv_grids/edge_uv_grids_" + base_name + ".txt";
-            std::ofstream edge_uv_out(edge_uv_file, std::ios::out);
-            edge_uv_out << std::scientific << std::setprecision(20);
-
-            for (int i = 0; i < flattened_edge_grids.size(0); ++i) {
-                for (int j = 0; j < flattened_edge_grids.size(1); ++j) {
-                    if (j > 0) edge_uv_out << " ";
-                    edge_uv_out << flattened_edge_grids.at({i, j});
-                }
-                edge_uv_out << "\n";
-            }
-            edge_uv_out.close();
-            DBG_LOG << "  Exported: " << edge_uv_file << " (" << flattened_edge_grids.size(0) << " rows)" << std::endl;
-        }
     }
 
     // ========================================================================
@@ -701,12 +679,6 @@ void run_inference_with_export(const std::string& step_file,
         bool is_small_face = (int)face.coedge_ids.size() < max_coedges_per_face;
         float init_value = is_small_face ? 0.0f : -1e9f;
         face.output_state.assign(30, init_value);
-
-        // 调试输出
-        if (!is_small_face) {
-            DBG_LOG << "[Debug] Face " << face.face_id << " is BIG FACE with "
-                    << face.coedge_ids.size() << " coedges, init=" << init_value << std::endl;
-        }
 
         for (int coedge_id : face.coedge_ids) {
             if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {

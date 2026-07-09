@@ -46,13 +46,9 @@ d:\brepnet-cplusplus\
 ├── BRepTorch.h                ← 自实现张量库：Tensor + 所有算子
 ├── BRepUtils.h / .cpp         ← 几何工具函数（法线投影/面积/缩放等）
 │
-├── DebugConfig.h              ← 全局调试开关（已弃用，被 DebugControl.h 取代）
 ├── DebugControl.h             ← 运行时调试控制（命令行参数驱动，无需重编译）
 ├── FeatureMapExporter.h       ← 中间层特征导出工具
-├── FeatureMapDebugger.h       ← 中间层特征调试（张量统计/导出）
 ├── OutputLogger.h             ← 终端输出同时写入日志文件
-├── EdgeInputExporter.h        ← Edge 网格调试导出（已弃用）
-├── TopologyExporter.h         ← 拓扑信息导出（已弃用）
 │
 ├── inference_data/            ← 运行时数据目录
 │   ├── state_dict.npz         ← Python 导出的模型权重
@@ -92,31 +88,28 @@ STEP 文件
 │                                                     │
 │  ① STEP 读取 → TopoDS_Shape                        │
 │  ② build_topology() → CoedgeInfo[] 拓扑图           │
-│  ③ extract_features() → Xf, Xe, Xc（占位特征）     │
-│  ④ generate_tensors() → Kf, Ke, Kc, Cf, Ce, Csf    │
-│  ⑤ generate_local_grids():                          │
+│  ③ generate_local_grids():                          │
 │     a. generate_global_face_grids()   → [F, 9, 10, 10]  │
 │     b. compute_all_lcs_matrices()     → LCS_inv[C]  │
 │     c. generate_coedge_local_grids()  → [C, 13, 10] │
 │     d. generate_face_local_grids()    → [C, 2, 9, 10, 10] │
-│     e. generate_edge_local_grids()    → [E, 13, 10] │
 └─────────────────────────────────────────────────────┘
     │
-    ▼  FaceGridsLocal, EdgeGridsLocal, CoedgeGridsLocal
+    ▼  FaceGridsLocal, CoedgeGridsLocal
 ┌─────────────────────────────────────────────────────┐
 │  BRepNetAdapter::extract_coedges/faces/edges()      │
 │                                                     │
-│  ⑥ UVNet Surface Encoder:                           │
+│  ④ UVNet Surface Encoder:                           │
 │     FaceGridsLocal → [C*2, 9, 10, 10]              │
 │     → Conv2d(9→64) → Conv2d(64→128)                │
 │     → GlobalAvgPool → FC(128→64)                    │
 │     → parent_face_features[64], mate_face_features[64] │
 │                                                     │
-│  ⑦ UVNet Curve Encoder:                             │
-│     EdgeGridsLocal → [E, 13, 10]                    │
+│  ⑤ UVNet Curve Encoder:                             │
+│     CoedgeGridsLocal → [C, 13, 10]                  │
 │     → Conv1d(13→64) → Conv1d(64→128)               │
 │     → GlobalAvgPool → FC(128→64)                    │
-│     → edge_features[64]                             │
+│     → edge_features[64]（per-coedge）               │
 │                                                     │
 │  → CoedgeData[], FaceData[], EdgeData[]             │
 └─────────────────────────────────────────────────────┘
@@ -125,23 +118,23 @@ STEP 文件
 ┌─────────────────────────────────────────────────────┐
 │  BRepNet Forward (手动逐层执行)                       │
 │                                                     │
-│  ⑧ Layer 0 (一阶邻居):                              │
+│  ⑥ Layer 0 (一阶邻居):                              │
 │     MLP(192→60→60) → edge_state[30] + face_state[30] │
 │     → Face MaxPool → face.layer0_state[30]          │
 │     → Edge MaxPool → edge.layer0_state[30]          │
 │                                                     │
-│  ⑨ Layer 1 (二阶邻居):                              │
+│  ⑦ Layer 1 (二阶邻居):                              │
 │     输入: face.layer0[30] + mate_face.layer0[30]     │
 │           + edge.layer0[30] = 90                     │
 │     MLP(90→60→60) → edge_state[30] + face_state[30] │
 │     → Face MaxPool → face.layer1_state[30]          │
 │     → Edge MaxPool → edge.layer1_state[30]          │
 │                                                     │
-│  ⑩ Output Layer (三阶邻居):                         │
+│  ⑧ Output Layer (三阶邻居):                         │
 │     MLP(90→30→30) → face_state[30]（无 edge）       │
 │     → Face MaxPool → face.output_state[30]          │
 │                                                     │
-│  ⑪ Classification:                                  │
+│  ⑨ Classification:                                  │
 │     Linear(30→27) → logits[F, 27]                   │
 │     → softmax → probs[F, 27]                        │
 └─────────────────────────────────────────────────────┘
@@ -164,13 +157,13 @@ STEP 文件
 | 9 | Face Grid 通道数 (xyz + normal_xyz + mask + uv) | 固定 |
 | 13 | Coedge Grid 通道数 (xyz + tangent + left_normal + right_normal + u_param) | 固定 |
 | 10×10 | Face Grid 空间分辨率 | 固定 |
-| 10 | Coedge/Edge Grid 沿弧长的采样点数 | 固定 |
+| 10 | Coedge Grid 沿弧长的采样点数 | 固定 |
 
 ---
 
 ## 4. 核心文件详解
 
-### 4.1 `BRepTorch.h` — 自实现张量库（1485 行）
+### 4.1 `BRepTorch.h` — 自实现张量库（1353 行）
 
 **这是本项目最独特的部分。** 完全替代了 LibTorch，实现了推理所需的全部张量操作。
 
@@ -211,7 +204,7 @@ Tensor                     ← 引用语义（shared_ptr 指向 Storage）
 
 > **matmul 使用 Kahan 求和算法**（双精度补偿），以减少浮点累积误差。
 
-### 4.2 `BRepPipeline.h` — 几何+拓扑处理核心（1513 行）
+### 4.2 `BRepPipeline.h` — 几何+拓扑处理核心（980 行）
 
 这是项目中最复杂的文件，负责从 STEP 几何体提取 BRepNet 所需的全部输入数据。
 
@@ -222,9 +215,7 @@ process(step_file)
     ├── STEPControl_Reader 读取 STEP
     ├── TopExp_Explorer 遍历 Face/Edge → unique_faces, unique_edges
     ├── build_topology()      → coedges[] (id, face_idx, edge_idx, mate_idx, orientation, next/prev)
-    ├── extract_features()    → Xf[F,7], Xe[E,10], Xc[C,1]（占位，UVNet 会替代）
-    ├── generate_tensors()    → Kf, Ke, Kc（邻接关系）, Cf, Ce, Csf（Pooling 索引）
-    └── generate_local_grids() → FaceGridsLocal, CoedgeGridsLocal, EdgeGridsLocal
+    └── generate_local_grids() → FaceGridsLocal, CoedgeGridsLocal
 ```
 
 #### 核心数据结构
@@ -285,31 +276,24 @@ struct CoedgeInfo {
 - 点通道（0-2）：仿射变换 `P' = M_inv * P`
 - 向量通道（法线/切线）：仅旋转 `V' = R_inv * V`
 
-##### Edge Grid（`generate_edge_local_grids`）
-- 每条 Edge 从其两个 Coedge 中选择"左 coedge"：
-  - 若 second_coedge 是 REVERSED → 选 first_coedge
-  - 否则 → 选 second_coedge
-- Edge Grid = 选中 Coedge 的 CoedgeGridsLocal
-
 ##### Face Local Grid（`generate_face_local_grids`）
 - 每个 Coedge 生成一对 `[2, 9, 10, 10]`：
   - `[0]`：左面（parent face）的 FaceGrid，用该 coedge 的 LCS_inv 变换
   - `[1]`：右面（mate face）的 FaceGrid，用 **mate coedge** 的 LCS_inv 变换
 
-#### Pooling 索引（`generate_tensors`）
+#### 成员变量
 
-| 张量 | 形状 | 说明 |
+| 变量 | 类型 | 说明 |
 |------|------|------|
-| Kf | [C, 2] | 每个 Coedge 对应的 Face 邻居（self, mate） |
-| Ke | [C, 1] | 每个 Coedge 对应的 Edge |
-| Kc | [C, 2] | 每个 Coedge 的 Coedge 邻居（self, mate） |
-| Ce | [E, 2] | 每条 Edge 的两个 Coedge |
-| Cf | [small_F, 30] | 小面（≤30 coedge）的 Pooling 索引 |
-| Csf | [big_F 个 Tensor] | 大面（>30 coedge）的 Coedge 列表 |
+| `FaceGridsGlobal` | `Tensor` | 全局 Face Grid `[F, 9, 10, 10]` |
+| `FaceGridsLocal` | `Tensor` | 局部 Face Grid `[C, 2, 9, 10, 10]` |
+| `CoedgeGridsLocal` | `Tensor` | 局部 Coedge Grid `[C, 13, 10]`，供 UVNet Curve Encoder 使用 |
+| `coedges` | `vector<CoedgeInfo>` | 拓扑信息数组 |
+| `unique_faces` | `TopTools_IndexedMapOfShape` | 唯一面映射 |
+| `unique_edges` | `TopTools_IndexedMapOfShape` | 唯一边映射 |
+| `coedge_origins_` | `vector<array<float,3>>` | 每条 coedge 的中点坐标 |
 
-> **Small Face / Big Face 分离**是 Python 端的设计：小面用固定大小矩阵 + zero padding，大面用变长列表。这会影响 Output Layer 的 MaxPooling 初始化值。
-
-### 4.3 `BRepNet.h` — 网络结构定义（622 行）
+### 4.3 `BRepNet.h` — 网络结构定义（278 行）
 
 #### 数据结构
 
@@ -382,7 +366,7 @@ Big Face (>30 coedge):   初始化为 -inf → 保留所有负值
 
 这是 Python 端 Cf 矩阵 zero-padding 引起的隐式行为，C++ 端必须精确复现。
 
-### 4.4 `UVNet.h` — UV-Net 编码器（435 行）
+### 4.4 `UVNet.h` — UV-Net 编码器（387 行）
 
 #### Surface Encoder
 
@@ -413,7 +397,7 @@ Big Face (>30 coedge):   初始化为 -inf → 保留所有负值
 - BatchNorm 的 `running_mean`/`running_var` 存储在 `buffers` 中
 - 权重名称格式：`surface_encoder.conv1.0.weight`、`curve_encoder.fc.1.bias` 等
 
-### 4.5 `BRepNetAdapter.h` — 数据桥接（159 行）
+### 4.5 `BRepNetAdapter.h` — 数据桥接（140 行）
 
 负责将 `BRepPipeline` 的原始数据转换为 `BRepNet` 需要的 `CoedgeData`/`FaceData`/`EdgeData` 格式：
 
@@ -421,13 +405,13 @@ Big Face (>30 coedge):   初始化为 -inf → 保留所有负值
    - 将 `FaceGridsLocal[C, 2, 9, 10, 10]` reshape 为 `[C*2, 9, 10, 10]`
    - 批量送入 Surface Encoder → `[C*2, 64]` → reshape `[C, 128]`
    - 前 64 维 = parent_face，后 64 维 = mate_face
-   - Edge 特征：`EdgeGridsLocal[E, 13, 10]` → Curve Encoder → `[E, 64]`
-   - 按 coedge 的 `edge_idx` 查找对应 Edge 的特征
+   - Coedge 特征：`CoedgeGridsLocal[C, 13, 10]` → Curve Encoder → `[C, 64]`
+   - 每个 coedge 直接获得自己的 edge_features（不再通过 edge_id 索引）
 
 2. `extract_faces()`：按 `face_idx` 收集每个面的 coedge 列表
 3. `extract_edges()`：按 `edge_idx` 收集每条边的 coedge 列表
 
-### 4.6 `main_export_features.cpp` — 主入口（1255 行）
+### 4.6 `main_export_features.cpp` — 主入口（946 行）
 
 #### 执行流程
 
@@ -467,7 +451,7 @@ layers.1.mlp → layer_1.mlp
 
 logits 按**原始 Face ID 顺序**导出（与 Python 一致），而非推理时的内部排列顺序。推理内部使用 `face_permutation`（small faces 在前，big faces 在后）。
 
-### 4.7 `cpp_results` 预测结果导出（新增）
+### 4.7 `cpp_results` 预测结果导出
 
 在 `main_export_features.cpp` 的 logits 导出后，自动生成预测结果文件。
 
@@ -490,24 +474,23 @@ logits 按**原始 Face ID 顺序**导出（与 Python 一致），而非推理�
 - **Top 3 类别及其概率**：前三高的类别和对应概率，便于了解备选预测
 
 #### 实现位置
-`main_export_features.cpp` 第 884-957 行
+`main_export_features.cpp` 第 801-871 行
 
 #### 关键特性
-- ✅ 按原始 Face 顺序输出（与 cpp_logits 一致）
-- ✅ Top 3 通过排序得到（最高概率优先）
-- ✅ 置信度采用普通浮点格式（易读）
-- ✅ Top 3 概率采用科学计数法（高精度）
-- ✅ 显式内存清理（probs_original_order 等向量）
-- ✅ 详见：`cpp_results_输出说明.md`
+- 按原始 Face 顺序输出（与 cpp_logits 一致）
+- Top 3 通过排序得到（最高概率优先）
+- 置信度采用普通浮点格式（易读）
+- Top 3 概率采用科学计数法（高精度）
+- 显式内存清理（probs_original_order 等向量）
 
 ### 4.8 辅助文件
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `DebugConfig.h` | 32 | `ENABLE_DEBUG_OUTPUT` 宏（0/1），控制 `DEBUG_COUT` |
-| `OutputLogger.h` | 90 | `TeeBuf` 实现 stdout 同时写控制台+文件 |
-| `FeatureMapExporter.h` | 190 | 将 Tensor/vector 按层名导出为 `.txt` 文件 |
-| `BRepUtils.h/.cpp` | 57+impl | `GetParamStrict()`（UV 采样）、`GetNormalAtPoint()`（法线）等 |
+| `DebugControl.h` | 86 | 运行时调试控制系统，通过命令行参数 `--debug-*` 控制各模块调试输出 |
+| `OutputLogger.h` | 75 | `TeeBuf` 实现 stdout 同时写控制台+文件 |
+| `FeatureMapExporter.h` | 159 | 将 Tensor/vector 按层名导出为 `.txt` 文件 |
+| `BRepUtils.h/.cpp` | 44+180 | `GetParamStrict()`（UV 采样）、`GetNormalAtPoint()`（法线）等 |
 
 ---
 
@@ -629,7 +612,7 @@ inference_data/
 ```
 cpp_feature_maps/
 ├── uvnet_surface/        ← [C*2, 64] UVNet 面特征
-├── uvnet_curve/          ← [E, 64] UVNet 边特征
+├── uvnet_curve/          ← [C, 64] UVNet 边特征
 ├── layer0_input_concat/  ← [C, 192] Layer 0 MLP 输入
 ├── layer0_mlp_output/    ← [C, 60] Layer 0 MLP 输出
 ├── layer0_face_pooling/  ← [F, 30] Layer 0 Face MaxPool 结果
@@ -645,17 +628,9 @@ cpp_feature_maps/
 
 ### 7.3 调试开关
 
-- `DebugControl.h`：**运行时调试控制系统**（已取代 `DebugConfig.h`），通过命令行参数 `--debug-*` 控制各模块调试输出，无需重新编译。支持的开关包括 `--debug-topology`、`--debug-uvnet`、`--debug-pipeline` 等
-- `DebugConfig.h`：旧版编译期开关（`ENABLE_DEBUG_OUTPUT` 宏），已弃用但仍保留
+- `DebugControl.h`：**运行时调试控制系统**，通过命令行参数 `--debug-*` 控制各模块调试输出，无需重新编译。支持的开关包括 `--debug-topology`、`--debug-uvnet`、`--debug-pipeline` 等
 - `UVNet.h`：`UVNET_DEBUG_OUTPUT` 宏控制 UVNet 层调试
 - `main_export_features.cpp` 中有大量注释掉的调试代码块，需要时可取消注释
-
-### 7.4 诊断系统
-
-`BRepPipeline.h` 底部有诊断函数：
-- `diagnose_face_19_23_26_grids()`：针对特定 Face 的 Grid 数据诊断
-- 弧长中点诊断：输出到 `arc_length_diagnosis.txt`
-- Coedge Grid 诊断：输出到 `coedge_grid_diagnosis.txt`
 
 ---
 
@@ -746,25 +721,29 @@ enum class WorkMode {
 
 | 你想了解... | 去看... | 行号 |
 |------------|---------|------|
-| STEP 文件怎么读取 | `BRepPipeline.h` `process()` | 147-190 |
-| 拓扑怎么构建 | `BRepPipeline.h` `build_topology()` | 288-360 |
-| Face Grid 怎么采样 | `BRepPipeline.h` `generate_global_face_grid()` | 531-614 |
-| Coedge Grid 怎么生成 | `BRepPipeline.h` `generate_global_coedge_grid()` | 616-837 |
-| 弧长参数化怎么做 | `BRepPipeline.h` `generate_global_coedge_grid()` 内部 | 657-720 |
-| LCS 怎么计算 | `BRepPipeline.h` `compute_coedge_lcs()` | 912-1020 |
-| Grid 怎么变换到局部坐标 | `BRepPipeline.h` `transform_grid_to_local()` | 1027-1092 |
-| Edge Grid 怎么选左 coedge | `BRepPipeline.h` `generate_edge_local_grids()` | 1219-1306 |
-| UVNet 怎么编码面 | `UVNet.h` `UVNetSurfaceEncoderImpl::forward()` | 222-280 |
-| UVNet 怎么编码边 | `UVNet.h` `UVNetCurveEncoderImpl::forward()` | 398-430 |
-| 特征怎么从 Pipeline 转到 BRepNet | `BRepNetAdapter.h` `extract_coedges()` | 9-104 |
-| BRepNet MLP 结构 | `BRepNet.h` `BRepNetMLPImpl` | 23-61 |
-| BRepNet forward 逻辑 | `BRepNet.h` `BRepNetImpl::forward()` | 173-619 |
-| 权重怎么加载 | `main_export_features.cpp` | 1104-1198 |
-| logits 怎么导出 | `main_export_features.cpp` | 1001-1032 |
+| STEP 文件怎么读取 | `BRepPipeline.h` `process()` | 125-161 |
+| 拓扑怎么构建 | `BRepPipeline.h` `build_topology()` | 175-250 |
+| Face Grid 怎么采样 | `BRepPipeline.h` `generate_global_face_grid()` | 253-331 |
+| Coedge Grid 怎么生成 | `BRepPipeline.h` `generate_global_coedge_grid()` | 333-592 |
+| 弧长参数化怎么做 | `BRepPipeline.h` `generate_global_coedge_grid()` 内部 | 550-592 |
+| LCS 怎么计算 | `BRepPipeline.h` `compute_coedge_lcs()` | 594-782 |
+| Grid 怎么变换到局部坐标 | `BRepPipeline.h` `transform_grid_to_local()` | 784-851 |
+| 全局 Face Grid 批量生成 | `BRepPipeline.h` `generate_global_face_grids()` | 853-869 |
+| LCS 矩阵批量计算 | `BRepPipeline.h` `compute_all_lcs_matrices()` | 871-959 |
+| Coedge Local Grid 生成 | `BRepPipeline.h` `generate_coedge_local_grids()` | 961-1056 |
+| Face Local Grid 生成 | `BRepPipeline.h` `generate_face_local_grids()` | 1079-1146 |
+| generate_local_grids 总入口 | `BRepPipeline.h` `generate_local_grids()` | 1148-1167 |
+| UVNet 怎么编码面 | `UVNet.h` `UVNetSurfaceEncoderImpl::forward()` | 240-298 |
+| UVNet 怎么编码边 | `UVNet.h` `UVNetCurveEncoderImpl::forward()` | 429-461 |
+| 特征怎么从 Pipeline 转到 BRepNet | `BRepNetAdapter.h` `extract_coedges()` | 11-115 |
+| BRepNet MLP 结构 | `BRepNet.h` `BRepNetMLPImpl` | 25-60 |
+| BRepNet forward 逻辑 | `BRepNet.h` `BRepNetImpl::forward()` | 176-337 |
+| 权重怎么加载 | `main_export_features.cpp` | 960-1049 |
+| logits 怎么导出 | `main_export_features.cpp` | 758-798 |
+| 预测结果怎么导出 | `main_export_features.cpp` | 801-871 |
 | 张量库 matmul 实现 | `BRepTorch.h` `matmul()` | 575-608 |
-| 张量库 conv2d 实现 | `BRepTorch.h` nn namespace | ~1050+ |
-| Small/Big Face 分离 | `BRepPipeline.h` `generate_tensors()` | 454-523 |
-| Output Layer MaxPool 特殊逻辑 | `main_export_features.cpp` | 908-948 |
+| 张量库 conv2d 实现 | `BRepTorch.h` `conv2d()` | 1031+ |
+| Output Layer MaxPool 特殊逻辑 | `main_export_features.cpp` | 673-710 |
 
 ---
 
