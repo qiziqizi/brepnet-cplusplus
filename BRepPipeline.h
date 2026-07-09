@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <iostream>
 #include <vector>
@@ -15,6 +15,7 @@
 #include "cnpy.h"
 #include "BRepUtils.h"
 #include "DebugControl.h"
+#include "VersionConfig.h"
 
 // OpenCascade 头文件
 #include <STEPControl_Reader.hxx>
@@ -238,6 +239,9 @@ public:
 
     Tensor FaceGridsGlobal; // 存储提取的全局 Grid 数据 [N, 9, 40, 40]
     std::vector<std::array<float, 3>> coedge_origins_; // 每条 coedge 的中点坐标（退化边存 {-2000,-2000,-2000}）
+#if BREPNET_VERSION == 4
+    std::vector<bool> bool_array_;
+#endif
     Tensor EdgeGridsGlobal;
     Tensor CoedgeGridsGlobal;
     bool use_uvnet = false;
@@ -510,8 +514,13 @@ private:
 
     // BRepPipeline.h: generate_global_face_grid()
     Tensor generate_global_face_grid(const TopoDS_Face& face) {
+#if BREPNET_VERSION == 4
+        int num_u = 20;
+        int num_v = 20;
+#else
         int num_u = 40;
         int num_v = 40;
+#endif
 
         // Shape: [9, 40, 40]
         Tensor grid = breptorch::zeros({ 9, num_u, num_v }, breptorch::kFloat32);
@@ -600,8 +609,13 @@ private:
             face_right = TopoDS::Face(unique_faces.FindKey(mate_face_idx + 1));
         }
 
-        // 2. 准备 Tensor [13, 20]
+#if BREPNET_VERSION == 4
+        // V4: 20 samples (curve data, but not used for CoedgeGridsLocal in V4)
         int num_u = 20;
+#else
+        // V123: 40 samples
+        int num_u = 40;
+#endif
         Tensor grid = breptorch::zeros({13, num_u}, breptorch::kFloat32);
 
         // ✅ 【关键修复】检查curve是否为NULL
@@ -958,9 +972,37 @@ private:
         float t_arr[3] = { (float)t_vec.X(), (float)t_vec.Y(), (float)t_vec.Z() };
         float n_arr[3] = { (float)n_vec.X(), (float)n_vec.Y(), (float)n_vec.Z() };
 
-        // 【步骤6】W 轴归一化（与Python numpy.linalg.norm一致，不加epsilon）
+#if BREPNET_VERSION == 4
+        // V4: u=normal, v=tangent(unprojected), w=cross(u,v)
+        float u_norm = sqrt(n_arr[0]*n_arr[0] + n_arr[1]*n_arr[1] + n_arr[2]*n_arr[2]);
+        if (u_norm < 1e-10f) u_norm = 1e-10f;
+        float u_vec[3] = { n_arr[0]/u_norm, n_arr[1]/u_norm, n_arr[2]/u_norm };
+
+        float v_norm = sqrt(t_arr[0]*t_arr[0] + t_arr[1]*t_arr[1] + t_arr[2]*t_arr[2]);
+        if (v_norm < 1e-10f) v_norm = 1e-10f;
+        float v_vec[3] = { t_arr[0]/v_norm, t_arr[1]/v_norm, t_arr[2]/v_norm };
+
+        // Check if tangent is parallel to normal (projection fails)
+        float cross_check = sqrt(
+            (u_vec[1]*v_vec[2] - u_vec[2]*v_vec[1]) * (u_vec[1]*v_vec[2] - u_vec[2]*v_vec[1]) +
+            (u_vec[2]*v_vec[0] - u_vec[0]*v_vec[2]) * (u_vec[2]*v_vec[0] - u_vec[0]*v_vec[2]) +
+            (u_vec[0]*v_vec[1] - u_vec[1]*v_vec[0]) * (u_vec[0]*v_vec[1] - u_vec[1]*v_vec[0])
+        );
+        if (cross_check < 1e-6f) {
+            // Return zero matrix (singular)
+            return breptorch::zeros({4, 4});
+        }
+
+        // w = cross(u, v)
+        float w_vec[3] = {
+            u_vec[1] * v_vec[2] - u_vec[2] * v_vec[1],
+            u_vec[2] * v_vec[0] - u_vec[0] * v_vec[2],
+            u_vec[0] * v_vec[1] - u_vec[1] * v_vec[0]
+        };
+#else
+        // V123: w=normal, v=projected_tangent, u=cross(v,w)
         float w_norm = sqrt(n_arr[0] * n_arr[0] + n_arr[1] * n_arr[1] + n_arr[2] * n_arr[2]);
-        if (w_norm < 1e-10f) w_norm = 1e-10f;  // 仅防除零
+        if (w_norm < 1e-10f) w_norm = 1e-10f;
 
         float w_vec[3] = {
             n_arr[0] / w_norm,
@@ -968,7 +1010,6 @@ private:
             n_arr[2] / w_norm
         };
 
-        // 2. V 轴 (切线投影到垂直于 W 轴的平面)
         float dot_tw = t_arr[0] * w_vec[0] + t_arr[1] * w_vec[1] + t_arr[2] * w_vec[2];
         float v_vec[3] = {
             t_arr[0] - dot_tw * w_vec[0],
@@ -976,7 +1017,6 @@ private:
             t_arr[2] - dot_tw * w_vec[2]
         };
 
-        // V 轴归一化
         float v_norm = sqrt(v_vec[0] * v_vec[0] + v_vec[1] * v_vec[1] + v_vec[2] * v_vec[2]);
 
         if (v_norm < 1e-6f) {
@@ -995,18 +1035,17 @@ private:
             v_norm = sqrt(v_vec[0] * v_vec[0] + v_vec[1] * v_vec[1] + v_vec[2] * v_vec[2]);
         }
 
-        // 【步骤6】V 轴归一化（与Python numpy.linalg.norm一致，不加epsilon）
-        if (v_norm < 1e-10f) v_norm = 1e-10f;  // 仅防除零
+        if (v_norm < 1e-10f) v_norm = 1e-10f;
         v_vec[0] /= v_norm;
         v_vec[1] /= v_norm;
         v_vec[2] /= v_norm;
 
-        // 3. U 轴 (V × W)
         float u_vec[3] = {
             v_vec[1] * w_vec[2] - v_vec[2] * w_vec[1],
             v_vec[2] * w_vec[0] - v_vec[0] * w_vec[2],
             v_vec[0] * w_vec[1] - v_vec[1] * w_vec[0]
         };
+#endif
 
 
         // 4. 组装矩阵 (手动赋值)
@@ -1168,9 +1207,18 @@ private:
             }
             // ===== LCS调试结束 =====
 
+#if BREPNET_VERSION == 4
+            if (std::abs(breptorch::det(mat)) < 1e-3) {
+                mat = breptorch::eye(4);
+                bool_array_.push_back(false);
+            } else {
+                bool_array_.push_back(true);
+            }
+#else
             if (std::abs(breptorch::det(mat)) < 1e-10) {
                 mat = breptorch::eye(4);
             }
+#endif
 
             Tensor mat_inv = breptorch::inverse(mat);
 
@@ -1201,12 +1249,37 @@ private:
         c_list.reserve(num_c);
 
         DBG_CERR << "[DEBUG] generate_coedge_local_grids() called, processing " << num_c << " coedges" << std::endl;
+
+#if BREPNET_VERSION == 4
+        // V4: CoedgeGridsLocal = mate_relative_face_grids [9, 20, 20]
+        // mate face's global grid transformed to CURRENT coedge's LCS, × bool_array
+        for (int i = 0; i < num_c; ++i) {
+            Tensor mate_grid = breptorch::zeros({ 9, 20, 20 }, breptorch::kFloat32);
+
+            int mate_idx = coedges[i].mate_idx;
+            if (mate_idx != -1) {
+                int mf_idx = coedges[mate_idx].face_idx;
+                if (FaceGridsGlobal.defined() && mf_idx < FaceGridsGlobal.size(0)) {
+                    bool is_degenerate_m = (coedge_origins_[mate_idx][0] <= -1000.0f);
+                    bool is_valid = bool_array_.size() > (size_t)i ? bool_array_[i] : true;
+                    if (!is_degenerate_m && is_valid) {
+                        Tensor global_grid_m = get_slice(FaceGridsGlobal, mf_idx);  // [9, 20, 20]
+                        // Transform with CURRENT coedge's LCS (not mate's)
+                        mate_grid = transform_grid_to_local(global_grid_m, lcs_invs[i], true);
+                    }
+                }
+            }
+            c_list.push_back(mate_grid);
+        }
+#else
+        // V123: CoedgeGridsLocal = curve data [13, 40]
         for (int i = 0; i < num_c; ++i) {
             DBG_CERR << "[DEBUG] Processing coedge " << i << "..." << std::endl;
             Tensor g_global = generate_global_coedge_grid(i);
             Tensor g_local = transform_grid_to_local(g_global, lcs_invs[i], false);
             c_list.push_back(g_local);
         }
+#endif
 
         CoedgeGridsLocal = breptorch::stack(c_list);
     }
@@ -1287,7 +1360,7 @@ private:
         return out;
     }
 
-    // 生成Face局部网格（以 Coedge 中点为中心裁剪 20×20，与 Python new/ 版本一致）
+    // 生成Face局部网格
     void generate_face_local_grids(std::vector<Tensor>& lcs_invs) {
         int num_c = coedges.size();
         std::vector<Tensor> f_list;
@@ -1298,6 +1371,30 @@ private:
         for (int i = 0; i < num_c; ++i) {
             Tensor pair = breptorch::zeros({ 2, 9, samplesize, samplesize }, breptorch::kFloat32);
 
+#if BREPNET_VERSION == 4
+            // V4: no crop (already 20×20), with bool_array
+            bool is_valid = bool_array_.size() > (size_t)i ? bool_array_[i] : true;
+
+            // Left Face (parent face of coedge i) - use lcs_i, no crop
+            int f_idx = coedges[i].face_idx;
+            if (FaceGridsGlobal.defined() && f_idx < FaceGridsGlobal.size(0) && is_valid) {
+                Tensor global_grid = get_slice(FaceGridsGlobal, f_idx);  // [9, 20, 20]
+                Tensor t = transform_grid_to_local(global_grid, lcs_invs[i], true);
+                set_slice(pair, 0, t);
+            }
+
+            // Right Face (mate face) - use lcs_mate, no crop
+            int mate_idx = coedges[i].mate_idx;
+            if (mate_idx != -1) {
+                int mf_idx = coedges[mate_idx].face_idx;
+                if (FaceGridsGlobal.defined() && mf_idx < FaceGridsGlobal.size(0) && is_valid) {
+                    Tensor global_grid_m = get_slice(FaceGridsGlobal, mf_idx);  // [9, 20, 20]
+                    Tensor tm = transform_grid_to_local(global_grid_m, lcs_invs[mate_idx], true);
+                    set_slice(pair, 1, tm);
+                }
+            }
+#else
+            // V123: crop from 40×40 to 20×20
             // Left Face (parent face of coedge i)
             int f_idx = coedges[i].face_idx;
             if (FaceGridsGlobal.defined() && f_idx < FaceGridsGlobal.size(0)) {
@@ -1308,7 +1405,6 @@ private:
                     Tensor t = transform_grid_to_local(global_grid, lcs_invs[i], true);
                     set_slice(pair, 0, crop_face_grid(t, cr, samplesize));
                 }
-                // 退化时 pair[0] 保持全零
             }
 
             // Right Face (mate face)
@@ -1325,6 +1421,7 @@ private:
                     }
                 }
             }
+#endif
 
             f_list.push_back(pair);
         }
@@ -1398,7 +1495,15 @@ private:
             if (selected_coedge != -1 && selected_coedge < CoedgeGridsLocal.size(0)) {
                 e_list.push_back(get_slice(CoedgeGridsLocal, selected_coedge));
             } else {
-                e_list.push_back(breptorch::zeros({ 13, 20 }, CoedgeGridsLocal.options()));
+#if BREPNET_VERSION == 4
+                e_list.push_back(breptorch::zeros({ 9, 20, 20 }, CoedgeGridsLocal.options()));
+#else
+                #if BREPNET_VERSION == 4
+e_list.push_back(breptorch::zeros({ 9, 20, 20 }, CoedgeGridsLocal.options()));
+#else
+e_list.push_back(breptorch::zeros({ 13, 40 }, CoedgeGridsLocal.options()));
+#endif
+#endif
             }
         }
 

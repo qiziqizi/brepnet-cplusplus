@@ -1,24 +1,29 @@
-#pragma once
+﻿#pragma once
 #include "BRepNet.h"
 #include "BRepPipeline.h"
 #include "UVNet.h"
 #include "DebugControl.h"
+#include "VersionConfig.h"
 
 // 适配器：将 BRepPipeline 的数据转换为 BRepNet 需要的格式
 class BRepNetAdapter {
 public:
     static std::vector<CoedgeData> extract_coedges(BRepPipeline& pipeline,
                                                      UVNetSurfaceEncoder& surf_enc,
-                                                     UVNetCurveEncoder& curve_enc) {
+                                                     UVNetCurveEncoder& curve_enc
+#if BREPNET_VERSION == 4
+                                                     , UVNetSurfaceEncoder& surf_enc2
+#endif
+                                                     ) {
         std::vector<CoedgeData> coedges;
 
-        if (!pipeline.FaceGridsLocal.defined() || !pipeline.EdgeGridsLocal.defined()) {
-            ERR_LOG << "[Error] FaceGridsLocal or EdgeGridsLocal not defined!" << std::endl;
+        if (!pipeline.FaceGridsLocal.defined() || !pipeline.CoedgeGridsLocal.defined()) {
+            ERR_LOG << "[Error] FaceGridsLocal or CoedgeGridsLocal not defined!" << std::endl;
             return coedges;
         }
 
         int num_coedges = pipeline.FaceGridsLocal.size(0);
-        int num_edges = pipeline.EdgeGridsLocal.size(0);
+        int num_edges = pipeline.unique_edges.Extent();
 
         // 1. 提取所有面特征
         Tensor face_grids_cloned = pipeline.FaceGridsLocal.clone();
@@ -57,11 +62,17 @@ public:
         // for (int j = 0; j < 10; ++j) printf("%.6f ", Xf.at({0, j}));
         // std::cout << std::endl;
 
-        // 2. 提取所有边特征
+        // 2. 提取所有coedge特征
         // 必须clone()！forward()可能会修改输入张量
-        Tensor all_edge_features = curve_enc->forward(pipeline.EdgeGridsLocal.clone());  // (num_edges, 64)
+#if BREPNET_VERSION == 4
+        // V4: CoedgeGridsLocal is [num_coedges, 9, 20, 20], use surface_encoder2
+        Tensor all_coedge_features = surf_enc2->forward(pipeline.CoedgeGridsLocal.clone());  // (num_coedges, 64)
+#else
+        // V123: CoedgeGridsLocal is [num_coedges, 13, 40], use curve_encoder
+        Tensor all_coedge_features = curve_enc->forward(pipeline.CoedgeGridsLocal.clone());  // (num_coedges, 64)
+#endif
 
-        // std::cout << "\n[UV-Net] Edge features Xe: [" << num_edges << ", 64]" << std::endl;
+        // std::cout << "\n[UV-Net] Coedge features Xc: [" << num_coedges << ", 64]" << std::endl;
         // std::cout << "[Verify] Xe[0, :10]: ";
         // for (int j = 0; j < 10; ++j) printf("%.6f ", all_edge_features.at({0, j}));
         // std::cout << std::endl;
@@ -92,15 +103,9 @@ public:
                 coedge.mate_face_features.push_back(Xf.at({(int64_t)c, i}));
             }
 
-            // 提取 edge 特征
-            if (coedge.edge_id >= 0 && coedge.edge_id < num_edges) {
-                for (int i = 0; i < 64; ++i) {
-                    coedge.edge_features.push_back(all_edge_features.at({coedge.edge_id, i}));
-                }
-            } else {
-                for (int i = 0; i < 64; ++i) {
-                    coedge.edge_features.push_back(0.0f);
-                }
+            // V123: 提取 per-coedge 特征 (不再通过 edge_id 索引)
+            for (int i = 0; i < 64; ++i) {
+                coedge.edge_features.push_back(all_coedge_features.at({(int64_t)c, i}));
             }
 
             coedges.push_back(coedge);

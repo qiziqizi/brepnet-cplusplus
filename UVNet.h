@@ -1,7 +1,8 @@
-#pragma once
+﻿#pragma once
 //#include <torch/torch.h>
 #include "BRepTorch.h"
 #include "DebugControl.h"
+#include "VersionConfig.h"
 #include <map>
 #include <vector>
 #include <string>
@@ -47,15 +48,31 @@ public:
         // std::cout << "[UVNetSurfaceEncoder] Loading " << weight_dict.size() << " weights..." << std::endl;
 
         for (auto const& [key, val] : weight_dict) {
-            if (key.find("running") != std::string::npos) {
-                buffers[key] = val;
+            std::string stored_key = key;
+            breptorch::Tensor stored_val = val;
+
+            // SymmetricConv2d: expand weight_quarter [out,in,3,3] -> [out,in,5,5]
+            if (key.find("weight_quarter") != std::string::npos) {
+                breptorch::Tensor w = val.clone();
+                // Step 1: horizontal mirror: cat([w, flip(w[:,:,:,:-1], dim=3)], dim=3)
+                breptorch::Tensor right = breptorch::flip(w.slice(3, 0, w.size(3) - 1), {3});
+                breptorch::Tensor w_h = breptorch::cat({w, right}, 3);  // [out, in, 3, 5]
+                // Step 2: vertical mirror: cat([w_h, flip(w_h[:,:,:-1,:], dim=2)], dim=2)
+                breptorch::Tensor bottom = breptorch::flip(w_h.slice(2, 0, w_h.size(2) - 1), {2});
+                breptorch::Tensor w_full = breptorch::cat({w_h, bottom}, 2);  // [out, in, 5, 5]
+                stored_val = w_full;
+                stored_key = key.substr(0, key.find("weight_quarter")) + "weight";
+            }
+
+            if (stored_key.find("running") != std::string::npos) {
+                buffers[stored_key] = stored_val;
             }
             else {
-                params[key] = val;
+                params[stored_key] = stored_val;
             }
 
             // 打印权重信息（仅打印第一个卷积层的权重）
-            if (key == "conv_layers.0.0.weight") {
+            if (stored_key == "conv_layers.0.0.weight") {
                 // std::cout << "[Debug Weight] " << key << " shape: [";
                 for (size_t i = 0; i < val.sizes().size(); ++i) {
                     // std::cout << val.sizes()[i];
@@ -89,7 +106,7 @@ public:
         auto w = params[weight_key];
         auto conv_opts = breptorch::nn::functional::Conv2dFuncOptions()
             .stride(1)
-            .padding(1);
+            .padding(2);
 
         x = breptorch::nn::functional::conv2d(x, w, conv_opts);
 
@@ -298,11 +315,24 @@ public:
         // std::cout << "[UVNetCurveEncoder] Loading " << weight_dict.size() << " weights..." << std::endl;
 
         for (auto const& [key, val] : weight_dict) {
-            if (key.find("running") != std::string::npos) buffers[key] = val;
-            else params[key] = val;
+            std::string stored_key = key;
+            breptorch::Tensor stored_val = val;
+
+            // SymmetricConv1d: expand weight_half [out,in,3] -> [out,in,5]
+            if (key.find("weight_half") != std::string::npos) {
+                breptorch::Tensor w = val.clone();
+                // cat([w, flip(w[:,:,:-1], dim=2)], dim=2)
+                breptorch::Tensor right = breptorch::flip(w.slice(2, 0, w.size(2) - 1), {2});
+                breptorch::Tensor w_full = breptorch::cat({w, right}, 2);  // [out, in, 5]
+                stored_val = w_full;
+                stored_key = key.substr(0, key.find("weight_half")) + "weight";
+            }
+
+            if (stored_key.find("running") != std::string::npos) buffers[stored_key] = stored_val;
+            else params[stored_key] = stored_val;
 
             // 打印权重信息（仅打印第一个卷积层的权重）
-            if (key == "conv_layers.0.0.weight") {
+            if (stored_key == "conv_layers.0.0.weight") {
                 // std::cout << "[Debug Weight] " << key << " shape: [";
                 for (size_t i = 0; i < val.sizes().size(); ++i) {
                     // std::cout << val.sizes()[i];
@@ -330,7 +360,7 @@ public:
         // std::cout << "\n[DEBUG] " << prefix << " INPUT: shape=[" << x.size(0) << ", " << x.size(1) << ", "
         //           << x.size(2) << "]" << std::endl;
 
-        x = breptorch::conv1d(x, w, {}, { 1 }, { 1 }, { 1 }, 1);
+        x = breptorch::conv1d(x, w, {}, { 1 }, { 2 }, { 1 }, 1);
 
         // DEBUG: Conv1d输出 - 检查完整张量（已禁用）
         // float conv_max = -1e9f, conv_min = 1e9f;

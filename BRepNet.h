@@ -1,5 +1,6 @@
-#pragma once
+﻿#pragma once
 #include "DebugControl.h"
+#include "VersionConfig.h"
 #include "BRepTorch.h"
 #include "UVNet.h"
 #include "cnpy.h"
@@ -116,6 +117,9 @@ struct EdgeData {
 struct BRepNetImpl : Module {
     UVNetSurfaceEncoder surf_enc;
     UVNetCurveEncoder curve_enc;
+#if BREPNET_VERSION == 4
+    UVNetSurfaceEncoder surf_enc2;
+#endif
 
     // Layer 0 MLP (一阶邻居，MLP-G-surface/edge)
     BRepNetMLP layer0_mlp{ nullptr };
@@ -142,6 +146,11 @@ struct BRepNetImpl : Module {
         static_cast<std::shared_ptr<UVNetCurveEncoderImpl>&>(curve_enc) = curve_enc_ptr;
         modules_["surface_encoder"] = surf_enc_ptr;
         modules_["curve_encoder"] = curve_enc_ptr;
+#if BREPNET_VERSION == 4
+        std::shared_ptr<UVNetSurfaceEncoderImpl> surf_enc2_ptr(new UVNetSurfaceEncoderImpl());
+        static_cast<std::shared_ptr<UVNetSurfaceEncoderImpl>&>(surf_enc2) = surf_enc2_ptr;
+        modules_["surface_encoder2"] = surf_enc2_ptr;
+#endif
 
         // Layer 0: input 192 -> output 60
         // Input: parent_face (64) + mate_face (64) + edge (64) = 192
@@ -309,35 +318,6 @@ struct BRepNetImpl : Module {
 
         if (diag_pool.is_open()) diag_pool.close();
 
-        // 步骤3: 遍历每个 edge，MaxPooling 其所有 coedge 的状态
-        DBG_LOG << "\n[Layer 0 Edge Pooling (MaxPooling)]" << std::endl;
-        for (auto& edge : edges) {
-            edge.layer0_state.resize(30, 0.0f);  // 初始化为0，与Python零填充一致
-
-            int coedge_count = 0;
-            for (int coedge_id : edge.coedge_ids) {
-                if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
-                    const auto& coedge_state = coedges[coedge_id].layer0_edge_state;
-                    for (int i = 0; i < 30; ++i) {
-                        edge.layer0_state[i] = std::max(edge.layer0_state[i], coedge_state[i]);  // 取最大值
-                    }
-                    coedge_count++;
-                }
-            }
-
-            // 调试：打印 Edge 0 的 MaxPooling 结果
-            if (DebugControl::instance().shouldDebug() && edge.edge_id == 0) {
-                DBG_LOG << "  Edge 0 (has " << edge.coedge_ids.size() << " coedges):" << std::endl;
-                DBG_LOG << "    Coedge IDs: ";
-                for (int i = 0; i < std::min(10, (int)edge.coedge_ids.size()); ++i) {
-                    DBG_LOG << edge.coedge_ids[i] << " ";
-                }
-                DBG_LOG << std::endl;
-                DBG_LOG << "    He[0, :10] (MaxPooled edge_state): ";
-                for (int i = 0; i < 10; ++i) DBG_LOG << edge.layer0_state[i] << " ";
-                DBG_LOG << std::endl;
-            }
-        }
 
         DBG_LOG << "\n[Layer 0] Completed - Hf: [" << faces.size() << ", 30], He: [" << edges.size() << ", 30]" << std::endl;
 
@@ -356,8 +336,9 @@ struct BRepNetImpl : Module {
                          faces[coedge.parent_face_id].layer0_state.end());
             input.insert(input.end(), faces[coedge.mate_face_id].layer0_state.begin(),
                          faces[coedge.mate_face_id].layer0_state.end());
-            input.insert(input.end(), edges[coedge.edge_id].layer0_state.begin(),
-                         edges[coedge.edge_id].layer0_state.end());
+            // V123: use coedge state directly (no edge maxpool)
+            input.insert(input.end(), coedge.layer0_edge_state.begin(),
+                         coedge.layer0_edge_state.end());
 
             // 调试：打印 Coedge 0 的输入（展示三个实体）
             if (DebugControl::instance().shouldDebug() && coedge.coedge_id == 0) {
@@ -432,34 +413,6 @@ struct BRepNetImpl : Module {
             }
         }
 
-        DBG_LOG << "\n[Layer 1 Edge Pooling (MaxPooling)]" << std::endl;
-        for (auto& edge : edges) {
-            edge.layer1_state.resize(30, 0.0f);  // 初始化为0，与Python零填充一致
-
-            int coedge_count = 0;
-            for (int coedge_id : edge.coedge_ids) {
-                if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
-                    const auto& coedge_state = coedges[coedge_id].layer1_edge_state;
-                    for (int i = 0; i < 30; ++i) {
-                        edge.layer1_state[i] = std::max(edge.layer1_state[i], coedge_state[i]);
-                    }
-                    coedge_count++;
-                }
-            }
-
-            // 调试：打印 Edge 0 的 MaxPooling 结果
-            if (DebugControl::instance().shouldDebug() && edge.edge_id == 0) {
-                DBG_LOG << "  Edge 0 (has " << edge.coedge_ids.size() << " coedges):" << std::endl;
-                DBG_LOG << "    Coedge IDs: ";
-                for (int i = 0; i < std::min(10, (int)edge.coedge_ids.size()); ++i) {
-                    DBG_LOG << edge.coedge_ids[i] << " ";
-                }
-                DBG_LOG << std::endl;
-                DBG_LOG << "    He[0, :10] (MaxPooled edge_state): ";
-                for (int i = 0; i < 10; ++i) DBG_LOG << edge.layer1_state[i] << " ";
-                DBG_LOG << std::endl;
-            }
-        }
 
         DBG_LOG << "\n[Layer 1] Completed - Hf: [" << faces.size() << ", 30], He: [" << edges.size() << ", 30]" << std::endl;
 
@@ -479,8 +432,9 @@ struct BRepNetImpl : Module {
                          faces[coedge.parent_face_id].layer1_state.end());
             input.insert(input.end(), faces[coedge.mate_face_id].layer1_state.begin(),
                          faces[coedge.mate_face_id].layer1_state.end());
-            input.insert(input.end(), edges[coedge.edge_id].layer1_state.begin(),
-                         edges[coedge.edge_id].layer1_state.end());
+            // V123: use coedge state directly (no edge maxpool)
+            input.insert(input.end(), coedge.layer1_edge_state.begin(),
+                         coedge.layer1_edge_state.end());
 
             // 调试：打印 Coedge 0 的输入（展示三个实体）
             if (DebugControl::instance().shouldDebug() && coedge.coedge_id == 0) {

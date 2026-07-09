@@ -1,7 +1,9 @@
-// 调试输出开关：通过 DebugControl.h 统一管理
+﻿// 调试输出开关：通过 DebugControl.h 统一管理
 // 通过命令行参数控制，永远不需要注释/取消注释代码
 
 #include "DebugControl.h"
+#include "VersionConfig.h"
+#include "VersionConfig.h"
 #include "BRepNet.h"
 #include "BRepNetAdapter.h"
 #include "BRepPipeline.h"
@@ -196,7 +198,11 @@ void run_inference_with_export(const std::string& step_file,
     // ========================================================================
     DBG_LOG << "[Feature Extraction] Running UVNet..." << std::endl;
 
+    #if BREPNET_VERSION == 4
+    auto coedges = BRepNetAdapter::extract_coedges(pipeline, model->surf_enc, model->curve_enc, model->surf_enc2);
+#else
     auto coedges = BRepNetAdapter::extract_coedges(pipeline, model->surf_enc, model->curve_enc);
+#endif
     auto faces = BRepNetAdapter::extract_faces(pipeline);
     auto edges = BRepNetAdapter::extract_edges(pipeline);
 
@@ -560,54 +566,7 @@ void run_inference_with_export(const std::string& step_file,
         exporter.exportVectorData(layer0_face_pooling_data, "layer0_face_pooling", base_name);
     }
 
-    // Edge MaxPooling
-    std::vector<std::vector<float>> layer0_edge_pooling_data;
-    std::ofstream edge_debug_file;
-    if (EXPORT_ENABLED) {
-        edge_debug_file.open("cpp_feature_maps/edge_pooling_debug.txt", std::ios::app);
-        edge_debug_file << "=== Test: " << base_name << " ===\n";
-    }
 
-    for (auto& edge : edges) {
-        edge.layer0_state.resize(30, 0.0f);  // 初始化为0，与Python一致
-        int max_coedge_id = -1;
-        float max_value = -1e9f;
-
-        for (int coedge_id : edge.coedge_ids) {
-            if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
-                const auto& coedge_state = coedges[coedge_id].layer0_edge_state;
-                float coedge_sum = 0.0f;
-                for (int i = 0; i < 30; ++i) {
-                    edge.layer0_state[i] = std::max(edge.layer0_state[i], coedge_state[i]);
-                    coedge_sum += coedge_state[i];
-                }
-                if (coedge_sum > max_value) {
-                    max_value = coedge_sum;
-                    max_coedge_id = coedge_id;
-                }
-            }
-        }
-
-        // Debug output
-        if (edge_debug_file.is_open()) {
-            edge_debug_file << "Edge " << edge.edge_id << ": coedge_ids=[";
-            for (int cid : edge.coedge_ids) edge_debug_file << cid << " ";
-            edge_debug_file << "] max_coedge=" << max_coedge_id
-                           << " value[0]=" << edge.layer0_state[0]
-                           << " sum_first_10=" << std::accumulate(edge.layer0_state.begin(), edge.layer0_state.begin() + std::min(10, 30), 0.0f);
-            for (int i = 0; i < std::min(10, 30); ++i) {
-                edge_debug_file << " " << edge.layer0_state[i];
-            }
-            edge_debug_file << "\n";
-        }
-
-        layer0_edge_pooling_data.push_back(edge.layer0_state);
-    }
-    if (edge_debug_file.is_open()) edge_debug_file.close();
-
-    if (EXPORT_ENABLED) {
-        exporter.exportVectorData(layer0_edge_pooling_data, "layer0_edge_pooling", base_name);
-    }
 
     // ========================================================================
     // Layer 1: 二阶邻居
@@ -629,8 +588,9 @@ void run_inference_with_export(const std::string& step_file,
                      faces[parent_inference_id].layer0_state.end());
         input.insert(input.end(), faces[mate_inference_id].layer0_state.begin(),
                      faces[mate_inference_id].layer0_state.end());
-        input.insert(input.end(), edges[coedge.edge_id].layer0_state.begin(),
-                     edges[coedge.edge_id].layer0_state.end());
+        // V123: use coedge state directly (no edge maxpool)
+        input.insert(input.end(), coedge.layer0_edge_state.begin(),
+                     coedge.layer0_edge_state.end());
 
         layer1_input_concat.push_back(input);
 
@@ -679,24 +639,7 @@ void run_inference_with_export(const std::string& step_file,
         exporter.exportVectorData(layer1_face_pooling_data, "layer1_face_pooling", base_name);
     }
 
-    // Edge MaxPooling
-    std::vector<std::vector<float>> layer1_edge_pooling_data;
-    for (auto& edge : edges) {
-        edge.layer1_state.resize(30, 0.0f);  // 初始化为0，与Python一致
-        for (int coedge_id : edge.coedge_ids) {
-            if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
-                const auto& coedge_state = coedges[coedge_id].layer1_edge_state;
-                for (int i = 0; i < 30; ++i) {
-                    edge.layer1_state[i] = std::max(edge.layer1_state[i], coedge_state[i]);
-                }
-            }
-        }
-        layer1_edge_pooling_data.push_back(edge.layer1_state);
-    }
 
-    if (EXPORT_ENABLED) {
-        exporter.exportVectorData(layer1_edge_pooling_data, "layer1_edge_pooling", base_name);
-    }
 
     // ========================================================================
     // Output Layer: 三阶邻居
@@ -718,8 +661,9 @@ void run_inference_with_export(const std::string& step_file,
                      faces[parent_inference_id].layer1_state.end());
         input.insert(input.end(), faces[mate_inference_id].layer1_state.begin(),
                      faces[mate_inference_id].layer1_state.end());
-        input.insert(input.end(), edges[coedge.edge_id].layer1_state.begin(),
-                     edges[coedge.edge_id].layer1_state.end());
+        // V123: use coedge state directly (no edge maxpool)
+        input.insert(input.end(), coedge.layer1_edge_state.begin(),
+                     coedge.layer1_edge_state.end());
 
         output_layer_input_concat.push_back(input);
 
@@ -982,7 +926,6 @@ void run_inference_with_export(const std::string& step_file,
         std::vector<std::vector<float>>().swap(layer0_input_concat);
         std::vector<std::vector<float>>().swap(layer0_mlp_output_data);
         std::vector<std::vector<float>>().swap(layer0_face_pooling_data);
-        std::vector<std::vector<float>>().swap(layer0_edge_pooling_data);
     }
 
     // 清理 Layer 1 临时向量
@@ -990,7 +933,6 @@ void run_inference_with_export(const std::string& step_file,
         std::vector<std::vector<float>>().swap(layer1_input_concat);
         std::vector<std::vector<float>>().swap(layer1_mlp_output_data);
         std::vector<std::vector<float>>().swap(layer1_face_pooling_data);
-        std::vector<std::vector<float>>().swap(layer1_edge_pooling_data);
     }
 
     // 清理 Output Layer 临时向量
@@ -1042,7 +984,11 @@ int main(int argc, char* argv[]) {
     // ========================================================================
     // 2. 加载模型
     // ========================================================================
-    std::string weights_file = "inference_data/state_dict.npz";
+    #if BREPNET_VERSION == 123
+    std::string weights_file = "inference_data/state_dict_v123.npz";
+#else
+    std::string weights_file = "inference_data/state_dict_v4.npz";
+#endif
     std::string step_dir = "inference_data/step_files";
 
     DBG_LOG << "\n[Model] Loading weights: " << weights_file << std::endl;
@@ -1052,20 +998,34 @@ int main(int argc, char* argv[]) {
 
     // 加载 UV-Net 权重
     std::map<std::string, breptorch::Tensor> surf_weights, curve_weights;
+#if BREPNET_VERSION == 4
+    std::map<std::string, breptorch::Tensor> surf2_weights;
+#endif
     for (auto& item : npz) {
-        if (item.first.find("surface_encoder") != std::string::npos) {
-            auto arr = item.second;
-            std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
-            surf_weights[item.first] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
+        auto arr = item.second;
+        std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
+        breptorch::Tensor t = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
+
+#if BREPNET_VERSION == 4
+        // V4: Must distinguish surface_encoder. from surface_encoder2.
+        if (item.first.substr(0, 17) == "surface_encoder2.") {
+            // Replace surface_encoder2. with surface_encoder. (forward function uses surface_encoder prefix)
+            surf2_weights["surface_encoder." + item.first.substr(17)] = t;
+        } else
+#endif
+        if (item.first.find("surface_encoder.") != std::string::npos) {
+            surf_weights[item.first] = t;
         }
-        if (item.first.find("curve_encoder") != std::string::npos) {
-            auto arr = item.second;
-            std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
-            curve_weights[item.first] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
+        if (item.first.find("curve_encoder.") != std::string::npos) {
+            curve_weights[item.first] = t;
         }
     }
     model->surf_enc->load_weights(surf_weights);
     model->curve_enc->load_weights(curve_weights);
+#if BREPNET_VERSION == 4
+    model->surf_enc2->load_weights(surf2_weights);
+    // (V4 surface_encoder2 weights loaded silently)
+#endif
 
     // 加载 BRepNet 权重
     auto params = model->named_parameters();
