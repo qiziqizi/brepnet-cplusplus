@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "BRepNet.h"
 #include "BRepPipeline.h"
 #include "UVNet.h"
@@ -28,30 +28,6 @@ public:
         // 1. 提取所有面特征
         Tensor face_grids_cloned = pipeline.FaceGridsLocal.clone();
         Tensor all_face_grids = face_grids_cloned.view({num_coedges * 2, 9, 20, 20});
-
-        // DEBUG: Print Face 6 related grids for Coedges 27-30 (all 9 channels)
-        if (DebugControl::instance().shouldDebug()) {
-            if (num_coedges > 27) {
-                for (int c = 27; c <= 30; ++c) {
-                    int row = c * 2;  // parent face row
-                    DBG_CERR << "\n>>> UVNet Input: Coedge " << c << " Parent Face (row " << row << "):" << std::endl;
-                    DBG_CERR << "    Point[0] (u=0,v=0, boundary), Point[11] (u=1,v=1, interior), Point[12] (u=1,v=2, interior)" << std::endl;
-                    float* data = all_face_grids.data_ptr<float>();
-                    int N = 400;  // 20x20 grid
-                    int test_points[3] = {0, 11, 12};  // boundary + 2 interior points
-                    for (int ch = 0; ch < 9; ++ch) {
-                        std::ostringstream oss;
-                        oss << "  Channel " << ch << ": ";
-                        for (int i = 0; i < 3; ++i) {
-                            int pt = test_points[i];
-                            int idx = (row * 9 + ch) * N + pt;
-                            oss << data[idx] << " ";
-                        }
-                        DBG_CERR << oss.str() << std::endl;
-                    }
-                }
-            }
-        }
 
         // 必须clone()！forward()会修改输入张量
         Tensor all_face_features = surf_enc->forward(all_face_grids.clone());  // (num_coedges * 2, 64)
@@ -141,29 +117,4 @@ public:
         return faces;
     }
 
-    static std::vector<EdgeData> extract_edges(BRepPipeline& pipeline) {
-        std::vector<EdgeData> edges;
-
-        int num_edges = pipeline.unique_edges.Extent();
-
-        // 为每个 edge 收集其 coedges
-        std::vector<std::vector<int>> edge_to_coedges(num_edges);
-        for (const auto& c : pipeline.coedges) {
-            if (c.edge_idx >= 0 && c.edge_idx < num_edges) {
-                edge_to_coedges[c.edge_idx].push_back(c.id);
-            }
-        }
-
-        // 构建 EdgeData
-        for (int e = 0; e < num_edges; ++e) {
-            EdgeData edge;
-            edge.edge_id = e;
-            edge.coedge_ids = edge_to_coedges[e];
-            edges.push_back(edge);
-        }
-
-        // std::cout << "[Topology] Extracted " << edges.size() << " edges" << std::endl;
-
-        return edges;
-    }
 };

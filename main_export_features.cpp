@@ -182,7 +182,6 @@ void run_inference_with_export(const std::string& step_file,
     auto coedges = BRepNetAdapter::extract_coedges(pipeline, model->surf_enc, model->curve_enc);
 #endif
     auto faces = BRepNetAdapter::extract_faces(pipeline);
-    auto edges = BRepNetAdapter::extract_edges(pipeline);
 
     // ========================================================================
     // 导出 Coedge 拼接后的特征（用于调试 GNN 层）
@@ -918,7 +917,6 @@ void run_inference_with_export(const std::string& step_file,
     {
         std::vector<CoedgeData>().swap(coedges);
         std::vector<FaceData>().swap(faces);
-        std::vector<EdgeData>().swap(edges);
     }
 
     // 清理其他临时数据

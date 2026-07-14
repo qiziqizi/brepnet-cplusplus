@@ -100,20 +100,7 @@ struct FaceData {
 };
 
 
-// 4. Edge 数据结构
-struct EdgeData {
-    int edge_id;
-    std::vector<int> coedge_ids;  // 该 edge 的所有 coedge
-
-    // Layer 0 的状态（一阶邻居）
-    std::vector<float> layer0_state;  // 30 维
-
-    // Layer 1 的状态（二阶邻居）
-    std::vector<float> layer1_state;  // 30 维
-};
-
-
-// 5. BRepNet 主网络
+// 4. BRepNet 主网络
 struct BRepNetImpl : Module {
     UVNetSurfaceEncoder surf_enc;
     UVNetCurveEncoder curve_enc;
@@ -175,8 +162,7 @@ struct BRepNetImpl : Module {
     // 导师的话：C++ 的流程特别简单，遍历 coedge → 遍历 face → MaxPooling
     Tensor forward(
         std::vector<CoedgeData>& coedges,
-        std::vector<FaceData>& faces,
-        std::vector<EdgeData>& edges) {
+        std::vector<FaceData>& faces) {
 
         // ====================================================================
         // Layer 0: 一阶邻居更新 (MLP-G-surface/edge)

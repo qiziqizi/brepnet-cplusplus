@@ -121,10 +121,9 @@ std::vector<int> FaceClassifier::predict(const std::string& stepFilePath) {
         // 2. 转换数据格式
         auto coedges = BRepNetAdapter::extract_coedges(pipeline, model_->surf_enc, model_->curve_enc);
         auto faces = BRepNetAdapter::extract_faces(pipeline);
-        auto edges = BRepNetAdapter::extract_edges(pipeline);
 
         // 3. 前向推理
-        breptorch::Tensor logits = model_->forward(coedges, faces, edges);
+        breptorch::Tensor logits = model_->forward(coedges, faces);
 
         // 4. 计算Softmax并获取预测类别
         breptorch::Tensor probs = breptorch::softmax(logits, 1);
