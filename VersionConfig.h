@@ -10,7 +10,7 @@
 // 修改后重新编译即可切换版本，无需改其他文件。
 // ============================================================================
 
-#define BREPNET_VERSION 4
+#define BREPNET_VERSION 123
 
 // 编译期检查：只允许 123 或 4
 #if BREPNET_VERSION != 123 && BREPNET_VERSION != 4

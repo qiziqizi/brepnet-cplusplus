@@ -1,7 +1,7 @@
 #include "MainWindow.h"
+#include "VersionConfig.h"
 #include <QFileDialog>
 #include <QMessageBox>
-#include <QProgressDialog>
 #include <QTextStream>
 #include <QFile>
 #include <QApplication>
@@ -54,7 +54,14 @@ MainWindow::MainWindow(QWidget* parent)
     QString weightsPath;
     QStringList possiblePaths = {
         exeDir + "/inference_data/state_dict.npz",
-        exeDir + "/../../../inference_data/state_dict.npz"
+        exeDir + "/../../../inference_data/state_dict.npz",
+        exeDir + "/../../../../inference_data/state_dict.npz",
+        exeDir + "/inference_data/state_dict_v4.npz",
+        exeDir + "/inference_data/state_dict_v123.npz",
+        exeDir + "/../../../inference_data/state_dict_v4.npz",
+        exeDir + "/../../../inference_data/state_dict_v123.npz",
+        exeDir + "/../../../../inference_data/state_dict_v4.npz",
+        exeDir + "/../../../../inference_data/state_dict_v123.npz",
     };
 
     for (const QString& path : possiblePaths) {
@@ -129,7 +136,13 @@ void MainWindow::refreshLegendLayout() {
 }
 
 void MainWindow::setupUI() {
+#if BREPNET_VERSION == 4
+    setWindowTitle("BRepNet 可视化工具 - v4");
+#elif BREPNET_VERSION == 123
+    setWindowTitle("BRepNet 可视化工具 - v123");
+#else
     setWindowTitle("BRepNet 可视化工具");
+#endif
     resize(1400, 900);
 
     // 创建中心部件
@@ -147,21 +160,37 @@ void MainWindow::setupUI() {
     QWidget* controlPanel = new QWidget(mainSplitter_);
     QVBoxLayout* panelLayout = new QVBoxLayout(controlPanel);
 
-    // === 顶部2×2网格：文件操作+预测操作 / 重置+人工标注 ===
+    // === 顶部布局 ===
+    // 第一行：文件操作 | 重置 | 导出
+    // 第二行：预测操作 | 人工标注
     QGridLayout* topGrid = new QGridLayout();
     topGrid->setSpacing(4);
     topGrid->setColumnStretch(0, 1);
-    topGrid->setColumnStretch(1, 3);
+    topGrid->setColumnStretch(1, 1);
+    topGrid->setColumnStretch(2, 1);
 
-    // 第0行：文件操作 | 预测操作
-    // 文件操作
+    // 第0行：文件操作 | 重置 | 导出
     QGroupBox* fileGroup = new QGroupBox("文件操作", controlPanel);
     QHBoxLayout* fileLayout = new QHBoxLayout(fileGroup);
     btnLoadFile_ = new QPushButton("加载STEP文件", fileGroup);
     fileLayout->addWidget(btnLoadFile_);
     topGrid->addWidget(fileGroup, 0, 0);
 
-    // 预测操作
+    QGroupBox* resetGroup = new QGroupBox("重置", controlPanel);
+    QHBoxLayout* resetLayout = new QHBoxLayout(resetGroup);
+    btnReset_ = new QPushButton("清除所有操作", resetGroup);
+    btnReset_->setEnabled(false);
+    resetLayout->addWidget(btnReset_);
+    topGrid->addWidget(resetGroup, 0, 1);
+
+    QGroupBox* exportGroup = new QGroupBox("导出", controlPanel);
+    QHBoxLayout* exportLayout = new QHBoxLayout(exportGroup);
+    btnExportResults_ = new QPushButton("导出结果", exportGroup);
+    btnExportResults_->setEnabled(false);
+    exportLayout->addWidget(btnExportResults_);
+    topGrid->addWidget(exportGroup, 0, 2);
+
+    // 第1行：预测操作（跨3列）
     QGroupBox* predGroup = new QGroupBox("预测操作", controlPanel);
     QHBoxLayout* predLayout = new QHBoxLayout(predGroup);
     btnRunPrediction_ = new QPushButton("运行预测", predGroup);
@@ -170,23 +199,11 @@ void MainWindow::setupUI() {
     btnLoadPredictionLabels_ = new QPushButton("导入真实标签(对比)", predGroup);
     btnLoadPredictionLabels_->setEnabled(false);
     predLayout->addWidget(btnLoadPredictionLabels_);
-    btnExportPrediction_ = new QPushButton("导出结果", predGroup);
-    btnExportPrediction_->setEnabled(false);
-    predLayout->addWidget(btnExportPrediction_);
     lblPredictionAccuracy_ = new QLabel("准确率: --", predGroup);
     predLayout->addWidget(lblPredictionAccuracy_);
-    topGrid->addWidget(predGroup, 0, 1);
+    topGrid->addWidget(predGroup, 1, 0, 1, 3);
 
-    // 第1行：重置 | 人工标注
-    // 重置
-    QGroupBox* resetGroup = new QGroupBox("重置", controlPanel);
-    QHBoxLayout* resetLayout = new QHBoxLayout(resetGroup);
-    btnReset_ = new QPushButton("清除所有操作", resetGroup);
-    btnReset_->setEnabled(false);
-    resetLayout->addWidget(btnReset_);
-    topGrid->addWidget(resetGroup, 1, 0);
-
-    // 人工标注
+    // 第2行：人工标注（跨3列）
     QGroupBox* manualGroup = new QGroupBox("人工标注", controlPanel);
     QHBoxLayout* manualLayout = new QHBoxLayout(manualGroup);
     btnLoadManualLabels_ = new QPushButton("导入标签并上色", manualGroup);
@@ -195,10 +212,7 @@ void MainWindow::setupUI() {
     btnModifyFaceClass_ = new QPushButton("修改当前面类别", manualGroup);
     btnModifyFaceClass_->setEnabled(false);
     manualLayout->addWidget(btnModifyFaceClass_);
-    btnExportManualLabels_ = new QPushButton("导出标注结果", manualGroup);
-    btnExportManualLabels_->setEnabled(false);
-    manualLayout->addWidget(btnExportManualLabels_);
-    topGrid->addWidget(manualGroup, 1, 1);
+    topGrid->addWidget(manualGroup, 2, 0, 1, 3);
 
     panelLayout->addLayout(topGrid);
 
@@ -208,12 +222,10 @@ void MainWindow::setupUI() {
 
     lblFileName_ = new QLabel("文件: 未加载", infoGroup);
     lblNumFaces_ = new QLabel("面数: 0", infoGroup);
-    lblCurrentMode_ = new QLabel("当前模式: 未操作", infoGroup);
     lblSelectedFace_ = new QLabel("选中面: 无", infoGroup);
 
     infoLayout->addWidget(lblFileName_);
     infoLayout->addWidget(lblNumFaces_);
-    infoLayout->addWidget(lblCurrentMode_);
     infoLayout->addWidget(lblSelectedFace_);
 
     panelLayout->addWidget(infoGroup);
@@ -383,12 +395,13 @@ void MainWindow::setupConnections() {
     // 预测操作
     connect(btnRunPrediction_, &QPushButton::clicked, this, &MainWindow::onRunPrediction);
     connect(btnLoadPredictionLabels_, &QPushButton::clicked, this, &MainWindow::onLoadPredictionLabels);
-    connect(btnExportPrediction_, &QPushButton::clicked, this, &MainWindow::onExportPrediction);
 
     // 人工标注
     connect(btnLoadManualLabels_, &QPushButton::clicked, this, &MainWindow::onLoadManualLabels);
     connect(btnModifyFaceClass_, &QPushButton::clicked, this, &MainWindow::onModifyFaceClass);
-    connect(btnExportManualLabels_, &QPushButton::clicked, this, &MainWindow::onExportManualLabels);
+
+    // 导出
+    connect(btnExportResults_, &QPushButton::clicked, this, &MainWindow::onExportResults);
 
     // 重置
     connect(btnReset_, &QPushButton::clicked, this, &MainWindow::onReset);
@@ -403,39 +416,23 @@ void MainWindow::setupConnections() {
 void MainWindow::setWorkMode(WorkMode mode) {
     currentMode_ = mode;
 
-    // 根据模式启用/禁用按钮
-    bool isPredMode = (mode == WorkMode::Prediction);
-    bool isManualMode = (mode == WorkMode::ManualLabeling);
-    bool isNone = (mode == WorkMode::None);
+    // 按钮状态：只根据"有文件"和"模型已加载"决定，不互斥
     bool hasFile = !currentFilePath_.isEmpty();
 
     // 预测操作区
-    btnRunPrediction_->setEnabled(!isPredMode && modelLoaded_ && hasFile);
-    btnLoadPredictionLabels_->setEnabled(isPredMode);
-    btnExportPrediction_->setEnabled(isPredMode);
+    btnRunPrediction_->setEnabled(modelLoaded_ && hasFile);
+    btnLoadPredictionLabels_->setEnabled(hasFile && !predictions_.empty());
 
-    // 人工标注区
-    btnLoadManualLabels_->setEnabled((isNone || isManualMode) && hasFile);
-    btnModifyFaceClass_->setEnabled(isManualMode);
-    btnExportManualLabels_->setEnabled(isManualMode);
+    // 人工标注区 (随时可用)
+    btnLoadManualLabels_->setEnabled(hasFile);
+    btnModifyFaceClass_->setEnabled(hasFile);
 
     // 重置按钮
-    btnReset_->setEnabled(!isNone && hasFile);
+    btnReset_->setEnabled(hasFile);
 
-    // 更新状态显示
-    QString modeText;
-    switch (mode) {
-        case WorkMode::None:
-            modeText = "未操作";
-            break;
-        case WorkMode::Prediction:
-            modeText = "预测模式";
-            break;
-        case WorkMode::ManualLabeling:
-            modeText = "标注模式";
-            break;
-    }
-    lblCurrentMode_->setText("当前模式: " + modeText);
+    // 导出按钮 (有预测或标注结果时可导出)
+    btnExportResults_->setEnabled(
+        (!predictions_.empty() || !manualLabels_.empty()) && hasFile);
 }
 
 void MainWindow::onLoadFile() {
@@ -537,7 +534,7 @@ void MainWindow::onLoadFile() {
     viewer_->updateAllFaceColors(warmOtherColors_);
 
     setWorkMode(WorkMode::ManualLabeling);
-    updateManualLabelingResults();
+    updateStatistics();
 
     statusBar()->showMessage("加载成功: " + QString::fromStdString(loader_->getFileName())
         + QString("（%1 个面以区分色显示）").arg(numFaces));
@@ -554,49 +551,81 @@ void MainWindow::onRunPrediction() {
         return;
     }
 
-    // 显示进度对话框
-    QProgressDialog progress("正在运行预测...", "取消", 0, 0, this);
-    progress.setWindowModality(Qt::WindowModal);
-    progress.show();
-    QApplication::processEvents();
-
     statusBar()->showMessage("正在预测...");
 
-    // 运行预测
-    predictions_ = classifier_->predict(currentFilePath_.toStdString());
+    // 弹出"正在预测"提示窗口（模态，无按钮无进度条）
+    QMessageBox* waitMsg = new QMessageBox(QMessageBox::NoIcon,
+        "请稍候", "正在运行预测，请等待...", QMessageBox::NoButton, this);
+    waitMsg->setStandardButtons(QMessageBox::NoButton);
+    waitMsg->setModal(true);
+    waitMsg->show();
+    QApplication::processEvents();
 
-    progress.close();
+    // 运行预测 (返回 27 类结果)
+    auto predictions_27 = classifier_->predict(currentFilePath_.toStdString());
 
-    if (predictions_.empty()) {
+    // 关闭提示窗口
+    waitMsg->close();
+    delete waitMsg;
+    QApplication::processEvents();
+
+    if (predictions_27.empty()) {
         QMessageBox::critical(this, "错误", "预测失败");
         statusBar()->showMessage("预测失败");
         return;
     }
 
     // 验证结果数量
-    if (predictions_.size() != static_cast<size_t>(loader_->getNumFaces())) {
+    if (predictions_27.size() != static_cast<size_t>(loader_->getNumFaces())) {
         QMessageBox::critical(this, "错误",
             QString("预测结果数量(%1)与面数量(%2)不匹配")
-            .arg(predictions_.size())
+            .arg(predictions_27.size())
             .arg(loader_->getNumFaces()));
         statusBar()->showMessage("预测错误");
         return;
     }
 
-    // 更新颜色
+    // 27 类 → 4 类映射
+    // 映射规则: 0=chamfer, 23=round, 1/12=hole, 其余=other(3)
+    predictions_.clear();
+    predictions_.reserve(predictions_27.size());
+    for (int cls27 : predictions_27) {
+        int cls4;
+        switch (cls27) {
+            case 0:  cls4 = 0; break;  // chamfer
+            case 23: cls4 = 1; break;  // round
+            case 1:
+            case 12: cls4 = 2; break;  // hole
+            default: cls4 = 3; break;  // other
+        }
+        predictions_.push_back(cls4);
+    }
+
+    // 更新颜色: other(3) 用暖色系区分每个面，其余用固定类颜色
+    int numFaces = static_cast<int>(predictions_.size());
+    warmOtherColors_ = ColorMapper::generateOtherColors(numFaces);
     std::vector<Quantity_Color> colors;
-    for (int classId : predictions_) {
-        colors.push_back(colorMapper_->getColor(classId));
+    for (int i = 0; i < numFaces; ++i) {
+        int classId = predictions_[i];
+        if (classId == 3) {
+            colors.push_back(warmOtherColors_[i]);
+        } else {
+            colors.push_back(colorMapper_->getColor(classId));
+        }
     }
     viewer_->updateAllFaceColors(colors);
 
-    // 切换到预测模式
+    // 同步预测结果到 manualLabels_，使其成为当前工作状态
+    manualLabels_ = predictions_;
+
+    // 更新按钮状态
     setWorkMode(WorkMode::Prediction);
 
     // 更新统计信息
-    updatePredictionResults();
+    updateStatistics();
 
     statusBar()->showMessage("预测完成");
+    QApplication::processEvents();
     QMessageBox::information(this, "成功", "预测完成！模型已按类别着色。");
 }
 
@@ -634,20 +663,26 @@ void MainWindow::onLoadPredictionLabels() {
     updateComparisonResults();
 }
 
-void MainWindow::onExportPrediction() {
-    if (predictions_.empty()) {
+void MainWindow::onExportResults() {
+    // 优先导出人工标注，其次导出预测结果
+    bool hasManual = !manualLabels_.empty();
+    bool hasPrediction = !predictions_.empty();
+
+    if (!hasManual && !hasPrediction) {
         QMessageBox::warning(this, "警告", "没有可导出的结果");
         return;
     }
 
-    QString fileName = QFileDialog::getSaveFileName(
-        this,
-        "导出预测结果",
-        "prediction_results.txt",
-        "Text Files (*.txt);;All Files (*)");
+    // 默认保存在 STEP 文件同目录，文件名为 STEP 文件名（.seg 扩展名）
+    QFileInfo stepInfo(currentFilePath_);
+    QString baseDir = stepInfo.absolutePath();
+    QString baseName = stepInfo.completeBaseName();
 
-    if (fileName.isEmpty()) {
-        return;
+    QString fileName = QString("%1/%2.seg").arg(baseDir, baseName);
+    int sfx = 1;
+    while (QFileInfo::exists(fileName)) {
+        fileName = QString("%1/%2_%3.seg").arg(baseDir, baseName).arg(sfx);
+        ++sfx;
     }
 
     QFile file(fileName);
@@ -659,38 +694,16 @@ void MainWindow::onExportPrediction() {
     QTextStream out(&file);
     out.setCodec("UTF-8");
 
-    // 写入文件头
-    out << "BRepNet 预测结果\n";
-    out << "================\n\n";
-    out << "文件: " << currentFilePath_ << "\n";
-    out << "面数: " << loader_->getNumFaces() << "\n\n";
-
-    // 写入每个面的预测结果
-    out << "面索引\t类别ID\t类别名称\n";
-    out << "------\t------\t--------\n";
-    for (size_t i = 0; i < predictions_.size(); ++i) {
-        int classId = predictions_[i];
-        out << i << "\t" << classId << "\t"
-            << QString::fromStdString(colorMapper_->getClassName(classId)) << "\n";
-    }
-
-    // 写入统计信息
-    out << "\n\n类别分布统计\n";
-    out << "============\n\n";
-
-    std::map<int, int> distribution;
-    for (int classId : predictions_) {
-        distribution[classId]++;
-    }
-
-    for (const auto& pair : distribution) {
-        out << QString::fromStdString(colorMapper_->getClassName(pair.first))
-            << ": " << pair.second << "\n";
+    // 直接写入标签（每行一个，无文件头注释）
+    const std::vector<int>& labels = hasManual ? manualLabels_ : predictions_;
+    for (int classId : labels) {
+        out << classId << "\n";
     }
 
     file.close();
-    statusBar()->showMessage("结果已导出: " + fileName);
-    QMessageBox::information(this, "成功", "结果已成功导出");
+    QString source = hasManual ? "人工标注" : "预测结果";
+    statusBar()->showMessage(source + "已导出: " + fileName);
+    QMessageBox::information(this, "成功", source + "已导出至:\n" + fileName);
 }
 
 void MainWindow::onFaceSelected(int faceIndex) {
@@ -700,24 +713,20 @@ void MainWindow::onFaceSelected(int faceIndex) {
 
     QString info = QString("选中面: #%1").arg(faceIndex);
 
-    // 根据当前模式显示不同信息
-    if (currentMode_ == WorkMode::Prediction && !predictions_.empty()) {
-        int predClassId = predictions_[faceIndex];
-        QString predClassName = QString::fromStdString(colorMapper_->getClassName(predClassId));
-        info += QString(" | 预测: %1(%2)").arg(predClassName).arg(predClassId);
-
-        // 如果有对比标签
-        if (!groundTruthLabels_.empty()) {
-            int trueClassId = groundTruthLabels_[faceIndex];
-            QString trueClassName = QString::fromStdString(colorMapper_->getClassName(trueClassId));
-            info += QString(" | 真实: %1(%2)").arg(trueClassName).arg(trueClassId);
-            info += (predClassId == trueClassId) ? QString::fromUtf8(" ✓") : QString::fromUtf8(" ✗");
-        }
+    // 显示当前面的实时类别
+    if (!manualLabels_.empty() && faceIndex < static_cast<int>(manualLabels_.size())) {
+        int classId = manualLabels_[faceIndex];
+        QString className = QString::fromStdString(colorMapper_->getClassName(classId));
+        info += QString(" | 类别: %1(%2)").arg(className).arg(classId);
     }
-    else if (currentMode_ == WorkMode::ManualLabeling && !manualLabels_.empty()) {
-        int labelClassId = manualLabels_[faceIndex];
-        QString labelClassName = QString::fromStdString(colorMapper_->getClassName(labelClassId));
-        info += QString(" | 标注: %1(%2)").arg(labelClassName).arg(labelClassId);
+
+    // 如果有对比标签，显示真实值和正误
+    if (!groundTruthLabels_.empty() && faceIndex < static_cast<int>(groundTruthLabels_.size())) {
+        int trueClassId = groundTruthLabels_[faceIndex];
+        QString trueClassName = QString::fromStdString(colorMapper_->getClassName(trueClassId));
+        info += QString(" | 真实: %1(%2)").arg(trueClassName).arg(trueClassId);
+        int currentClassId = (faceIndex < static_cast<int>(manualLabels_.size())) ? manualLabels_[faceIndex] : -1;
+        info += (currentClassId == trueClassId) ? QString::fromUtf8(" ✓") : QString::fromUtf8(" ✗");
     }
 
     lblSelectedFace_->setText(info);
@@ -873,20 +882,21 @@ void MainWindow::updateModelInfo() {
     lblNumFaces_->setText(QString("面数: %1").arg(loader_->getNumFaces()));
 }
 
-void MainWindow::updateManualLabelingResults() {
+void MainWindow::updateStatistics() {
+    // manualLabels_ 始终代表当前工作状态（预测后同步、修改后更新）
     if (manualLabels_.empty()) {
-        txtStatistics_->setPlainText("等待标注...");
+        txtStatistics_->setPlainText("等待操作...");
         return;
     }
 
     // 统计每个类别的面ID及数量
     std::map<int, std::vector<int>> classToFaces;
-    for (int i = 0; i < manualLabels_.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(manualLabels_.size()); ++i) {
         classToFaces[manualLabels_[i]].push_back(i);
     }
 
     // 生成统计报告
-    QString report = "标注类别分布\n";
+    QString report = "类别分布\n";
     report += "============\n";
 
     for (const auto& pair : classToFaces) {
@@ -900,37 +910,6 @@ void MainWindow::updateManualLabelingResults() {
     }
 
     report += QString("总计: %1个面").arg(manualLabels_.size());
-
-    txtStatistics_->setPlainText(report);
-}
-
-void MainWindow::updatePredictionResults() {
-    if (predictions_.empty()) {
-        txtStatistics_->setPlainText("等待预测...");
-        return;
-    }
-
-    // 统计每个类别的面ID及数量
-    std::map<int, std::vector<int>> classToFaces;
-    for (int i = 0; i < predictions_.size(); ++i) {
-        classToFaces[predictions_[i]].push_back(i);
-    }
-
-    // 生成统计报告
-    QString report = "预测类别分布\n";
-    report += "============\n";
-
-    for (const auto& pair : classToFaces) {
-        QString className = QString::fromStdString(colorMapper_->getClassName(pair.first));
-        report += QString("%1(%2): ").arg(className).arg(pair.second.size());
-        QStringList faceIds;
-        for (int fid : pair.second) {
-            faceIds << QString::number(fid);
-        }
-        report += faceIds.join(", ") + "\n";
-    }
-
-    report += QString("总计: %1个面").arg(predictions_.size());
 
     txtStatistics_->setPlainText(report);
 }
@@ -988,18 +967,13 @@ void MainWindow::onLoadManualLabels() {
     setWorkMode(WorkMode::ManualLabeling);
 
     // 更新统计
-    updateManualLabelingResults();
+    updateStatistics();
 
     statusBar()->showMessage("标签已加载并上色: " + fileName);
     QMessageBox::information(this, "成功", "标签已加载并按类别着色。");
 }
 
 void MainWindow::onModifyFaceClass() {
-    // 仅人工标注模式允许修改（右键双击与按钮共用此槽，需统一拦截）
-    if (currentMode_ != WorkMode::ManualLabeling) {
-        return;
-    }
-
     // 检查是否有选中的面
     int selectedFace = viewer_->getSelectedFaceIndex();
     if (selectedFace < 0) {
@@ -1069,7 +1043,7 @@ void MainWindow::onModifyFaceClass() {
     onFaceSelected(selectedFace);
 
     // 更新统计
-    updateManualLabelingResults();
+    updateStatistics();
 
     QString newClassName = QString::fromStdString(colorMapper_->getClassName(newClass));
     statusBar()->showMessage(
@@ -1077,43 +1051,6 @@ void MainWindow::onModifyFaceClass() {
         .arg(selectedFace)
         .arg(currentClass).arg(currentClassName)
         .arg(newClass).arg(newClassName));
-}
-
-void MainWindow::onExportManualLabels() {
-    if (manualLabels_.empty()) {
-        QMessageBox::warning(this, "警告", "没有可导出的标注结果");
-        return;
-    }
-
-    // 默认保存在 STEP 文件同目录，文件名为 STEP 文件名（.seg 扩展名）
-    // 如已存在则追加序号 _1、_2 ... 避免覆盖
-    QFileInfo stepInfo(currentFilePath_);
-    QString baseDir = stepInfo.absolutePath();
-    QString baseName = stepInfo.completeBaseName();
-    QString fileName = baseDir + "/" + baseName + ".seg";
-    int suffix = 1;
-    while (QFileInfo::exists(fileName)) {
-        fileName = QString("%1/%2_%3.seg").arg(baseDir, baseName).arg(suffix);
-        ++suffix;
-    }
-
-    QFile file(fileName);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::critical(this, "错误", "无法创建文件");
-        return;
-    }
-
-    QTextStream out(&file);
-    out.setCodec("UTF-8");
-
-    // 直接写入标签（每行一个，无文件头注释）
-    for (int classId : manualLabels_) {
-        out << classId << "\n";
-    }
-
-    file.close();
-    statusBar()->showMessage("标注结果已导出: " + fileName);
-    QMessageBox::information(this, "成功", "标注结果已导出至:\n" + fileName);
 }
 
 void MainWindow::onReset() {

@@ -48,12 +48,13 @@ private slots:
     // 预测操作
     void onRunPrediction();
     void onLoadPredictionLabels();
-    void onExportPrediction();
 
     // 人工标注
     void onLoadManualLabels();
     void onModifyFaceClass();
-    void onExportManualLabels();
+
+    // 导出
+    void onExportResults();
 
     // 重置
     void onReset();
@@ -67,8 +68,7 @@ private:
     void setupConnections();
     void setWorkMode(WorkMode mode);
     void updateModelInfo();
-    void updatePredictionResults();
-    void updateManualLabelingResults();
+    void updateStatistics();
     void updateComparisonResults();
     std::vector<int> loadLabelsFromFile(const QString& filePath);
     void refreshLegendLayout();
@@ -86,21 +86,21 @@ protected:
     // 预测操作区
     QPushButton* btnRunPrediction_;
     QPushButton* btnLoadPredictionLabels_;
-    QPushButton* btnExportPrediction_;
     QLabel* lblPredictionAccuracy_;
 
     // 人工标注区
     QPushButton* btnLoadManualLabels_;
     QPushButton* btnModifyFaceClass_;
-    QPushButton* btnExportManualLabels_;
 
     // 重置区
     QPushButton* btnReset_;
 
+    // 导出区
+    QPushButton* btnExportResults_;
+
     // 模型信息区
     QLabel* lblFileName_;
     QLabel* lblNumFaces_;
-    QLabel* lblCurrentMode_;
     QLabel* lblSelectedFace_;
 
     // 悬停信息（面 + 边左右并排）

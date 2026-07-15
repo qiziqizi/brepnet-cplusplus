@@ -74,11 +74,11 @@ void run_inference_with_export(const std::string& step_file,
 
     // 检查是否已经处理过
     if (is_file_already_processed(base_name)) {
-        INFO_LOG << base_name << " [SKIPPED]" << std::flush;
+        INFO_LOG << fs::absolute(step_path).string() << " [SKIPPED]" << std::flush;
         return;
     }
 
-    INFO_LOG << base_name << std::flush;
+    INFO_LOG << fs::absolute(step_path).string() << std::flush;
 
     // ========================================================================
     // 1. 数据预处理
@@ -874,6 +874,8 @@ void run_inference_with_export(const std::string& step_file,
     // ========================================================================
     // 导出 .seg 分类结果到 cpp_results/ — 始终执行
     // 格式：每行一个整数（face 类别 id），从第一行开始，无注释
+    // 同时导出 4 类映射版本到 cpp_results_4class/
+    // 映射规则: 0=chamfer, 23=round, 1/12=hole, 其余=other(3)
     // ========================================================================
     std::string seg_path = "cpp_results/" + base_name + ".seg";
     std::ofstream seg_file(seg_path);
@@ -883,6 +885,26 @@ void run_inference_with_export(const std::string& step_file,
     seg_file.close();
 
     DBG_LOG << "  [Export] Seg saved to: " << seg_path << std::endl;
+
+    // 4 类映射版本
+    fs::create_directories("cpp_results_4class");
+    std::string seg4_path = "cpp_results_4class/" + base_name + ".seg";
+    std::ofstream seg4_file(seg4_path);
+    for (int original_id = 0; original_id < num_faces; ++original_id) {
+        int cls27 = predictions_original_order[original_id];
+        int cls4;
+        switch (cls27) {
+            case 0:  cls4 = 0; break;  // chamfer
+            case 23: cls4 = 1; break;  // round
+            case 1:
+            case 12: cls4 = 2; break;  // hole
+            default: cls4 = 3; break;  // other
+        }
+        seg4_file << cls4 << "\n";
+    }
+    seg4_file.close();
+
+    DBG_LOG << "  [Export] 4-class seg saved to: " << seg4_path << std::endl;
 
     INFO_LOG << " -> [✓] F:" << num_faces << " E:" << num_edges << std::endl;
 
@@ -954,12 +976,43 @@ int main(int argc, char* argv[]) {
     // ========================================================================
     // 2. 加载模型
     // ========================================================================
-    #if BREPNET_VERSION == 123
-    std::string weights_file = "inference_data/state_dict_v123.npz";
+    // 权重文件搜索顺序：版本化文件名 → 通用文件名
+#if BREPNET_VERSION == 123
+    std::vector<std::string> weights_candidates = {
+        "inference_data/state_dict_v123.npz",
+        "inference_data/state_dict.npz",
+        "bin/inference_data/state_dict_v123.npz",
+        "bin/inference_data/state_dict.npz"
+    };
 #else
-    std::string weights_file = "inference_data/state_dict_v4.npz";
+    std::vector<std::string> weights_candidates = {
+        "inference_data/state_dict_v4.npz",
+        "inference_data/state_dict.npz",
+        "bin/inference_data/state_dict_v4.npz",
+        "bin/inference_data/state_dict.npz"
+    };
 #endif
-    std::string step_dir = "inference_data/step_files";
+    std::string weights_file;
+    for (const auto& candidate : weights_candidates) {
+        if (fs::exists(candidate)) {
+            weights_file = candidate;
+            break;
+        }
+    }
+    if (weights_file.empty()) {
+        ERR_LOG << "[Error] Cannot find weights file! Searched:" << std::endl;
+        for (const auto& c : weights_candidates) {
+            ERR_LOG << "  " << c << std::endl;
+        }
+        return -1;
+    }
+
+    // STEP 文件目录搜索
+    std::string step_dir;
+    for (const auto& d : {"inference_data/step_files", "bin/inference_data/step_files"}) {
+        if (fs::exists(d)) { step_dir = d; break; }
+    }
+    if (step_dir.empty()) step_dir = "inference_data/step_files";
 
     DBG_LOG << "\n[Model] Loading weights: " << weights_file << std::endl;
 
