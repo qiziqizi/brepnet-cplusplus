@@ -244,44 +244,36 @@ void OCCTViewer::mousePressEvent(QMouseEvent* event) {
     lastMousePos_ = event->pos();
     double dpr = devicePixelRatio();
     QPoint devPos = event->pos() * dpr;
-    
-    // 检查是否左右键同时按下（平移模式）
+
     Qt::MouseButtons buttons = event->buttons();
+
+    // 左右键同时按下 → 平移模式
     if ((buttons & Qt::LeftButton) && (buttons & Qt::RightButton)) {
         currentMode_ = Pan;
         return;
     }
 
     if (event->button() == Qt::LeftButton) {
-        currentMode_ = None;
-        handleSelection();
-    } else if (event->button() == Qt::RightButton) {
+        // 左键：旋转
         currentMode_ = Rotate;
         view_->StartRotation(devPos.x(), devPos.y());
-    } else if (event->button() == Qt::MiddleButton) {
-        currentMode_ = Pan;
-    }
-}
-
-void OCCTViewer::mouseDoubleClickEvent(QMouseEvent* event) {
-    if (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton) {
-        fitAll();  // 左键/中键双击：重置视图
     } else if (event->button() == Qt::RightButton) {
-        // 右键双击：重新拾取当前鼠标位置的面（不复用旧 selectedFaceIndex_，避免改错面）
-        // 右键 press 只调 StartRotation（无拖动不旋转），双击不冲突
+        // 右键单击：修改当前面类别
         if (context_.IsNull() || view_.IsNull()) return;
-        double dpr = devicePixelRatio();
-        QPoint devPos = event->pos() * dpr;
-        lastMousePos_ = event->pos();
-        // MoveTo 检测当前位置实体（不改变选中状态），再用综合拾取取面索引
         context_->MoveTo(devPos.x(), devPos.y(), view_, Standard_True);
         int pickedFace = pickFaceAtPos(devPos.x(), devPos.y());
         if (pickedFace >= 0) {
-            // 同步更新选中状态，确保后续操作一致
             selectedFaceIndex_ = pickedFace;
             previousSelectedFaceIndex_ = pickedFace;
             emit faceModifyRequested(pickedFace);
         }
+        currentMode_ = None;
+    }
+}
+
+void OCCTViewer::mouseDoubleClickEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        fitAll();  // 左键双击：重置视图
     }
 }
 
@@ -315,20 +307,15 @@ void OCCTViewer::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void OCCTViewer::mouseReleaseEvent(QMouseEvent* event) {
-    // 检查是否还保持有其他按键
     Qt::MouseButtons buttons = event->buttons();
-    if ((buttons & Qt::LeftButton) && (buttons & Qt::RightButton)) {
-        // 仍然左右键同时按下，保持平移模式
-        return;
-    } else if (buttons & Qt::RightButton) {
-        // 只按住右键，切换到旋转模式
+
+    if (buttons & Qt::LeftButton) {
+        // 左键仍按住（右键刚释放）→ 回到旋转模式
         currentMode_ = Rotate;
-        view_->StartRotation(lastMousePos_.x(), lastMousePos_.y());
-    } else if (buttons & Qt::LeftButton) {
-        // 只按住左键，切换到选择模式
-        currentMode_ = None;
+        double dpr = devicePixelRatio();
+        QPoint devPos = event->pos() * dpr;
+        view_->StartRotation(devPos.x(), devPos.y());
     } else {
-        // 没有按键按下
         currentMode_ = None;
     }
 }

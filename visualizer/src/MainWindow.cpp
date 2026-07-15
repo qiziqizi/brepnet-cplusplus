@@ -222,7 +222,7 @@ void MainWindow::setupUI() {
 
     lblFileName_ = new QLabel("文件: 未加载", infoGroup);
     lblNumFaces_ = new QLabel("面数: 0", infoGroup);
-    lblSelectedFace_ = new QLabel("选中面: 无", infoGroup);
+    lblSelectedFace_ = new QLabel("当前面: 无", infoGroup);
 
     infoLayout->addWidget(lblFileName_);
     infoLayout->addWidget(lblNumFaces_);
@@ -472,7 +472,7 @@ void MainWindow::onLoadFile() {
     groundTruthLabels_.clear();
     errorFaceIndices_.clear();
     lblPredictionAccuracy_->setText("准确率: --");
-    lblSelectedFace_->setText("选中面: --");
+    lblSelectedFace_->setText("当前面: --");
     lblHoverFaceIndex_->setText("面索引: --");
     lblHoverEdgeCount_->setText("Edge 数: --");
     lblHoverFaceEdgeIds_->setText("Edge ID: --");
@@ -711,16 +711,15 @@ void MainWindow::onFaceSelected(int faceIndex) {
         return;
     }
 
-    QString info = QString("选中面: #%1").arg(faceIndex);
+    // 修改面类别后刷新模型信息（由 onModifyFaceClass 调用）
+    QString info = QString("当前面: #%1").arg(faceIndex);
 
-    // 显示当前面的实时类别
     if (!manualLabels_.empty() && faceIndex < static_cast<int>(manualLabels_.size())) {
         int classId = manualLabels_[faceIndex];
         QString className = QString::fromStdString(colorMapper_->getClassName(classId));
         info += QString(" | 类别: %1(%2)").arg(className).arg(classId);
     }
 
-    // 如果有对比标签，显示真实值和正误
     if (!groundTruthLabels_.empty() && faceIndex < static_cast<int>(groundTruthLabels_.size())) {
         int trueClassId = groundTruthLabels_[faceIndex];
         QString trueClassName = QString::fromStdString(colorMapper_->getClassName(trueClassId));
@@ -754,6 +753,22 @@ void MainWindow::onFaceHovered(int faceIndex, int mouseX, int mouseY) {
     // 不清空 Edge 信息！等采样完成后决定：检测到新 Edge 就更新，否则保留旧信息或清空
 
     lblHoverFaceIndex_->setText(QString("面索引: #%1").arg(faceIndex));
+
+    // 更新模型信息中的"当前面"信息（基于悬停面）
+    QString faceInfo = QString("当前面: #%1").arg(faceIndex);
+    if (!manualLabels_.empty() && faceIndex < static_cast<int>(manualLabels_.size())) {
+        int classId = manualLabels_[faceIndex];
+        QString className = QString::fromStdString(colorMapper_->getClassName(classId));
+        faceInfo += QString(" | 类别: %1(%2)").arg(className).arg(classId);
+    }
+    if (!groundTruthLabels_.empty() && faceIndex < static_cast<int>(groundTruthLabels_.size())) {
+        int trueClassId = groundTruthLabels_[faceIndex];
+        QString trueClassName = QString::fromStdString(colorMapper_->getClassName(trueClassId));
+        faceInfo += QString(" | 真实: %1(%2)").arg(trueClassName).arg(trueClassId);
+        int currentClassId = (faceIndex < static_cast<int>(manualLabels_.size())) ? manualLabels_[faceIndex] : -1;
+        faceInfo += (currentClassId == trueClassId) ? QString::fromUtf8(" ✓") : QString::fromUtf8(" ✗");
+    }
+    lblSelectedFace_->setText(faceInfo);
 
     const auto& coedgeList = faceEdgeCoedge_[faceIndex];
     lblHoverEdgeCount_->setText(QString("Edge 数: %1").arg(coedgeList.size()));
@@ -1086,7 +1101,7 @@ void MainWindow::onReset() {
 
     // 重置UI
     lblPredictionAccuracy_->setText("准确率: --");
-    lblSelectedFace_->setText("选中面: --");
+    lblSelectedFace_->setText("当前面: --");
     lblHoverFaceIndex_->setText("面索引: --");
     lblHoverEdgeCount_->setText("Edge 数: --");
     lblHoverFaceEdgeIds_->setText("Edge ID: --");
