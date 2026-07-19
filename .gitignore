@@ -1,6 +1,7 @@
 brepnet/
 .vs/
 .claude/
+.omo/
 x64/
 *.user
 *.db
@@ -10,6 +11,12 @@ logs/
 inference_data/
 python端的代码/
 过时的代码/
+
+# 忽略便携版和Visual Studio构建文件
+BRepNet_Portable_v123.0/
+BRepNet_Portable_v4.0/
+BRepNetVisualizer/
+*.zip
 
 # 忽略所有文档、日志和图片
 *.md

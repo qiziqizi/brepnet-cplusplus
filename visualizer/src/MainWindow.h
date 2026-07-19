@@ -11,6 +11,8 @@
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include <QScrollArea>
+#include <QListWidget>
+#include <QCheckBox>
 #include <memory>
 
 #include "OCCTViewer.h"
@@ -44,6 +46,11 @@ public:
 private slots:
     // 文件操作
     void onLoadFile();
+    void onSelectDir();
+    void onLoadSelected();
+    void onFileListItemClicked(QListWidgetItem* item);
+    void onPrevFile();
+    void onNextFile();
 
     // 预测操作
     void onRunPrediction();
@@ -51,6 +58,7 @@ private slots:
 
     // 人工标注
     void onLoadManualLabels();
+    void onLoadAutoLabels();
     void onModifyFaceClass();
 
     // 导出
@@ -62,11 +70,15 @@ private slots:
     // 面选择/悬停响应槽
     void onFaceSelected(int faceIndex);
     void onFaceHovered(int faceIndex, int mouseX, int mouseY);
+    void onFaceSelectionChanged(int faceIndex);
 
 private:
     void setupUI();
     void setupConnections();
     void setWorkMode(WorkMode mode);
+    void loadAndApplyLabels(const QString& fileName, bool silent = false);
+    void loadStepFile(const QString& fileName);    // 核心加载逻辑
+    void refreshFileListSelection();                 // 同步侧边栏选中状态
     void updateModelInfo();
     void updateStatistics();
     void updateComparisonResults();
@@ -80,6 +92,18 @@ protected:
     QSplitter* mainSplitter_;
     OCCTViewer* viewer_;
 
+    // 文件浏览侧边栏
+    QWidget* fileSidebar_;
+    QPushButton* btnSelectDir_;
+    QListWidget* fileListWidget_;
+    QPushButton* btnLoadSelected_;
+    QPushButton* btnPrevFile_;
+    QPushButton* btnNextFile_;
+    QLabel* lblFileIndex_;
+    QCheckBox* chkAutoLoadLabels_;
+    QString currentDir_;
+    QStringList stepFiles_;
+
     // 文件操作区
     QPushButton* btnLoadFile_;
 
@@ -90,6 +114,7 @@ protected:
 
     // 人工标注区
     QPushButton* btnLoadManualLabels_;
+    QPushButton* btnLoadAutoLabels_;
     QPushButton* btnModifyFaceClass_;
 
     // 重置区

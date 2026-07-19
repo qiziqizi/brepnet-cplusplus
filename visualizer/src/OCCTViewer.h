@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <map>
 #include <vector>
+#include <QSet>
 
 #include <AIS_InteractiveContext.hxx>
 #include <StdSelect_BRepOwner.hxx>
@@ -39,12 +40,15 @@ public:
     void fitAll();
     int getNumFaces() const { return static_cast<int>(faceColors_.size()); }
     int getSelectedFaceIndex() const { return selectedFaceIndex_; }
+    const QSet<int>& getMultiSelectedFaces() const { return multiSelectedFaces_; }
+    void clearMultiSelection() { multiSelectedFaces_.clear(); updateMultiSelectHighlight(); }
     const Handle(V3d_View)& getView() const { return view_; }
 
 signals:
     void faceSelected(int faceIndex);
     void faceHovered(int faceIndex, int mouseX, int mouseY);  // faceIndex=-1 = 离开
-    void faceModifyRequested(int faceIndex);                  // 右键双击请求修改（仅人工标注模式生效）
+    void faceModifyRequested(int faceIndex);                  // 右键单击请求修改
+    void faceSelectionChanged(int faceIndex);                 // Ctrl+右键多选变化
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -65,6 +69,7 @@ private:
     void setCustomFaceColor(int faceIndex, const Quantity_Color& color); // 仅设颜色，不更新 faceColors_
     void setFaceTransparency(int faceIndex, Standard_Real transparency); // 按面设置透明度（悬停用）
     void restoreHoveredFace();
+    void updateMultiSelectHighlight();                   // 更新多选面边线高亮
     int pickFaceByRay(int mouseX, int mouseY);                           // 几何光线求交
     int pickFaceAtPos(int devX, int devY);                               // 综合拾取（选择器+光线），不改选中状态
     TopoDS_Compound buildFaceEdgesCompound(int faceIndex) const;         // 提取面的所有边组成 compound
@@ -78,6 +83,7 @@ private:
 
     Handle(AIS_ColoredShape) coloredShape_;          // 整模型，内部按面着色
     Handle(AIS_Shape) hoverEdges_;                   // 悬停面边线高亮叠加层
+    Handle(AIS_Shape) multiSelectEdges_;             // 多选面边线高亮叠加层
     TopoDS_Shape fullShape_;                         // 原始完整形状，用于子面遍历
     std::map<int, Quantity_Color> faceColors_;       // 每个面当前颜色
     std::map<int, Quantity_Color> savedFaceColors_;  // 高亮前保存的面颜色
@@ -88,6 +94,7 @@ private:
     int selectedFaceIndex_;
     int previousSelectedFaceIndex_;                 // 上一次选中的面索引
     int hoveredFaceIndex_;                          // -1 = 未悬停
+    QSet<int> multiSelectedFaces_;                  // Ctrl+右键多选集合
 };
 
 #endif // OCCTVIEWER_H

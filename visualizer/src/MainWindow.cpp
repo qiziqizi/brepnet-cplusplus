@@ -12,6 +12,9 @@
 #include <QScrollArea>
 #include <QResizeEvent>
 #include <QTimer>
+#include <QShortcut>
+#include <QKeyEvent>
+#include <QAbstractItemView>
 #include <QInputDialog>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -26,6 +29,9 @@
 #include <BRep_Tool.hxx>
 #include <QPixmap>
 #include <QPainter>
+#include <QBrush>
+#include <QFont>
+#include <QColor>
 #include <algorithm>
 #include <map>
 
@@ -152,7 +158,42 @@ void MainWindow::setupUI() {
     // 创建分割器（左右布局）
     mainSplitter_ = new QSplitter(Qt::Horizontal, centralWidget);
 
-    // ========== 左侧：3D视图 ==========
+    // ========== 最左侧：文件浏览侧边栏（可拖拽，不随窗口伸缩）==========
+    fileSidebar_ = new QWidget(mainSplitter_);
+    fileSidebar_->setMinimumWidth(180);
+    fileSidebar_->setMaximumWidth(400);
+    QVBoxLayout* sidebarLayout = new QVBoxLayout(fileSidebar_);
+    sidebarLayout->setContentsMargins(2, 2, 2, 2);
+
+    btnSelectDir_ = new QPushButton("选择目录", fileSidebar_);
+    sidebarLayout->addWidget(btnSelectDir_);
+
+    fileListWidget_ = new QListWidget(fileSidebar_);
+    sidebarLayout->addWidget(fileListWidget_, 1);
+
+    // 导航按钮行
+    QHBoxLayout* navLayout = new QHBoxLayout();
+    btnPrevFile_ = new QPushButton("← 上一个", fileSidebar_);
+    btnNextFile_ = new QPushButton("下一个 →", fileSidebar_);
+    navLayout->addWidget(btnPrevFile_);
+    navLayout->addWidget(btnNextFile_);
+    sidebarLayout->addLayout(navLayout);
+
+    btnLoadSelected_ = new QPushButton("加载选中文件", fileSidebar_);
+    sidebarLayout->addWidget(btnLoadSelected_);
+
+    lblFileIndex_ = new QLabel("未加载", fileSidebar_);
+    lblFileIndex_->setAlignment(Qt::AlignCenter);
+    lblFileIndex_->setStyleSheet("font-weight: bold; padding: 4px;");
+    sidebarLayout->addWidget(lblFileIndex_);
+
+    chkAutoLoadLabels_ = new QCheckBox("自动导入标签", fileSidebar_);
+    chkAutoLoadLabels_->setToolTip("勾选后，加载STEP文件时自动导入同名的.seg标签文件");
+    sidebarLayout->addWidget(chkAutoLoadLabels_);
+
+    mainSplitter_->addWidget(fileSidebar_);
+
+    // ========== 中间：3D视图 ==========
     viewer_ = new OCCTViewer(mainSplitter_);
     mainSplitter_->addWidget(viewer_);
 
@@ -206,9 +247,12 @@ void MainWindow::setupUI() {
     // 第2行：人工标注（跨3列）
     QGroupBox* manualGroup = new QGroupBox("人工标注", controlPanel);
     QHBoxLayout* manualLayout = new QHBoxLayout(manualGroup);
-    btnLoadManualLabels_ = new QPushButton("导入标签并上色", manualGroup);
+    btnLoadManualLabels_ = new QPushButton("手动导入标签", manualGroup);
     btnLoadManualLabels_->setEnabled(false);
     manualLayout->addWidget(btnLoadManualLabels_);
+    btnLoadAutoLabels_ = new QPushButton("自动导入标签", manualGroup);
+    btnLoadAutoLabels_->setEnabled(false);
+    manualLayout->addWidget(btnLoadAutoLabels_);
     btnModifyFaceClass_ = new QPushButton("修改当前面类别", manualGroup);
     btnModifyFaceClass_->setEnabled(false);
     manualLayout->addWidget(btnModifyFaceClass_);
@@ -365,12 +409,14 @@ void MainWindow::setupUI() {
     // 延迟初始化图例布局，确保窗口已完成布局
     QTimer::singleShot(100, this, &MainWindow::refreshLegendLayout);
 
-    // 左右1:1等分（窗口resize后仍保持比例）
-    mainSplitter_->setStretchFactor(0, 1);
-    mainSplitter_->setStretchFactor(1, 1);
+    // 三栏布局：侧边栏(固定宽220) | 3D视图(伸缩) | 控制面板(伸缩)
+    mainSplitter_->setStretchFactor(0, 0);  // 侧边栏不伸缩
+    mainSplitter_->setStretchFactor(1, 1);  // 视图伸缩
+    mainSplitter_->setStretchFactor(2, 1);  // 控制面板伸缩
     QTimer::singleShot(0, [this]() {
         int w = mainSplitter_->width();
-        if (w > 0) mainSplitter_->setSizes({w / 2, w / 2});
+        int sidebarW = 220;
+        if (w > sidebarW) mainSplitter_->setSizes({sidebarW, (w - sidebarW) / 2, (w - sidebarW) / 2});
     });
 
     // 设置主布局
@@ -392,12 +438,21 @@ void MainWindow::setupConnections() {
     // 文件操作
     connect(btnLoadFile_, &QPushButton::clicked, this, &MainWindow::onLoadFile);
 
+    // 文件浏览侧边栏
+    connect(btnSelectDir_, &QPushButton::clicked, this, &MainWindow::onSelectDir);
+    connect(btnLoadSelected_, &QPushButton::clicked, this, &MainWindow::onLoadSelected);
+    connect(btnPrevFile_, &QPushButton::clicked, this, &MainWindow::onPrevFile);
+    connect(btnNextFile_, &QPushButton::clicked, this, &MainWindow::onNextFile);
+    connect(fileListWidget_, &QListWidget::itemDoubleClicked, this, &MainWindow::onLoadSelected);
+    connect(fileListWidget_, &QListWidget::itemClicked, this, &MainWindow::onFileListItemClicked);
+
     // 预测操作
     connect(btnRunPrediction_, &QPushButton::clicked, this, &MainWindow::onRunPrediction);
     connect(btnLoadPredictionLabels_, &QPushButton::clicked, this, &MainWindow::onLoadPredictionLabels);
 
     // 人工标注
     connect(btnLoadManualLabels_, &QPushButton::clicked, this, &MainWindow::onLoadManualLabels);
+    connect(btnLoadAutoLabels_, &QPushButton::clicked, this, &MainWindow::onLoadAutoLabels);
     connect(btnModifyFaceClass_, &QPushButton::clicked, this, &MainWindow::onModifyFaceClass);
 
     // 导出
@@ -409,7 +464,8 @@ void MainWindow::setupConnections() {
     // 面选择
     connect(viewer_, &OCCTViewer::faceSelected, this, &MainWindow::onFaceSelected);
     connect(viewer_, &OCCTViewer::faceHovered, this, &MainWindow::onFaceHovered);
-    // 右键双击：请求修改当前面类别（与按钮共用 onModifyFaceClass）
+    connect(viewer_, &OCCTViewer::faceSelectionChanged, this, &MainWindow::onFaceSelectionChanged);
+
     connect(viewer_, &OCCTViewer::faceModifyRequested, this, &MainWindow::onModifyFaceClass);
 }
 
@@ -425,6 +481,7 @@ void MainWindow::setWorkMode(WorkMode mode) {
 
     // 人工标注区 (随时可用)
     btnLoadManualLabels_->setEnabled(hasFile);
+    btnLoadAutoLabels_->setEnabled(hasFile);
     btnModifyFaceClass_->setEnabled(hasFile);
 
     // 重置按钮
@@ -439,6 +496,9 @@ void MainWindow::onLoadFile() {
     // 基于exe所在目录构建STEP文件默认路径
     QString exeDir = QCoreApplication::applicationDirPath();
     QString defaultPath = exeDir + "/../../../inference_data/step_files";
+    if (!currentDir_.isEmpty()) {
+        defaultPath = currentDir_;
+    }
 
     QString fileName = QFileDialog::getOpenFileName(
         this,
@@ -450,6 +510,10 @@ void MainWindow::onLoadFile() {
         return;
     }
 
+    loadStepFile(fileName);
+}
+
+void MainWindow::loadStepFile(const QString& fileName) {
     // 加载文件
     statusBar()->showMessage("正在加载文件...");
     QApplication::setOverrideCursor(Qt::WaitCursor);
@@ -536,8 +600,149 @@ void MainWindow::onLoadFile() {
     setWorkMode(WorkMode::ManualLabeling);
     updateStatistics();
 
+    // 同步侧边栏选中状态
+    refreshFileListSelection();
+
     statusBar()->showMessage("加载成功: " + QString::fromStdString(loader_->getFileName())
         + QString("（%1 个面以区分色显示）").arg(numFaces));
+
+    // 自动导入同名 .seg 标签文件
+    if (chkAutoLoadLabels_ && chkAutoLoadLabels_->isChecked()) {
+        QFileInfo stepInfo(fileName);
+        QString segPath = stepInfo.absolutePath() + "/" + stepInfo.completeBaseName() + ".seg";
+        if (QFileInfo::exists(segPath)) {
+            loadAndApplyLabels(segPath, true);
+            statusBar()->showMessage("加载成功: " + QString::fromStdString(loader_->getFileName())
+                + QString("（已自动导入标签: %1）").arg(stepInfo.completeBaseName() + ".seg"));
+        }
+    }
+}
+
+void MainWindow::onSelectDir() {
+    QString dir = QFileDialog::getExistingDirectory(
+        this, "选择STEP文件所在目录",
+        currentDir_.isEmpty() ? QCoreApplication::applicationDirPath() : currentDir_);
+
+    if (dir.isEmpty()) return;
+
+    currentDir_ = dir;
+
+    // 扫描目录下所有 .step / .stp 文件（不区分大小写）
+    QDir d(dir);
+    QStringList filters;
+    filters << "*.step" << "*.stp" << "*.STEP" << "*.STP";
+    QFileInfoList files = d.entryInfoList(filters, QDir::Files, QDir::Name);
+
+    stepFiles_.clear();
+    fileListWidget_->clear();
+    int hasSegCount = 0;
+    for (const QFileInfo& fi : files) {
+        QListWidgetItem* item = new QListWidgetItem(fi.fileName());
+        item->setToolTip(fi.absoluteFilePath());
+
+        // 检查同目录下是否存在同名的 .seg 文件
+        QString segPath = fi.absolutePath() + "/" + fi.completeBaseName() + ".seg";
+        if (QFileInfo::exists(segPath)) {
+            // 绿色高亮表示已有标注文件
+            QBrush greenBrush(QColor(0, 140, 0));
+            item->setForeground(greenBrush);
+            QFont f = item->font();
+            f.setBold(true);
+            item->setFont(f);
+            item->setToolTip(fi.absoluteFilePath() + "\n[已有标注: " + segPath + "]");
+            ++hasSegCount;
+        }
+
+        fileListWidget_->addItem(item);
+        stepFiles_.append(fi.absoluteFilePath());
+    }
+
+    lblFileIndex_->setText(QString("共 %1 个文件 (%2 个已标注)")
+        .arg(stepFiles_.size()).arg(hasSegCount));
+
+    // 如果当前已加载文件在列表中，高亮选中
+    refreshFileListSelection();
+}
+
+void MainWindow::onLoadSelected() {
+    int row = fileListWidget_->currentRow();
+    if (row < 0 || row >= stepFiles_.size()) {
+        QMessageBox::warning(this, "提示", "请先在列表中选择一个文件");
+        return;
+    }
+    loadStepFile(stepFiles_[row]);
+}
+
+void MainWindow::onFileListItemClicked(QListWidgetItem* item) {
+    // 单击只选中，不加载（双击才加载）
+    // 更新索引显示
+    int row = fileListWidget_->currentRow();
+    if (row >= 0 && row < stepFiles_.size()) {
+        QFileInfo fi(stepFiles_[row]);
+        lblFileIndex_->setText(QString("%1 / %2\n%3")
+            .arg(row + 1).arg(stepFiles_.size()).arg(fi.fileName()));
+    }
+}
+
+void MainWindow::onPrevFile() {
+    if (stepFiles_.isEmpty()) {
+        QMessageBox::information(this, "提示", "请先选择目录");
+        return;
+    }
+
+    int row = fileListWidget_->currentRow();
+    // 如果当前已加载文件在列表中，从当前位置向前；否则从头开始
+    int currentRow = -1;
+    if (!currentFilePath_.isEmpty()) {
+        for (int i = 0; i < stepFiles_.size(); ++i) {
+            if (QFileInfo(stepFiles_[i]) == QFileInfo(currentFilePath_)) {
+                currentRow = i;
+                break;
+            }
+        }
+    }
+    if (currentRow < 0) currentRow = row;
+    if (currentRow < 0) currentRow = 0;
+
+    int prevRow = (currentRow - 1 + stepFiles_.size()) % stepFiles_.size();
+    loadStepFile(stepFiles_[prevRow]);
+}
+
+void MainWindow::onNextFile() {
+    if (stepFiles_.isEmpty()) {
+        QMessageBox::information(this, "提示", "请先选择目录");
+        return;
+    }
+
+    int currentRow = -1;
+    if (!currentFilePath_.isEmpty()) {
+        for (int i = 0; i < stepFiles_.size(); ++i) {
+            if (QFileInfo(stepFiles_[i]) == QFileInfo(currentFilePath_)) {
+                currentRow = i;
+                break;
+            }
+        }
+    }
+    if (currentRow < 0) currentRow = fileListWidget_->currentRow();
+    if (currentRow < 0) currentRow = -1; // 从第一个开始
+
+    int nextRow = (currentRow + 1) % stepFiles_.size();
+    loadStepFile(stepFiles_[nextRow]);
+}
+
+void MainWindow::refreshFileListSelection() {
+    if (stepFiles_.isEmpty() || currentFilePath_.isEmpty()) return;
+
+    for (int i = 0; i < stepFiles_.size(); ++i) {
+        if (QFileInfo(stepFiles_[i]) == QFileInfo(currentFilePath_)) {
+            fileListWidget_->setCurrentRow(i);
+            fileListWidget_->scrollToItem(fileListWidget_->item(i), QAbstractItemView::PositionAtCenter);
+            lblFileIndex_->setText(QString("%1 / %2\n%3")
+                .arg(i + 1).arg(stepFiles_.size())
+                .arg(QFileInfo(stepFiles_[i]).fileName()));
+            return;
+        }
+    }
 }
 
 void MainWindow::onRunPrediction() {
@@ -679,10 +884,14 @@ void MainWindow::onExportResults() {
     QString baseName = stepInfo.completeBaseName();
 
     QString fileName = QString("%1/%2.seg").arg(baseDir, baseName);
-    int sfx = 1;
-    while (QFileInfo::exists(fileName)) {
-        fileName = QString("%1/%2_%3.seg").arg(baseDir, baseName).arg(sfx);
-        ++sfx;
+
+    // 文件已存在时弹出替换确认
+    if (QFileInfo::exists(fileName)) {
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            this, "文件已存在",
+            QString("文件已存在:\n%1\n\n是否替换？").arg(fileName),
+            QMessageBox::Yes | QMessageBox::No);
+        if (reply != QMessageBox::Yes) return;
     }
 
     QFile file(fileName);
@@ -704,6 +913,33 @@ void MainWindow::onExportResults() {
     QString source = hasManual ? "人工标注" : "预测结果";
     statusBar()->showMessage(source + "已导出: " + fileName);
     QMessageBox::information(this, "成功", source + "已导出至:\n" + fileName);
+
+    // 刷新侧边栏：将当前文件对应的列表项标记为已标注（绿色粗体）
+    if (!stepFiles_.isEmpty() && !currentFilePath_.isEmpty()) {
+        for (int i = 0; i < stepFiles_.size(); ++i) {
+            if (QFileInfo(stepFiles_[i]) == QFileInfo(currentFilePath_)) {
+                QListWidgetItem* item = fileListWidget_->item(i);
+                if (item) {
+                    QBrush greenBrush(QColor(0, 140, 0));
+                    item->setForeground(greenBrush);
+                    QFont f = item->font();
+                    f.setBold(true);
+                    item->setFont(f);
+                    item->setToolTip(stepFiles_[i] + "\n[已有标注: " + fileName + "]");
+                }
+                break;
+            }
+        }
+        // 更新计数
+        int hasSegCount = 0;
+        for (int i = 0; i < stepFiles_.size(); ++i) {
+            QFileInfo fi(stepFiles_[i]);
+            QString segPath = fi.absolutePath() + "/" + fi.completeBaseName() + ".seg";
+            if (QFileInfo::exists(segPath)) ++hasSegCount;
+        }
+        lblFileIndex_->setText(QString("共 %1 个文件 (%2 个已标注)")
+            .arg(stepFiles_.size()).arg(hasSegCount));
+    }
 }
 
 void MainWindow::onFaceSelected(int faceIndex) {
@@ -940,16 +1176,37 @@ void MainWindow::onLoadManualLabels() {
         return;
     }
 
+    loadAndApplyLabels(fileName);
+}
+
+void MainWindow::onLoadAutoLabels() {
+    if (currentFilePath_.isEmpty()) return;
+
+    QFileInfo stepInfo(currentFilePath_);
+    QString baseDir = stepInfo.absolutePath();
+    QString baseName = stepInfo.completeBaseName();
+    QString segPath = QString("%1/%2.seg").arg(baseDir, baseName);
+
+    if (!QFileInfo::exists(segPath)) {
+        QMessageBox::warning(this, "未找到标签文件",
+            QString("在STEP文件所在目录未找到同名的.seg文件:\n%1").arg(segPath));
+        return;
+    }
+
+    loadAndApplyLabels(segPath);
+}
+
+void MainWindow::loadAndApplyLabels(const QString& fileName, bool silent) {
     manualLabels_ = loadLabelsFromFile(fileName);
 
     if (manualLabels_.empty()) {
-        QMessageBox::critical(this, "错误", "无法解析标签文件");
+        if (!silent) QMessageBox::critical(this, "错误", "无法解析标签文件");
         return;
     }
 
     // 验证标签数量
     if (static_cast<int>(manualLabels_.size()) != loader_->getNumFaces()) {
-        QMessageBox::warning(this, "警告",
+        if (!silent) QMessageBox::warning(this, "警告",
             QString("标签数量(%1)与面数量(%2)不匹配")
             .arg(manualLabels_.size())
             .arg(loader_->getNumFaces()));
@@ -985,28 +1242,61 @@ void MainWindow::onLoadManualLabels() {
     updateStatistics();
 
     statusBar()->showMessage("标签已加载并上色: " + fileName);
-    QMessageBox::information(this, "成功", "标签已加载并按类别着色。");
+    if (!silent) QMessageBox::information(this, "成功", "标签已加载并按类别着色。");
+}
+
+void MainWindow::onFaceSelectionChanged(int faceIndex) {
+    const QSet<int>& selected = viewer_->getMultiSelectedFaces();
+    if (selected.isEmpty()) {
+        statusBar()->showMessage("多选已清空", 2000);
+    } else {
+        QStringList faceIds;
+        for (int fid : selected) {
+            faceIds << QString::number(fid);
+        }
+        statusBar()->showMessage(
+            QString("已选中 %1 个面: %2 (右键单击批量修改)")
+            .arg(selected.size()).arg(faceIds.join(", ")), 5000);
+    }
 }
 
 void MainWindow::onModifyFaceClass() {
-    // 检查是否有选中的面
+    // 获取多选集合或单选面
+    QSet<int> selectedFaces = viewer_->getMultiSelectedFaces();
     int selectedFace = viewer_->getSelectedFaceIndex();
-    if (selectedFace < 0) {
-        QMessageBox::warning(this, "警告", "请先点击选中一个面");
-        return;
+
+    // 如果没有多选，使用单选面
+    bool isBatch = !selectedFaces.isEmpty();
+    if (!isBatch) {
+        if (selectedFace < 0) {
+            QMessageBox::warning(this, "警告", "请先右键点击选中一个面");
+            return;
+        }
+        selectedFaces.insert(selectedFace);
     }
 
-    int currentClass = manualLabels_[selectedFace];
-    QString currentClassName = QString::fromStdString(colorMapper_->getClassName(currentClass));
+    // 构建提示信息
+    QString title = isBatch ? QString("批量修改 %1 个面的类别").arg(selectedFaces.size()) : "修改面类别";
+    QString infoText;
+    if (isBatch) {
+        QStringList faceIds;
+        for (int fid : selectedFaces) {
+            faceIds << QString::number(fid);
+        }
+        infoText = QString("选中面: %1\n\n请选择新类别:").arg(faceIds.join(", "));
+    } else {
+        int currentClass = manualLabels_[selectedFace];
+        QString currentClassName = QString::fromStdString(colorMapper_->getClassName(currentClass));
+        infoText = QString("当前面 #%1\n当前类别: %2 (%3)\n\n请选择新类别:")
+            .arg(selectedFace).arg(currentClass).arg(currentClassName);
+    }
 
-    // 自定义对话框：5 个彩色按钮
+    // 自定义对话框：4 个彩色按钮
     QDialog dlg(this);
-    dlg.setWindowTitle("修改面类别");
+    dlg.setWindowTitle(title);
     QVBoxLayout* dlgLayout = new QVBoxLayout(&dlg);
 
-    QLabel* infoLbl = new QLabel(
-        QString("当前面 #%1\n当前类别: %2 (%3)\n\n请选择新类别:")
-            .arg(selectedFace).arg(currentClass).arg(currentClassName), &dlg);
+    QLabel* infoLbl = new QLabel(infoText, &dlg);
     dlgLayout->addWidget(infoLbl);
 
     int newClass = -1;
@@ -1016,12 +1306,11 @@ void MainWindow::onModifyFaceClass() {
         int r = static_cast<int>(qc.Red() * 255);
         int g = static_cast<int>(qc.Green() * 255);
         int b = static_cast<int>(qc.Blue() * 255);
-        // 根据背景亮度选择文字颜色（深色背景白字、浅色背景黑字）
         double luma = 0.299 * qc.Red() + 0.587 * qc.Green() + 0.114 * qc.Blue();
         QString textColor = (luma > 0.55) ? "black" : "white";
 
         QPushButton* btn = new QPushButton(
-            QString("%1 - %2").arg(i).arg(QString::fromStdString(colorMapper_->getClassName(i))),
+            QString("%1 - %2  [按 %1 键]").arg(i).arg(QString::fromStdString(colorMapper_->getClassName(i))),
             &dlg);
         btn->setStyleSheet(
             QString("QPushButton { background-color: rgb(%1,%2,%3); color: %4; "
@@ -1034,6 +1323,18 @@ void MainWindow::onModifyFaceClass() {
             dlg.accept();
         });
         dlgLayout->addWidget(btn);
+
+        // 键盘快捷键: 数字键 0-3 和小键盘 0-3
+        auto* scMain = new QShortcut(QKeySequence(Qt::Key_0 + i), &dlg);
+        auto* scNumpad = new QShortcut(QKeySequence(Qt::KeypadModifier | (Qt::Key_0 + i)), &dlg);
+        connect(scMain, &QShortcut::activated, &dlg, [&dlg, &newClass, i]() {
+            newClass = i;
+            dlg.accept();
+        });
+        connect(scNumpad, &QShortcut::activated, &dlg, [&dlg, &newClass, i]() {
+            newClass = i;
+            dlg.accept();
+        });
     }
 
     QPushButton* cancelBtn = new QPushButton("取消", &dlg);
@@ -1042,30 +1343,40 @@ void MainWindow::onModifyFaceClass() {
 
     if (dlg.exec() != QDialog::Accepted || newClass < 0) return;
 
-    // 更新标签
-    manualLabels_[selectedFace] = newClass;
+    // 批量更新标签和颜色
+    for (int faceIdx : selectedFaces) {
+        manualLabels_[faceIdx] = newClass;
 
-    // 更新颜色：other 用暖色系中该面的颜色，其余用固定类颜色
-    Quantity_Color newColor;
-    if (newClass == 3 && selectedFace >= 0 && selectedFace < (int)warmOtherColors_.size()) {
-        newColor = warmOtherColors_[selectedFace];
-    } else {
-        newColor = colorMapper_->getColor(newClass);
+        Quantity_Color newColor;
+        if (newClass == 3 && faceIdx >= 0 && faceIdx < (int)warmOtherColors_.size()) {
+            newColor = warmOtherColors_[faceIdx];
+        } else {
+            newColor = colorMapper_->getColor(newClass);
+        }
+        viewer_->updateSingleFaceColor(faceIdx, newColor);
     }
-    viewer_->updateSingleFaceColor(selectedFace, newColor);
 
-    // 更新选中面信息
-    onFaceSelected(selectedFace);
+    // 清除多选集合
+    viewer_->clearMultiSelection();
+
+    // 更新面信息
+    if (selectedFace >= 0) {
+        onFaceSelected(selectedFace);
+    }
 
     // 更新统计
     updateStatistics();
 
     QString newClassName = QString::fromStdString(colorMapper_->getClassName(newClass));
-    statusBar()->showMessage(
-        QString("面 #%1 类别已修改: %2(%3) → %4(%5)")
-        .arg(selectedFace)
-        .arg(currentClass).arg(currentClassName)
-        .arg(newClass).arg(newClassName));
+    if (isBatch) {
+        statusBar()->showMessage(
+            QString("已批量修改 %1 个面的类别为 %2(%3)")
+            .arg(selectedFaces.size()).arg(newClassName).arg(newClass));
+    } else {
+        statusBar()->showMessage(
+            QString("面 #%1 类别已修改为 %2(%3)")
+            .arg(selectedFace).arg(newClassName).arg(newClass));
+    }
 }
 
 void MainWindow::onReset() {
@@ -1082,6 +1393,7 @@ void MainWindow::onReset() {
     predictions_.clear();
     groundTruthLabels_.clear();
     errorFaceIndices_.clear();
+    viewer_->clearMultiSelection();
 
     // 回到全 other 状态（与刚加载时一致）
     int numFaces = loader_ ? loader_->getNumFaces() : 0;

@@ -220,6 +220,11 @@ void OCCTViewer::clearAll() {
         context_->Erase(hoverEdges_, Standard_False);
         hoverEdges_.Nullify();
     }
+    if (!multiSelectEdges_.IsNull()) {
+        context_->Erase(multiSelectEdges_, Standard_False);
+        multiSelectEdges_.Nullify();
+    }
+    multiSelectedFaces_.clear();
     if (!coloredShape_.IsNull()) {
         context_->Remove(coloredShape_, Standard_False);
         coloredShape_.Nullify();
@@ -245,29 +250,44 @@ void OCCTViewer::mousePressEvent(QMouseEvent* event) {
     double dpr = devicePixelRatio();
     QPoint devPos = event->pos() * dpr;
 
-    Qt::MouseButtons buttons = event->buttons();
-
-    // 左右键同时按下 → 平移模式
-    if ((buttons & Qt::LeftButton) && (buttons & Qt::RightButton)) {
-        currentMode_ = Pan;
-        return;
-    }
-
     if (event->button() == Qt::LeftButton) {
         // 左键：旋转
         currentMode_ = Rotate;
         view_->StartRotation(devPos.x(), devPos.y());
     } else if (event->button() == Qt::RightButton) {
-        // 右键单击：修改当前面类别
+        // 右键单击：修改当前面类别（或 Ctrl+右键多选）
         if (context_.IsNull() || view_.IsNull()) return;
         context_->MoveTo(devPos.x(), devPos.y(), view_, Standard_True);
         int pickedFace = pickFaceAtPos(devPos.x(), devPos.y());
-        if (pickedFace >= 0) {
-            selectedFaceIndex_ = pickedFace;
-            previousSelectedFaceIndex_ = pickedFace;
-            emit faceModifyRequested(pickedFace);
+
+        if (event->modifiers() & Qt::ControlModifier) {
+            // Ctrl+右键：添加/移除多选集合，点击空白则清空所有
+            if (pickedFace >= 0) {
+                if (multiSelectedFaces_.contains(pickedFace)) {
+                    multiSelectedFaces_.remove(pickedFace);
+                } else {
+                    multiSelectedFaces_.insert(pickedFace);
+                }
+                updateMultiSelectHighlight();
+                emit faceSelectionChanged(pickedFace);
+            } else {
+                // 点击空白 → 清空多选
+                multiSelectedFaces_.clear();
+                updateMultiSelectHighlight();
+                emit faceSelectionChanged(-1);
+            }
+        } else {
+            // 普通右键：修改面类别
+            if (pickedFace >= 0) {
+                selectedFaceIndex_ = pickedFace;
+                previousSelectedFaceIndex_ = pickedFace;
+                emit faceModifyRequested(pickedFace);
+            }
         }
         currentMode_ = None;
+    } else if (event->button() == Qt::MiddleButton) {
+        // 中键：平移
+        currentMode_ = Pan;
     }
 }
 
@@ -307,17 +327,7 @@ void OCCTViewer::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void OCCTViewer::mouseReleaseEvent(QMouseEvent* event) {
-    Qt::MouseButtons buttons = event->buttons();
-
-    if (buttons & Qt::LeftButton) {
-        // 左键仍按住（右键刚释放）→ 回到旋转模式
-        currentMode_ = Rotate;
-        double dpr = devicePixelRatio();
-        QPoint devPos = event->pos() * dpr;
-        view_->StartRotation(devPos.x(), devPos.y());
-    } else {
-        currentMode_ = None;
-    }
+    currentMode_ = None;
 }
 
 void OCCTViewer::wheelEvent(QWheelEvent* event) {
@@ -383,6 +393,60 @@ void OCCTViewer::restoreHoveredFace() {
         hoveredFaceIndex_ = -1;
         emit faceHovered(-1, 0, 0);
     }
+}
+
+void OCCTViewer::updateMultiSelectHighlight() {
+    if (context_.IsNull()) return;
+
+    // 初始化叠加层
+    if (multiSelectEdges_.IsNull()) {
+        multiSelectEdges_ = new AIS_Shape(TopoDS_Shape());
+        multiSelectEdges_->SetDisplayMode(AIS_WireFrame);
+        multiSelectEdges_->SetColor(Quantity_Color(0.0, 0.0, 0.0, Quantity_TOC_RGB)); // 纯黑
+        multiSelectEdges_->SetWidth(2.5);
+    }
+
+    if (multiSelectedFaces_.isEmpty()) {
+        // 清空高亮
+        if (context_->IsDisplayed(multiSelectEdges_)) {
+            context_->Erase(multiSelectEdges_, Standard_False);
+            context_->UpdateCurrentViewer();
+        }
+        return;
+    }
+
+    // 构建所有多选面的边线 compound
+    TopoDS_Compound compound;
+    BRep_Builder builder;
+    builder.MakeCompound(compound);
+    bool hasEdge = false;
+
+    for (int faceIdx : multiSelectedFaces_) {
+        TopoDS_Compound faceEdges = buildFaceEdgesCompound(faceIdx);
+        for (TopExp_Explorer exp(faceEdges, TopAbs_EDGE); exp.More(); exp.Next()) {
+            builder.Add(compound, TopoDS::Edge(exp.Current()));
+            hasEdge = true;
+        }
+    }
+
+    if (!hasEdge) {
+        if (context_->IsDisplayed(multiSelectEdges_)) {
+            context_->Erase(multiSelectEdges_, Standard_False);
+            context_->UpdateCurrentViewer();
+        }
+        return;
+    }
+
+    multiSelectEdges_->Set(compound);
+    multiSelectEdges_->SetColor(Quantity_Color(0.0, 0.0, 0.0, Quantity_TOC_RGB));
+    multiSelectEdges_->SetWidth(2.5);
+
+    if (context_->IsDisplayed(multiSelectEdges_)) {
+        context_->Redisplay(multiSelectEdges_, Standard_True);
+    } else {
+        context_->Display(multiSelectEdges_, Standard_False);
+    }
+    context_->UpdateCurrentViewer();
 }
 
 void OCCTViewer::setFaceTransparency(int faceIndex, Standard_Real transparency) {
