@@ -3,6 +3,7 @@
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <IFSelect_ReturnStatus.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
 #include <filesystem>
 #include <iostream>
 
@@ -60,11 +61,16 @@ bool StepLoader::loadFile(const std::string& filePath) {
 void StepLoader::extractFaces() {
     faces_.clear();
 
-    // 使用TopExp_Explorer遍历所有面
-    // 注意：遍历顺序必须与预测模块保持一致！
+    // 使用 TopTools_IndexedMapOfShape 去重，与 BRepPipeline 保持一致
+    // BRepPipeline 用 unique_faces.Add(f) 去重，顺序为首次出现顺序
+    TopTools_IndexedMapOfShape faceMap;
     for (TopExp_Explorer exp(shape_, TopAbs_FACE); exp.More(); exp.Next()) {
-        TopoDS_Face face = TopoDS::Face(exp.Current());
-        faces_.push_back(face);
+        faceMap.Add(TopoDS::Face(exp.Current()));
+    }
+
+    // 按去重后的顺序填充 faces_（与 BRepPipeline 的 unique_faces 遍历顺序一致）
+    for (int i = 1; i <= faceMap.Extent(); ++i) {
+        faces_.push_back(TopoDS::Face(faceMap.FindKey(i)));
     }
 }
 

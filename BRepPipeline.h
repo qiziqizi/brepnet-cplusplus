@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <iostream>
 #include <vector>
@@ -135,8 +135,7 @@ public:
         reader.TransferRoots();
         TopoDS_Shape original_shape = reader.OneShape();
 
-        // FIXME: Disable scaling to match Python behavior (which uses original STEP coordinates)
-        // TopoDS_Shape shape = BRepUtils::ScaleShape(original_shape);
+        // 使用原始 STEP 坐标（与 Python 行为一致，不做缩放）
         TopoDS_Shape shape = original_shape;
 
         // Build unique faces and edges using default traversal order (same as Python)
@@ -259,12 +258,8 @@ private:
         int num_v = 40;
 #endif
 
-        // Shape: [9, 40, 40]
+        // Shape: [9, num_u, num_v]
         Tensor grid = breptorch::zeros({ 9, num_u, num_v }, breptorch::kFloat32);
-
-        static int debug_face_count = 0;
-        bool debug_first_face = (debug_face_count == 0);
-        bool debug_first_three = (debug_face_count < 3);
 
         int64_t stride_c = num_u * num_v;
         int64_t stride_h = num_v;
@@ -331,7 +326,6 @@ private:
     }
 
     Tensor generate_global_coedge_grid(int coedge_idx) {
-        DBG_CERR << "[DEBUG ArcLength] generate_global_coedge_grid() called for coedge " << coedge_idx << std::endl;
         const CoedgeInfo& c_info = coedges[coedge_idx];
 
         // 1. 获取几何实体
@@ -369,7 +363,6 @@ private:
         double len = last - first;
 
         // 4. 弧长参数化（与Python一致）
-        DBG_CERR << "[DEBUG ArcLength] Coedge " << coedge_idx << ": Using NEW arc-length parameterization (100 samples, line distance)" << std::endl;
 
         // 步骤1：在边上采样100个点
         std::vector<gp_Pnt> sample_points;
@@ -877,51 +870,6 @@ private:
         for (int i = 0; i < num_c; ++i) {
             Tensor mat = compute_coedge_lcs(i);
 
-            // ===== 【LCS调试】输出Face 19的coedges（87, 88, 89）的LCS矩阵 =====
-            if (DebugControl::instance().shouldDebug() && (i == 87 || i == 88 || i == 89)) {
-                DBG_LOG << "\n[DEBUG LCS] Coedge " << i << " (Face 19):" << std::endl;
-                DBG_LOG << "  Forward LCS Matrix:" << std::endl;
-                float* m = const_cast<Tensor&>(mat).data_ptr<float>();
-                for (int r = 0; r < 4; r++) {
-                    std::ostringstream row;
-                    row << std::fixed << std::setprecision(6);
-                    row << "    [" << std::setw(12) << m[r * 4]
-                        << ", " << std::setw(12) << m[r * 4 + 1]
-                        << ", " << std::setw(12) << m[r * 4 + 2]
-                        << ", " << std::setw(12) << m[r * 4 + 3] << "]";
-                    DBG_LOG << row.str() << std::endl;
-                }
-                {
-                    std::ostringstream oss;
-                    oss << std::fixed << std::setprecision(6);
-                    oss << "  Origin: [" << std::setw(12) << m[3] << ", " << std::setw(12) << m[7] << ", " << std::setw(12) << m[11] << "]";
-                    DBG_LOG << oss.str() << std::endl;
-                }
-                {
-                    std::ostringstream oss;
-                    oss << std::fixed << std::setprecision(6);
-                    oss << "  u_vec:  [" << std::setw(12) << m[0] << ", " << std::setw(12) << m[4] << ", " << std::setw(12) << m[8] << "]";
-                    DBG_LOG << oss.str() << std::endl;
-                }
-                {
-                    std::ostringstream oss;
-                    oss << std::fixed << std::setprecision(6);
-                    oss << "  v_vec:  [" << std::setw(12) << m[1] << ", " << std::setw(12) << m[5] << ", " << std::setw(12) << m[9] << "]";
-                    DBG_LOG << oss.str() << std::endl;
-                }
-                {
-                    std::ostringstream oss;
-                    oss << std::fixed << std::setprecision(6);
-                    oss << "  w_vec:  [" << std::setw(12) << m[2] << ", " << std::setw(12) << m[6] << ", " << std::setw(12) << m[10] << "]";
-                    DBG_LOG << oss.str() << std::endl;
-                }
-                {
-                    float origin_norm = std::sqrt(m[3]*m[3] + m[7]*m[7] + m[11]*m[11]);
-                    DBG_LOG << "  LCS Origin Norm: " << std::fixed << std::setprecision(6) << origin_norm << std::endl;
-                }
-            }
-            // ===== LCS调试结束 =====
-
 #if BREPNET_VERSION == 4
             if (std::abs(breptorch::det(mat)) < 1e-3) {
                 mat = breptorch::eye(4);
@@ -937,22 +885,6 @@ private:
 
             Tensor mat_inv = breptorch::inverse(mat);
 
-            // ===== 【LCS调试】输出逆矩阵 =====
-            if (DebugControl::instance().shouldDebug() && (i == 87 || i == 88 || i == 89)) {
-                DBG_LOG << "  Inverse LCS Matrix:" << std::endl;
-                float* m_inv = const_cast<Tensor&>(mat_inv).data_ptr<float>();
-                for (int r = 0; r < 4; r++) {
-                    std::ostringstream row;
-                    row << std::fixed << std::setprecision(6);
-                    row << "    [" << std::setw(12) << m_inv[r * 4]
-                        << ", " << std::setw(12) << m_inv[r * 4 + 1]
-                        << ", " << std::setw(12) << m_inv[r * 4 + 2]
-                        << ", " << std::setw(12) << m_inv[r * 4 + 3] << "]";
-                    DBG_LOG << row.str() << std::endl;
-                }
-            }
-            // ===== LCS调试结束 =====
-
             lcs_invs.push_back(mat_inv);
         }
     }
@@ -962,8 +894,6 @@ private:
         int num_c = coedges.size();
         std::vector<Tensor> c_list;
         c_list.reserve(num_c);
-
-        DBG_CERR << "[DEBUG] generate_coedge_local_grids() called, processing " << num_c << " coedges" << std::endl;
 
 #if BREPNET_VERSION == 4
         // V4: CoedgeGridsLocal = mate_relative_face_grids [9, 20, 20]
@@ -989,7 +919,6 @@ private:
 #else
         // V123: CoedgeGridsLocal = curve data [13, 40]
         for (int i = 0; i < num_c; ++i) {
-            DBG_CERR << "[DEBUG] Processing coedge " << i << "..." << std::endl;
             Tensor g_global = generate_global_coedge_grid(i);
             Tensor g_local = transform_grid_to_local(g_global, lcs_invs[i], false);
             c_list.push_back(g_local);
@@ -1153,9 +1082,6 @@ private:
 
         int num_c = coedges.size();
         if (num_c == 0) return;
-
-        DBG_LOG << "Generating local coordinate system features (LCS Transformation)..." << std::endl;
-        DBG_CERR << "[DEBUG] generate_local_grids() called for file with " << coedges.size() << " coedges" << std::endl;
 
         // 2. 计算LCS变换矩阵
         std::vector<Tensor> lcs_invs;

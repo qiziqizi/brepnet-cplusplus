@@ -1,4 +1,4 @@
-// 调试输出开关：通过 DebugControl.h 统一管理
+﻿// 调试输出开关：通过 DebugControl.h 统一管理
 // 通过命令行参数控制，永远不需要注释/取消注释代码
 
 #include "DebugControl.h"
@@ -184,34 +184,7 @@ void run_inference_with_export(const std::string& step_file,
     auto faces = BRepNetAdapter::extract_faces(pipeline);
 
     // ========================================================================
-    // 导出 Coedge 拼接后的特征（用于调试 GNN 层）
-    // ========================================================================
-    if (DebugControl::instance().shouldDebug()) {
-        DBG_LOG << "\n[DEBUG] Coedge Feature Concatenation for " << base_name << std::endl;
-        DBG_LOG << "[DEBUG] Total coedges: " << coedges.size() << std::endl;
-        for (size_t c = 0; c < std::min(size_t(5), coedges.size()); ++c) {
-            const auto& ce = coedges[c];
-            DBG_LOG << "\n[DEBUG] Coedge " << c << ":" << std::endl;
-            DBG_LOG << "  parent_face_features (first 10): ";
-            for (int i = 0; i < std::min(10, (int)ce.parent_face_features.size()); ++i) {
-                DBG_PRINTF("%.6f ", ce.parent_face_features[i]);
-            }
-            DBG_LOG << std::endl;
-            DBG_LOG << "  mate_face_features (first 10): ";
-            for (int i = 0; i < std::min(10, (int)ce.mate_face_features.size()); ++i) {
-                DBG_PRINTF("%.6f ", ce.mate_face_features[i]);
-            }
-            DBG_LOG << std::endl;
-            DBG_LOG << "  edge_features (first 10): ";
-            for (int i = 0; i < std::min(10, (int)ce.edge_features.size()); ++i) {
-                DBG_PRINTF("%.6f ", ce.edge_features[i]);
-            }
-            DBG_LOG << std::endl;
-        }
-    }
-
-    // ========================================================================
-    // 导出按原始Face ID组织的UV Grid（方便直接对比Face 25）
+    // 导出按原始Face ID组织的UV Grid
     // ========================================================================
     if (EXPORT_ENABLED) {
         DBG_LOG << "[UV Grid Export] Creating per-face UV grids..." << std::endl;
@@ -260,45 +233,7 @@ void run_inference_with_export(const std::string& step_file,
         }
         face_uv_out.close();
         DBG_LOG << "  Exported: " << face_uv_file << " (" << num_faces << " faces)" << std::endl;
-
-        // 输出Face 25的统计信息
-        if (num_faces > 25 && !face_uv_grids[25].empty()) {
-            double sum = 0.0, sum_sq = 0.0;
-            double min_val = 1e9, max_val = -1e9;
-            for (float val : face_uv_grids[25]) {
-                sum += val;
-                sum_sq += val * val;
-                min_val = std::min(min_val, (double)val);
-                max_val = std::max(max_val, (double)val);
-            }
-            double mean = sum / face_uv_grids[25].size();
-            double variance = sum_sq / face_uv_grids[25].size() - mean * mean;
-            double std_dev = std::sqrt(variance);
-
-            DBG_LOG << "\n  [Face 25 UV Grid Statistics]" << std::endl;
-            DBG_LOG << "    Size: " << face_uv_grids[25].size() << std::endl;
-            DBG_LOG << "    Mean: " << mean << std::endl;
-            DBG_LOG << "    Std:  " << std_dev << std::endl;
-            DBG_LOG << "    Min:  " << min_val << std::endl;
-            DBG_LOG << "    Max:  " << max_val << std::endl;
-            DBG_LOG << "    First 10 values: ";
-            for (int i = 0; i < 10 && i < (int)face_uv_grids[25].size(); ++i) {
-                DBG_LOG << face_uv_grids[25][i] << " ";
-            }
-            DBG_LOG << std::endl;
-        }
     }
-
-    // ========================================================================
-    // 创建原始Face ID到推理Face ID的映射（因为faces已经重排序）
-    // ========================================================================
-    std::map<int, int> original_to_inference_face;
-    for (size_t inference_id = 0; inference_id < faces.size(); ++inference_id) {
-        int original_id = faces[inference_id].face_id;
-        original_to_inference_face[original_id] = inference_id;
-    }
-
-    DBG_LOG << "[Mapping] Created original->inference face mapping" << std::endl;
 
     // [TOPOLOGY EXPORT] 导出每个face的coedge列表和映射关系
     if (EXPORT_ENABLED) {
@@ -371,19 +306,6 @@ void run_inference_with_export(const std::string& step_file,
         int representative_coedge_id = edge_representatives[e];
         if (representative_coedge_id >= 0 && representative_coedge_id < (int)coedges.size()) {
             uvnet_curve_features.push_back(coedges[representative_coedge_id].edge_features);
-
-            // Debug: Print Edge 38's representative
-            if (DebugControl::instance().shouldDebug() && e == 38) {
-                bool orientation = (representative_coedge_id < (int)pipeline.coedges.size()) ?
-                                  pipeline.coedges[representative_coedge_id].orientation : false;
-                DBG_LOG << "[DEBUG] Edge 38 representative: coedge " << representative_coedge_id
-                        << " (orientation=" << (orientation ? "true" : "false") << ")" << std::endl;
-                DBG_LOG << "[DEBUG] Edge 38 features[:10]: ";
-                for (int i = 0; i < 10 && i < (int)coedges[representative_coedge_id].edge_features.size(); ++i) {
-                    DBG_LOG << coedges[representative_coedge_id].edge_features[i] << " ";
-                }
-                DBG_LOG << std::endl;
-            }
         } else {
             // 如果找不到representative，用全0特征
             ERR_LOG << "[Warning] Edge " << e << " has no representative coedge!" << std::endl;
@@ -409,20 +331,6 @@ void run_inference_with_export(const std::string& step_file,
     std::vector<std::vector<float>> layer0_input_concat;
     std::vector<std::vector<float>> layer0_mlp_output_data;
 
-    DBG_LOG << "\n================================================================================\n";
-    DBG_LOG << "[LAYER 0 MLP DEBUG] Processing all coedges\n";
-    DBG_LOG << "================================================================================\n";
-
-    // 诊断输出：对所有 coedge 记录简单的统计信息
-    std::ofstream diag_mlp;
-    if (EXPORT_ENABLED) {
-        fs::create_directories("cpp_feature_maps");
-        diag_mlp.open("cpp_feature_maps/layer0_mlp_all_coedges_stats.txt");
-        diag_mlp << "Layer 0 MLP 输入/输出统计\n";
-        diag_mlp << "格式: Coedge_ID, Parent_Face_ID, Input_Min, Input_Max, Input_Mean, FaceState_Min, FaceState_Max\n\n";
-    }
-
-    int processed_coedges = 0;
     for (auto& coedge : coedges) {
         // 构建输入：parent_face (64) + mate_face (64) + edge (64) = 192
         std::vector<float> input;
@@ -433,32 +341,8 @@ void run_inference_with_export(const std::string& step_file,
         layer0_input_concat.push_back(input);
 
         // 通过 MLP
-        // 必须clone()！from_blob只是指向input.data()的指针，不拥有所有权
-        // 当input向量在下一次循环被重用时，之前的Tensor数据会被污染
         Tensor input_tensor = breptorch::from_blob(input.data(), {1, 192}, breptorch::kFloat32).clone();
         Tensor output = model->layer0_mlp->forward(input_tensor);  // (1, 60)
-
-        // 详细调试：仅对前 3 个 coedge 打印
-        if (DebugControl::instance().shouldDebug() && processed_coedges < 3) {
-            DBG_LOG << "\n[DEBUG Layer 0 MLP] Coedge " << coedge.coedge_id << std::endl;
-            DBG_LOG << "  Input shape: [1, 192]" << std::endl;
-            DBG_LOG << "  parent_face_features (first 10): ";
-            for (int i = 0; i < 10; ++i) DBG_PRINTF("%.10f ", input[i]);
-            DBG_LOG << std::endl;
-            DBG_LOG << "  mate_face_features (first 10): ";
-            for (int i = 64; i < 74; ++i) DBG_PRINTF("%.10f ", input[i]);
-            DBG_LOG << std::endl;
-            DBG_LOG << "  edge_features (first 10): ";
-            for (int i = 128; i < 138; ++i) DBG_PRINTF("%.10f ", input[i]);
-            DBG_LOG << std::endl;
-            DBG_LOG << "  MLP output shape: [" << output.size(0) << ", " << output.size(1) << "]" << std::endl;
-            DBG_LOG << "  edge_state (dims 0-9): ";
-            for (int i = 0; i < 10; ++i) DBG_PRINTF("%.10f ", output.at({0, i}));
-            DBG_LOG << std::endl;
-            DBG_LOG << "  face_state (dims 30-39): ";
-            for (int i = 30; i < 40; ++i) DBG_PRINTF("%.10f ", output.at({0, i}));
-            DBG_LOG << std::endl;
-        }
 
         // 保存MLP输出
         std::vector<float> mlp_out;
@@ -474,26 +358,7 @@ void run_inference_with_export(const std::string& step_file,
             coedge.layer0_edge_state[i] = output.at({0, i});
             coedge.layer0_face_state[i] = output.at({0, i + 30});
         }
-
-        // 统计输入和输出
-        float input_min = *std::min_element(input.begin(), input.end());
-        float input_max = *std::max_element(input.begin(), input.end());
-        float input_mean = std::accumulate(input.begin(), input.end(), 0.0f) / input.size();
-
-        float face_min = *std::min_element(coedge.layer0_face_state.begin(), coedge.layer0_face_state.end());
-        float face_max = *std::max_element(coedge.layer0_face_state.begin(), coedge.layer0_face_state.end());
-
-        // 记录到诊断文件
-        if (diag_mlp.is_open()) {
-            diag_mlp << coedge.coedge_id << "," << coedge.parent_face_id << ","
-                    << input_min << "," << input_max << "," << input_mean << ","
-                    << face_min << "," << face_max << "\n";
-        }
-
-        processed_coedges++;
     }
-
-    if (diag_mlp.is_open()) diag_mlp.close();
 
     if (EXPORT_ENABLED) {
         exporter.exportVectorData(layer0_input_concat, "layer0_input_concat", base_name);
@@ -501,43 +366,19 @@ void run_inference_with_export(const std::string& step_file,
     }
 
     // Face MaxPooling
-    // 诊断文件：记录每个面的 MaxPooling 过程
-    std::ofstream diag_pool;
-    if (EXPORT_ENABLED) {
-        diag_pool.open("cpp_feature_maps/layer0_face_pooling_all_faces_stats.txt");
-        diag_pool << "Layer 0 Face MaxPooling 统计\n";
-        diag_pool << "格式: Face_ID, Num_Coedges, Coedge_Count, Pooled_Min, Pooled_Max, Pooled_Mean\n\n";
-    }
-
     std::vector<std::vector<float>> layer0_face_pooling_data;
     for (auto& face : faces) {
-        face.layer0_state.resize(30, 0.0f);  // 初始化为0，与Python一致（Python添加零向量用于填充）
-        int coedge_count = 0;
+        face.layer0_state.resize(30, 0.0f);  // 初始化为0，与Python一致
         for (int coedge_id : face.coedge_ids) {
             if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
                 const auto& coedge_state = coedges[coedge_id].layer0_face_state;
                 for (int i = 0; i < 30; ++i) {
                     face.layer0_state[i] = std::max(face.layer0_state[i], coedge_state[i]);
                 }
-                coedge_count++;
             }
         }
-
-        // 计算统计
-        float pooled_min = *std::min_element(face.layer0_state.begin(), face.layer0_state.end());
-        float pooled_max = *std::max_element(face.layer0_state.begin(), face.layer0_state.end());
-        float pooled_mean = std::accumulate(face.layer0_state.begin(), face.layer0_state.end(), 0.0f) / 30;
-
-        // 记录到诊断文件
-        if (diag_pool.is_open()) {
-            diag_pool << face.face_id << "," << face.coedge_ids.size() << "," << coedge_count << ","
-                     << pooled_min << "," << pooled_max << "," << pooled_mean << "\n";
-        }
-
         layer0_face_pooling_data.push_back(face.layer0_state);
     }
-
-    if (diag_pool.is_open()) diag_pool.close();
 
     if (EXPORT_ENABLED) {
         exporter.exportVectorData(layer0_face_pooling_data, "layer0_face_pooling", base_name);
@@ -557,14 +398,10 @@ void run_inference_with_export(const std::string& step_file,
         // 构建输入：parent_face (30) + mate_face (30) + edge (30) = 90
         std::vector<float> input;
 
-        // 使用映射：原始face_id -> 推理face索引
-        int parent_inference_id = original_to_inference_face[coedge.parent_face_id];
-        int mate_inference_id = original_to_inference_face[coedge.mate_face_id];
-
-        input.insert(input.end(), faces[parent_inference_id].layer0_state.begin(),
-                     faces[parent_inference_id].layer0_state.end());
-        input.insert(input.end(), faces[mate_inference_id].layer0_state.begin(),
-                     faces[mate_inference_id].layer0_state.end());
+        input.insert(input.end(), faces[coedge.parent_face_id].layer0_state.begin(),
+                     faces[coedge.parent_face_id].layer0_state.end());
+        input.insert(input.end(), faces[coedge.mate_face_id].layer0_state.begin(),
+                     faces[coedge.mate_face_id].layer0_state.end());
         // V123: use coedge state directly (no edge maxpool)
         input.insert(input.end(), coedge.layer0_edge_state.begin(),
                      coedge.layer0_edge_state.end());
@@ -572,7 +409,6 @@ void run_inference_with_export(const std::string& step_file,
         layer1_input_concat.push_back(input);
 
         // 通过 MLP
-        // 必须clone()！from_blob只是指向input.data()的指针，不拥有所有权
         Tensor input_tensor = breptorch::from_blob(input.data(), {1, 90}, breptorch::kFloat32).clone();
         Tensor output = model->layer1_mlp->forward(input_tensor);  // (1, 60)
 
@@ -630,14 +466,10 @@ void run_inference_with_export(const std::string& step_file,
         // 构建输入：parent_face (30) + mate_face (30) + edge (30) = 90
         std::vector<float> input;
 
-        // 使用映射：原始face_id -> 推理face索引
-        int parent_inference_id = original_to_inference_face[coedge.parent_face_id];
-        int mate_inference_id = original_to_inference_face[coedge.mate_face_id];
-
-        input.insert(input.end(), faces[parent_inference_id].layer1_state.begin(),
-                     faces[parent_inference_id].layer1_state.end());
-        input.insert(input.end(), faces[mate_inference_id].layer1_state.begin(),
-                     faces[mate_inference_id].layer1_state.end());
+        input.insert(input.end(), faces[coedge.parent_face_id].layer1_state.begin(),
+                     faces[coedge.parent_face_id].layer1_state.end());
+        input.insert(input.end(), faces[coedge.mate_face_id].layer1_state.begin(),
+                     faces[coedge.mate_face_id].layer1_state.end());
         // V123: use coedge state directly (no edge maxpool)
         input.insert(input.end(), coedge.layer1_edge_state.begin(),
                      coedge.layer1_edge_state.end());
@@ -645,7 +477,6 @@ void run_inference_with_export(const std::string& step_file,
         output_layer_input_concat.push_back(input);
 
         // 通过 MLP
-        // 必须clone()！from_blob只是指向input.data()的指针，不拥有所有权
         Tensor input_tensor = breptorch::from_blob(input.data(), {1, 90}, breptorch::kFloat32).clone();
         Tensor output = model->output_mlp->forward(input_tensor);  // (1, 30)
 
@@ -688,19 +519,12 @@ void run_inference_with_export(const std::string& step_file,
             }
         }
 
-        // === 重要：只对小面应用ReLU ===
-        // 根据验证结果，暂时使用< 30以匹配现有的Python logits文件
-        // Python代码使用<= 30，但提供的logits文件似乎是用< 30生成的
-        // 可能原因：训练模型时使用了旧版本代码（< 30）
-        // 等待Python端重新生成logits后再调整
-
+        // 小面(coedges<30)初始化为0并应用ReLU，大面初始化为-1e9不应用ReLU
         if (is_small_face) {
-            // 小面：应用ReLU
             for (int i = 0; i < 30; ++i) {
                 face.output_state[i] = std::max(0.0f, face.output_state[i]);
             }
         }
-        // 大面：不应用ReLU，保留负值
 
         output_layer_face_embedding_data.push_back(face.output_state);
     }
@@ -950,7 +774,6 @@ void run_inference_with_export(const std::string& step_file,
         std::vector<int>().swap(predictions_original_order);
         std::vector<float>().swap(confidences_original_order);
         std::vector<int>().swap(edge_representatives);
-        std::map<int, int>().swap(original_to_inference_face);
     }
 }
 

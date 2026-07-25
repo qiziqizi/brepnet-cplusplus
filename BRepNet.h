@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "DebugControl.h"
 #include "VersionConfig.h"
 #include "BRepTorch.h"
@@ -24,24 +24,16 @@ using namespace breptorch::nn;
 // 1. 简单的 MLP
 struct BRepNetMLPImpl : Module {
     SequentialPtr mlp{ nullptr };
-    float dropout_p;
 
-    BRepNetMLPImpl(int input_size, int hidden_size, int output_size, bool final_layer, float dropout = 0.3f)
-        : dropout_p(dropout) {
+    BRepNetMLPImpl(int input_size, int hidden_size, int output_size, bool final_layer) {
         mlp = register_module("mlp", Sequential());
 
-        // 第一层：linear_0 + dropout_0 + relu_0
+        // 第一层：linear_0 + relu_0
         mlp->push_back("linear_0", Linear(LinearOptions(input_size, hidden_size).bias(true)));
-        if (dropout_p > 0.0f) {
-            mlp->push_back("dropout_0", Dropout(dropout_p));
-        }
         mlp->push_back("relu_0", ReLU());
 
-        // 第二层：linear_1 + dropout_1 + relu_1（可选）
+        // 第二层：linear_1 + relu_1（可选）
         mlp->push_back("linear_1", Linear(LinearOptions(hidden_size, output_size).bias(!final_layer)));
-        if (dropout_p > 0.0f && !final_layer) {
-            mlp->push_back("dropout_1", Dropout(dropout_p));
-        }
         if (!final_layer) {
             mlp->push_back("relu_1", ReLU());
         }

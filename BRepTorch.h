@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <vector>
 #include <string>
@@ -814,7 +814,7 @@ namespace breptorch {
     //}
     //
     inline Tensor dot(const Tensor& a, const Tensor& b) {
-        // 校验：仅支持 3D 向量，匹配用于 ProjectVector 的调用
+        // 校验：仅支持 3D 向量
         if (a.sizes() != std::vector<int64_t>{3} || b.sizes() != std::vector<int64_t>{3}) {
             throw std::runtime_error("dot only supports 3D vectors (size={3})");
         }
@@ -1360,19 +1360,20 @@ namespace breptorch {
             }
         };
 
-        struct DropoutImpl : Module {
-            float p;
-            bool training;
-
-            // 默认为eval模式（推理模式），因为这是纯推理项目
-            DropoutImpl(float p_) : p(p_), training(false) {}
-
-            Tensor forward(Tensor x) override {
-                // 在推理模式下(training=false),Dropout是恒等变换
-                // 由于我们只做推理，所以总是返回输入
-                return x;
-            }
-        };
+        // Dropout 已移除：纯推理项目中 Dropout 是恒等变换，无需使用
+        // struct DropoutImpl : Module {
+        //     float p;
+        //     bool training;
+        //
+        //     // 默认为eval模式（推理模式），因为这是纯推理项目
+        //     DropoutImpl(float p_) : p(p_), training(false) {}
+        //
+        //     Tensor forward(Tensor x) override {
+        //         // 在推理模式下(training=false),Dropout是恒等变换
+        //         // 由于我们只做推理，所以总是返回输入
+        //         return x;
+        //     }
+        // };
 
         struct SequentialImpl : Module {
             std::vector<std::shared_ptr<Module>> ordered_modules;
@@ -1427,14 +1428,14 @@ namespace breptorch {
         // Factory
         inline std::shared_ptr<LinearImpl> Linear(LinearOptions o) { return std::make_shared<LinearImpl>(o); }
         inline std::shared_ptr<ReLUImpl> ReLU() { return std::make_shared<ReLUImpl>(); }
-        inline std::shared_ptr<DropoutImpl> Dropout(float p) { return std::make_shared<DropoutImpl>(p); }
+        // inline std::shared_ptr<DropoutImpl> Dropout(float p) { return std::make_shared<DropoutImpl>(p); } // 已移除：纯推理无需 Dropout
         inline std::shared_ptr<SequentialImpl> Sequential() { return std::make_shared<SequentialImpl>(); }
         inline std::shared_ptr<BatchNorm1dImpl> BatchNorm1d(BatchNorm1dOptions o) { return std::make_shared<BatchNorm1dImpl>(o); }
 
         // Aliases
         using LinearPtr = std::shared_ptr<LinearImpl>;
         using ReLUPtr = std::shared_ptr<ReLUImpl>;
-        using DropoutPtr = std::shared_ptr<DropoutImpl>;
+        // using DropoutPtr = std::shared_ptr<DropoutImpl>; // 已移除：纯推理无需 Dropout
         using SequentialPtr = std::shared_ptr<SequentialImpl>;
         using BatchNorm1dPtr = std::shared_ptr<BatchNorm1dImpl>;
 
