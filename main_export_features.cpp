@@ -19,8 +19,17 @@
 #include <algorithm>
 #include <numeric>
 #include <map>
+#include <thread>
+#include <mutex>
+#include <atomic>
 
 namespace fs = std::filesystem;
+
+// 全局互斥锁：用于多线程模式下的控制台输出同步
+std::mutex g_console_mutex;
+
+// 全局强制重新处理标志（--force 参数）
+bool g_force_overwrite = false;
 
 /**
  * Feature Map 导出版本的推理脚本
@@ -48,6 +57,61 @@ std::vector<std::string> get_step_files(const std::string& dir_path) {
     return step_files;
 }
 
+// ============================================================================
+// 模型加载函数：从已加载的 NPZ 数据创建一个独立的模型实例
+// 每个线程调用此函数获得自己的模型副本，确保线程安全
+// ============================================================================
+std::shared_ptr<BRepNetImpl> load_model(const cnpy::npz_t& npz) {
+    auto model = std::make_shared<BRepNetImpl>(27);
+
+    // 加载 UV-Net 权重
+    std::map<std::string, breptorch::Tensor> surf_weights, curve_weights;
+#if BREPNET_VERSION == 4
+    std::map<std::string, breptorch::Tensor> surf2_weights;
+#endif
+    for (auto& item : npz) {
+        auto arr = item.second;
+        std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
+        breptorch::Tensor t = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
+
+#if BREPNET_VERSION == 4
+        // V4: Must distinguish surface_encoder. from surface_encoder2.
+        if (item.first.substr(0, 17) == "surface_encoder2.") {
+            surf2_weights["surface_encoder." + item.first.substr(17)] = t;
+        } else
+#endif
+        if (item.first.find("surface_encoder.") != std::string::npos) {
+            surf_weights[item.first] = t;
+        }
+        if (item.first.find("curve_encoder.") != std::string::npos) {
+            curve_weights[item.first] = t;
+        }
+    }
+    model->surf_enc->load_weights(surf_weights);
+    model->curve_enc->load_weights(curve_weights);
+#if BREPNET_VERSION == 4
+    model->surf_enc2->load_weights(surf2_weights);
+#endif
+
+    // 加载 BRepNet 权重
+    auto params = model->named_parameters();
+    for (auto& item : npz) {
+        std::string key = item.first;
+        if (key.find("layers.0.mlp") != std::string::npos) {
+            key = "layer_0.mlp" + key.substr(key.find(".mlp") + 4);
+        } else if (key.find("layers.1.mlp") != std::string::npos) {
+            key = "layer_1.mlp" + key.substr(key.find(".mlp") + 4);
+        }
+        if (params.find(key) != params.end()) {
+            auto arr = item.second;
+            std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
+            *params[key] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
+        }
+    }
+
+    return model;
+}
+
 // 检查该文件是否已经处理过
 bool is_file_already_processed(const std::string& base_name) {
     fs::path logits_file = fs::path("cpp_logits") / (base_name + ".logits");
@@ -72,13 +136,15 @@ void run_inference_with_export(const std::string& step_file,
         return;  // 静默跳过非目标文件
     }
 
-    // 检查是否已经处理过
-    if (is_file_already_processed(base_name)) {
-        INFO_LOG << fs::absolute(step_path).string() << " [SKIPPED]" << std::endl;
+    // 检查是否已经处理过（--force 可跳过此检查）
+    if (!g_force_overwrite && is_file_already_processed(base_name)) {
+        {
+            std::lock_guard<std::mutex> lock(g_console_mutex);
+            INFO_LOG << fs::absolute(step_path).string() << " [SKIPPED]" << std::endl;
+        }
         return;
     }
 
-    INFO_LOG << fs::absolute(step_path).string() << std::flush;
     auto file_start = std::chrono::high_resolution_clock::now();
 
     // ========================================================================
@@ -86,7 +152,10 @@ void run_inference_with_export(const std::string& step_file,
     // ========================================================================
     BRepPipeline pipeline;
     if (!pipeline.process(step_file)) {
-        ERR_LOG << "[Error] Processing failed: " << base_name << std::endl;
+        {
+            std::lock_guard<std::mutex> lock(g_console_mutex);
+            ERR_LOG << "[Error] Processing failed: " << base_name << std::endl;
+        }
         return;
     }
 
@@ -723,8 +792,12 @@ void run_inference_with_export(const std::string& step_file,
 
     auto file_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> file_elapsed = file_end - file_start;
-    INFO_LOG << " -> [✓] F:" << num_faces << " E:" << num_edges
-             << " (" << std::fixed << std::setprecision(2) << file_elapsed.count() << "s)" << std::endl;
+    {
+        std::lock_guard<std::mutex> lock(g_console_mutex);
+        INFO_LOG << fs::absolute(step_path).string()
+                 << " -> [✓] F:" << num_faces << " E:" << num_edges
+                 << " (" << std::fixed << std::setprecision(2) << file_elapsed.count() << "s)" << std::endl;
+    }
 
     // ========================================================================
     // [MEMORY CLEANUP] 显式释放所有临时数据结构，防止内存泄漏
@@ -833,105 +906,21 @@ int main(int argc, char* argv[]) {
 
     DBG_LOG << "\n[Model] Loading weights: " << weights_file << std::endl;
 
-    auto model = std::make_shared<BRepNetImpl>(27);
+    // NPZ 只加载一次，然后为每个线程创建独立的模型副本
     cnpy::npz_t npz = cnpy::npz_load(weights_file);
+    DBG_LOG << "[Model] NPZ loaded, " << npz.size() << " keys" << std::endl;
 
-    // 加载 UV-Net 权重
-    std::map<std::string, breptorch::Tensor> surf_weights, curve_weights;
-#if BREPNET_VERSION == 4
-    std::map<std::string, breptorch::Tensor> surf2_weights;
-#endif
-    for (auto& item : npz) {
-        auto arr = item.second;
-        std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
-        breptorch::Tensor t = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
-
-#if BREPNET_VERSION == 4
-        // V4: Must distinguish surface_encoder. from surface_encoder2.
-        if (item.first.substr(0, 17) == "surface_encoder2.") {
-            // Replace surface_encoder2. with surface_encoder. (forward function uses surface_encoder prefix)
-            surf2_weights["surface_encoder." + item.first.substr(17)] = t;
-        } else
-#endif
-        if (item.first.find("surface_encoder.") != std::string::npos) {
-            surf_weights[item.first] = t;
+    // 解析线程数参数
+    int num_threads = (int)std::thread::hardware_concurrency();
+    if (num_threads == 0) num_threads = 1;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--threads" && i + 1 < argc) {
+            num_threads = std::atoi(argv[++i]);
+            if (num_threads < 1) num_threads = 1;
+        } else if (arg == "--force") {
+            g_force_overwrite = true;
         }
-        if (item.first.find("curve_encoder.") != std::string::npos) {
-            curve_weights[item.first] = t;
-        }
-    }
-    model->surf_enc->load_weights(surf_weights);
-    model->curve_enc->load_weights(curve_weights);
-#if BREPNET_VERSION == 4
-    model->surf_enc2->load_weights(surf2_weights);
-    // (V4 surface_encoder2 weights loaded silently)
-#endif
-
-    // 加载 BRepNet 权重
-    auto params = model->named_parameters();
-
-    // Debug: print all available parameters
-    DBG_LOG << "\n[Debug] Available C++ parameters:" << std::endl;
-    if (DebugControl::instance().shouldDebug()) {
-        for (auto& p : params) {
-            DBG_LOG << "  " << p.first << std::endl;
-        }
-    }
-
-    DBG_LOG << "\n[Debug] Processing NPZ weights..." << std::endl;
-    for (auto& item : npz) {
-        std::string original_key = item.first;
-        std::string key = original_key;
-        if (key.find("layers.0.mlp") != std::string::npos) {
-            key = "layer_0.mlp" + key.substr(key.find(".mlp") + 4);
-        } else if (key.find("layers.1.mlp") != std::string::npos) {
-            key = "layer_1.mlp" + key.substr(key.find(".mlp") + 4);
-        }
-        if (params.find(key) != params.end()) {
-            auto arr = item.second;
-            std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
-            *params[key] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
-
-            // 调试：打印所有 classification_layer 的加载
-            if (DebugControl::instance().shouldDebug() && key.find("classification_layer") != std::string::npos) {
-                DBG_LOG << "  [LOADED] " << original_key << " (shape: ";
-                for (size_t i = 0; i < shape.size(); i++) {
-                    DBG_LOG << shape[i];
-                    if (i < shape.size() - 1) DBG_LOG << ", ";
-                }
-                DBG_LOG << ")" << std::endl;
-            }
-
-            // Debug: print when loading layer 1 linear_1 bias
-            if (DebugControl::instance().shouldDebug() && key.find("layer_1.mlp") != std::string::npos && key.find("linear_1.bias") != std::string::npos) {
-                DBG_LOG << "  [LOADED] " << original_key << " -> " << key << " (shape: ";
-                for (size_t i = 0; i < shape.size(); i++) {
-                    DBG_LOG << shape[i];
-                    if (i < shape.size() - 1) DBG_LOG << ", ";
-                }
-                DBG_LOG << ")" << std::endl;
-            }
-        } else {
-            // Debug: print when NOT found
-            if (DebugControl::instance().shouldDebug()) {
-                if (original_key.find("classification_layer") != std::string::npos) {
-                    DBG_LOG << "  [NOT FOUND] " << original_key << " -> " << key << std::endl;
-                }
-                if (original_key.find("layer_1") != std::string::npos && original_key.find("linear_1.bias") != std::string::npos) {
-                    DBG_LOG << "  [NOT FOUND] " << original_key << " -> " << key << std::endl;
-                }
-            }
-        }
-    }
-
-    DBG_LOG << "\n[Model] Weights loaded successfully!" << std::endl;
-
-    // 验证 Layer 1 linear_1 bias 是否被加载（主循环已完成加载，此处仅做验证）
-    auto layer1_bias_key = "layer_1.mlp.mlp.linear_1.bias";
-    if (params.find(layer1_bias_key) != params.end()) {
-        DBG_LOG << "\n[Verification] Layer 1 linear_1 bias: loaded" << std::endl;
-    } else {
-        DBG_LOG << "\n[Verification] Layer 1 linear_1 bias: NOT FOUND" << std::endl;
     }
 
     // ========================================================================
@@ -947,32 +936,51 @@ int main(int argc, char* argv[]) {
 
     DBG_LOG << "[Files] Found " << step_files.size() << " STEP files" << std::endl;
 
+    int total_files = (int)step_files.size();
+
+    // 线程数不超过文件数
+    int effective_threads = std::min(num_threads, total_files);
+
+    // 为每个线程创建独立的模型实例（确保 UVNet 编码器的 params map 线程安全）
+    std::vector<std::shared_ptr<BRepNetImpl>> models;
+    models.reserve(effective_threads);
+    for (int t = 0; t < effective_threads; ++t) {
+        models.push_back(load_model(npz));
+    }
+    INFO_LOG << "[Model] Loaded " << effective_threads << " model instances for "
+             << effective_threads << " threads" << std::endl;
+
     // ========================================================================
-    // 4. 批量推理并导出
+    // 4. 并行推理
     // ========================================================================
+    INFO_LOG << "[Parallel] Using " << effective_threads << " threads for "
+             << total_files << " files" << std::endl;
+
     auto total_start = std::chrono::high_resolution_clock::now();
 
-    int total_files = (int)step_files.size();
-    int current = 0;
+    // 原子计数器：线程安全的任务分配
+    std::atomic<size_t> file_index(0);
 
-    for (const auto& step_file : step_files) {
-        current++;
-        DBG_LOG << "\n[" << current << "/" << total_files << "] ";
-        run_inference_with_export(step_file, model, exporter);
+    // 工作线程函数
+    auto worker = [&](int thread_id) {
+        while (true) {
+            size_t idx = file_index.fetch_add(1);
+            if (idx >= step_files.size()) break;
 
-        // ========================================================================
-        // [MEMORY MAINTENANCE] 定期检查和清理内存
-        // ========================================================================
-        // 每处理100个文件进行一次内存检查，防止长期运行导致内存溢出
-        if (current % 100 == 0) {
-            // Windows 内存信息
-            PROCESS_MEMORY_COUNTERS pmc;
-            if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
-                double working_set_mb = pmc.WorkingSetSize / 1024.0 / 1024.0;
-                double peak_mb = pmc.PeakWorkingSetSize / 1024.0 / 1024.0;
-                DBG_LOG << " [Memory] WS: " << std::fixed << std::setprecision(1) << working_set_mb << " MB, Peak: " << peak_mb << " MB" << std::flush;
-            }
+            run_inference_with_export(step_files[idx], models[thread_id], exporter);
         }
+    };
+
+    // 启动线程
+    std::vector<std::thread> threads;
+    threads.reserve(effective_threads);
+    for (int t = 0; t < effective_threads; ++t) {
+        threads.emplace_back(worker, t);
+    }
+
+    // 等待所有线程完成
+    for (auto& t : threads) {
+        t.join();
     }
 
     auto total_end = std::chrono::high_resolution_clock::now();
@@ -983,6 +991,7 @@ int main(int argc, char* argv[]) {
     // ========================================================================
     INFO_LOG << "\n" << std::string(70, '=') << std::endl;
     INFO_LOG << "All " << total_files << " files completed!" << std::endl;
+    INFO_LOG << "Threads: " << effective_threads << std::endl;
     INFO_LOG << "Total time: " << total_duration.count() / 1000.0 << " seconds" << std::endl;
     INFO_LOG << "Average time per file: " << (total_duration.count() / total_files) << " ms" << std::endl;
     INFO_LOG << std::string(70, '=') << std::endl;
