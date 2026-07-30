@@ -74,11 +74,12 @@ void run_inference_with_export(const std::string& step_file,
 
     // 检查是否已经处理过
     if (is_file_already_processed(base_name)) {
-        INFO_LOG << fs::absolute(step_path).string() << " [SKIPPED]" << std::flush;
+        INFO_LOG << fs::absolute(step_path).string() << " [SKIPPED]" << std::endl;
         return;
     }
 
     INFO_LOG << fs::absolute(step_path).string() << std::flush;
+    auto file_start = std::chrono::high_resolution_clock::now();
 
     // ========================================================================
     // 1. 数据预处理
@@ -331,33 +332,33 @@ void run_inference_with_export(const std::string& step_file,
     std::vector<std::vector<float>> layer0_input_concat;
     std::vector<std::vector<float>> layer0_mlp_output_data;
 
-    for (auto& coedge : coedges) {
-        // 构建输入：parent_face (64) + mate_face (64) + edge (64) = 192
-        std::vector<float> input;
-        input.insert(input.end(), coedge.parent_face_features.begin(), coedge.parent_face_features.end());
-        input.insert(input.end(), coedge.mate_face_features.begin(), coedge.mate_face_features.end());
-        input.insert(input.end(), coedge.edge_features.begin(), coedge.edge_features.end());
+    // B2: 批量构建输入 [num_coedges, 192] 并一次前向 (裸指针加速)
+    int num_coedges_l0 = (int)coedges.size();
+    Tensor l0_batch_input({num_coedges_l0, 192}, breptorch::kFloat32);
+    float* l0_in_ptr = l0_batch_input.storage_->dataf_.data();
+    for (int c = 0; c < num_coedges_l0; ++c) {
+        const auto& coedge = coedges[c];
+        float* row = l0_in_ptr + c * 192;
+        memcpy(row,       coedge.parent_face_features.data(), 64 * sizeof(float));
+        memcpy(row + 64,  coedge.mate_face_features.data(),   64 * sizeof(float));
+        memcpy(row + 128, coedge.edge_features.data(),         64 * sizeof(float));
+    }
 
-        layer0_input_concat.push_back(input);
+    Tensor l0_batch_output = model->layer0_mlp->forward(l0_batch_input);  // [num_coedges, 60]
+    const float* l0_out_ptr = l0_batch_output.storage_->dataf_.data();
 
-        // 通过 MLP
-        Tensor input_tensor = breptorch::from_blob(input.data(), {1, 192}, breptorch::kFloat32).clone();
-        Tensor output = model->layer0_mlp->forward(input_tensor);  // (1, 60)
-
-        // 保存MLP输出
-        std::vector<float> mlp_out;
-        for (int i = 0; i < 60; ++i) {
-            mlp_out.push_back(output.at({0, i}));
+    for (int c = 0; c < num_coedges_l0; ++c) {
+        // 导出数据
+        if (EXPORT_ENABLED) {
+            layer0_input_concat.emplace_back(l0_in_ptr + c * 192, l0_in_ptr + c * 192 + 192);
+            layer0_mlp_output_data.emplace_back(l0_out_ptr + c * 60, l0_out_ptr + c * 60 + 60);
         }
-        layer0_mlp_output_data.push_back(mlp_out);
 
         // 分离 face 和 edge 输出
-        coedge.layer0_edge_state.resize(30);
-        coedge.layer0_face_state.resize(30);
-        for (int i = 0; i < 30; ++i) {
-            coedge.layer0_edge_state[i] = output.at({0, i});
-            coedge.layer0_face_state[i] = output.at({0, i + 30});
-        }
+        coedges[c].layer0_edge_state.resize(30);
+        coedges[c].layer0_face_state.resize(30);
+        memcpy(coedges[c].layer0_edge_state.data(), l0_out_ptr + c * 60,      30 * sizeof(float));
+        memcpy(coedges[c].layer0_face_state.data(), l0_out_ptr + c * 60 + 30, 30 * sizeof(float));
     }
 
     if (EXPORT_ENABLED) {
@@ -394,38 +395,33 @@ void run_inference_with_export(const std::string& step_file,
     std::vector<std::vector<float>> layer1_input_concat;
     std::vector<std::vector<float>> layer1_mlp_output_data;
 
-    for (auto& coedge : coedges) {
-        // 构建输入：parent_face (30) + mate_face (30) + edge (30) = 90
-        std::vector<float> input;
+    // B2: 批量构建输入 [num_coedges, 90] 并一次前向 (裸指针加速)
+    int num_coedges_l1 = (int)coedges.size();
+    Tensor l1_batch_input({num_coedges_l1, 90}, breptorch::kFloat32);
+    float* l1_in_ptr = l1_batch_input.storage_->dataf_.data();
+    for (int c = 0; c < num_coedges_l1; ++c) {
+        const auto& coedge = coedges[c];
+        float* row = l1_in_ptr + c * 90;
+        memcpy(row,      faces[coedge.parent_face_id].layer0_state.data(), 30 * sizeof(float));
+        memcpy(row + 30, faces[coedge.mate_face_id].layer0_state.data(),   30 * sizeof(float));
+        memcpy(row + 60, coedge.layer0_edge_state.data(),                  30 * sizeof(float));
+    }
 
-        input.insert(input.end(), faces[coedge.parent_face_id].layer0_state.begin(),
-                     faces[coedge.parent_face_id].layer0_state.end());
-        input.insert(input.end(), faces[coedge.mate_face_id].layer0_state.begin(),
-                     faces[coedge.mate_face_id].layer0_state.end());
-        // V123: use coedge state directly (no edge maxpool)
-        input.insert(input.end(), coedge.layer0_edge_state.begin(),
-                     coedge.layer0_edge_state.end());
+    Tensor l1_batch_output = model->layer1_mlp->forward(l1_batch_input);  // [num_coedges, 60]
+    const float* l1_out_ptr = l1_batch_output.storage_->dataf_.data();
 
-        layer1_input_concat.push_back(input);
-
-        // 通过 MLP
-        Tensor input_tensor = breptorch::from_blob(input.data(), {1, 90}, breptorch::kFloat32).clone();
-        Tensor output = model->layer1_mlp->forward(input_tensor);  // (1, 60)
-
-        // 保存MLP输出
-        std::vector<float> mlp_out;
-        for (int i = 0; i < 60; ++i) {
-            mlp_out.push_back(output.at({0, i}));
+    for (int c = 0; c < num_coedges_l1; ++c) {
+        // 导出数据
+        if (EXPORT_ENABLED) {
+            layer1_input_concat.emplace_back(l1_in_ptr + c * 90, l1_in_ptr + c * 90 + 90);
+            layer1_mlp_output_data.emplace_back(l1_out_ptr + c * 60, l1_out_ptr + c * 60 + 60);
         }
-        layer1_mlp_output_data.push_back(mlp_out);
 
         // 分离 face 和 edge 输出
-        coedge.layer1_edge_state.resize(30);
-        coedge.layer1_face_state.resize(30);
-        for (int i = 0; i < 30; ++i) {
-            coedge.layer1_edge_state[i] = output.at({0, i});
-            coedge.layer1_face_state[i] = output.at({0, i + 30});
-        }
+        coedges[c].layer1_edge_state.resize(30);
+        coedges[c].layer1_face_state.resize(30);
+        memcpy(coedges[c].layer1_edge_state.data(), l1_out_ptr + c * 60,      30 * sizeof(float));
+        memcpy(coedges[c].layer1_face_state.data(), l1_out_ptr + c * 60 + 30, 30 * sizeof(float));
     }
 
     if (EXPORT_ENABLED) {
@@ -462,36 +458,31 @@ void run_inference_with_export(const std::string& step_file,
     std::vector<std::vector<float>> output_layer_input_concat;
     std::vector<std::vector<float>> output_layer_mlp_output_data;
 
-    for (auto& coedge : coedges) {
-        // 构建输入：parent_face (30) + mate_face (30) + edge (30) = 90
-        std::vector<float> input;
+    // B2: 批量构建输入 [num_coedges, 90] 并一次前向 (裸指针加速)
+    int num_coedges_out = (int)coedges.size();
+    Tensor out_batch_input({num_coedges_out, 90}, breptorch::kFloat32);
+    float* out_in_ptr = out_batch_input.storage_->dataf_.data();
+    for (int c = 0; c < num_coedges_out; ++c) {
+        const auto& coedge = coedges[c];
+        float* row = out_in_ptr + c * 90;
+        memcpy(row,      faces[coedge.parent_face_id].layer1_state.data(), 30 * sizeof(float));
+        memcpy(row + 30, faces[coedge.mate_face_id].layer1_state.data(),   30 * sizeof(float));
+        memcpy(row + 60, coedge.layer1_edge_state.data(),                  30 * sizeof(float));
+    }
 
-        input.insert(input.end(), faces[coedge.parent_face_id].layer1_state.begin(),
-                     faces[coedge.parent_face_id].layer1_state.end());
-        input.insert(input.end(), faces[coedge.mate_face_id].layer1_state.begin(),
-                     faces[coedge.mate_face_id].layer1_state.end());
-        // V123: use coedge state directly (no edge maxpool)
-        input.insert(input.end(), coedge.layer1_edge_state.begin(),
-                     coedge.layer1_edge_state.end());
+    Tensor out_batch_output = model->output_mlp->forward(out_batch_input);  // [num_coedges, 30]
+    const float* out_out_ptr = out_batch_output.storage_->dataf_.data();
 
-        output_layer_input_concat.push_back(input);
-
-        // 通过 MLP
-        Tensor input_tensor = breptorch::from_blob(input.data(), {1, 90}, breptorch::kFloat32).clone();
-        Tensor output = model->output_mlp->forward(input_tensor);  // (1, 30)
-
-        // 保存MLP输出
-        std::vector<float> mlp_out;
-        for (int i = 0; i < 30; ++i) {
-            mlp_out.push_back(output.at({0, i}));
+    for (int c = 0; c < num_coedges_out; ++c) {
+        // 导出数据
+        if (EXPORT_ENABLED) {
+            output_layer_input_concat.emplace_back(out_in_ptr + c * 90, out_in_ptr + c * 90 + 90);
+            output_layer_mlp_output_data.emplace_back(out_out_ptr + c * 30, out_out_ptr + c * 30 + 30);
         }
-        output_layer_mlp_output_data.push_back(mlp_out);
 
         // 保存到coedge
-        coedge.output_face_state.resize(30);
-        for (int i = 0; i < 30; ++i) {
-            coedge.output_face_state[i] = output.at({0, i});
-        }
+        coedges[c].output_face_state.resize(30);
+        memcpy(coedges[c].output_face_state.data(), out_out_ptr + c * 30, 30 * sizeof(float));
     }
 
     if (EXPORT_ENABLED) {
@@ -730,7 +721,10 @@ void run_inference_with_export(const std::string& step_file,
 
     DBG_LOG << "  [Export] 4-class seg saved to: " << seg4_path << std::endl;
 
-    INFO_LOG << " -> [✓] F:" << num_faces << " E:" << num_edges << std::endl;
+    auto file_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> file_elapsed = file_end - file_start;
+    INFO_LOG << " -> [✓] F:" << num_faces << " E:" << num_edges
+             << " (" << std::fixed << std::setprecision(2) << file_elapsed.count() << "s)" << std::endl;
 
     // ========================================================================
     // [MEMORY CLEANUP] 显式释放所有临时数据结构，防止内存泄漏

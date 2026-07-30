@@ -17,8 +17,33 @@
 #include <stdexcept>
 #include <utility>
 #include <limits>
+#include <immintrin.h>
 
 namespace breptorch {
+
+    // AVX2 + FMA 点积：用2个累加器打破依赖链，处理8/16个float/迭代
+    inline float avx2_fma_dot(const float* a, const float* b, int64_t n, float init = 0.0f) {
+        __m256 acc0 = _mm256_setzero_ps();
+        __m256 acc1 = _mm256_setzero_ps();
+        int64_t i = 0;
+        // 16-wide loop (2 accumulators for ILP)
+        for (; i + 16 <= n; i += 16) {
+            acc0 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i),      _mm256_loadu_ps(b + i),      acc0);
+            acc1 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i + 8),  _mm256_loadu_ps(b + i + 8),  acc1);
+        }
+        // 8-wide remainder
+        for (; i + 8 <= n; i += 8) {
+            acc0 = _mm256_fmadd_ps(_mm256_loadu_ps(a + i), _mm256_loadu_ps(b + i), acc0);
+        }
+        // Combine + horizontal sum
+        __m256 acc = _mm256_add_ps(acc0, acc1);
+        float tmp[8];
+        _mm256_storeu_ps(tmp, acc);
+        float result = init + tmp[0] + tmp[1] + tmp[2] + tmp[3] + tmp[4] + tmp[5] + tmp[6] + tmp[7];
+        // Scalar remainder
+        for (; i < n; ++i) result += a[i] * b[i];
+        return result;
+    }
 
     enum DType { kFloat32, kInt, kLong };
 
@@ -589,18 +614,13 @@ namespace breptorch {
 
             for(int64_t i=0; i<M; ++i) {
                 for(int64_t j=0; j<N; ++j) {
-                    // 使用Kahan求和算法提高精度
-                    double sum = 0.0;
-                    double c_compensation = 0.0;  // 补偿值
+                    // D3: float32 累加，与 Python 精度一致
+                    float sum = 0.0f;
 
                     for(int64_t k=0; k<K; ++k) {
-                        double product = static_cast<double>(adata[i*K + k]) * static_cast<double>(bdata[k*N + j]);
-                        double y = product - c_compensation;
-                        double t = sum + y;
-                        c_compensation = (t - sum) - y;
-                        sum = t;
+                        sum += adata[i*K + k] * bdata[k*N + j];
                     }
-                    cdata[i*N + j] = static_cast<float>(sum);
+                    cdata[i*N + j] = sum;
                 }
             }
         }
@@ -1046,10 +1066,8 @@ namespace breptorch {
         
         int64_t sH = stride.size() > 0 ? stride[0] : 1;
         int64_t sW = stride.size() > 1 ? stride[1] : sH;
-        
         int64_t pH = padding.size() > 0 ? padding[0] : 0;
         int64_t pW = padding.size() > 1 ? padding[1] : pH;
-        
         int64_t dH = dilation.size() > 0 ? dilation[0] : 1;
         int64_t dW = dilation.size() > 1 ? dilation[1] : dH;
         
@@ -1063,42 +1081,64 @@ namespace breptorch {
         const float* b_ptr = bias.defined() ? bias.storage_->dataf_.data() : nullptr;
         float* out_ptr = out.storage_->dataf_.data();
         
+        // D1: im2col + GEMM
+        // Weight [Cout, Cin, kH, kW] 已是行主序，可直接当作 [Cout, K] 使用
+        // im2col: [HW_out, K] 每行是一个输出位置的所有输入值
+        int64_t HW_out = H_out * W_out;
+        int64_t K = Cin * kH * kW;
+        
+        // 预分配 im2col 缓冲区（每个样本复用）
+        std::vector<float> im2col_buf(HW_out * K);
+        
         for(int64_t n=0; n<N; ++n) {
-            for(int64_t cout=0; cout<Cout; ++cout) {
-                for(int64_t h_out=0; h_out<H_out; ++h_out) {
-                    for(int64_t w_out=0; w_out<W_out; ++w_out) {
-
-                        // 使用Kahan求和算法提高精度
-                        double sum = 0.0;
-                        double c_compensation = 0.0;
-
-                        if (b_ptr) {
-                            sum = static_cast<double>(b_ptr[cout]);
-                        }
-
-                        for(int64_t cin=0; cin<Cin; ++cin) {
-                            for(int64_t kh=0; kh<kH; ++kh) {
-                                for(int64_t kw=0; kw<kW; ++kw) {
-                                    int64_t h_in = h_out * sH - pH + kh * dH;
-                                    int64_t w_in = w_out * sW - pW + kw * dW;
-
-                                    if (h_in >= 0 && h_in < H && w_in >= 0 && w_in < W) {
-                                        double val = static_cast<double>(in_ptr[n*Cin*H*W + cin*H*W + h_in*W + w_in]);
-                                        double w_val = static_cast<double>(w_ptr[cout*Cin*kH*kW + cin*kH*kW + kh*kW + kw]);
-                                        double product = val * w_val;
-                                        double y = product - c_compensation;
-                                        double t = sum + y;
-                                        c_compensation = (t - sum) - y;
-                                        sum = t;
-                                    }
+            const float* in_n = in_ptr + n * Cin * H * W;
+            
+            // Step 1: 构建 im2col 矩阵 [HW_out, K]
+            // 零初始化（padding 区域为零）
+            std::fill(im2col_buf.begin(), im2col_buf.end(), 0.0f);
+            
+            for(int64_t h_out=0; h_out<H_out; ++h_out) {
+                for(int64_t w_out=0; w_out<W_out; ++w_out) {
+                    int64_t hw = h_out * W_out + w_out;
+                    float* col_row = im2col_buf.data() + hw * K;
+                    
+                    for(int64_t cin=0; cin<Cin; ++cin) {
+                        const float* in_c = in_n + cin * H * W;
+                        float* col_c = col_row + cin * kH * kW;
+                        
+                        for(int64_t kh=0; kh<kH; ++kh) {
+                            int64_t h_in = h_out * sH - pH + kh * dH;
+                            if(h_in < 0 || h_in >= H) { col_c += kW; continue; }
+                            
+                            for(int64_t kw=0; kw<kW; ++kw) {
+                                int64_t w_in = w_out * sW - pW + kw * dW;
+                                if(w_in >= 0 && w_in < W) {
+                                    col_c[kw] = in_c[h_in * W + w_in];
                                 }
                             }
+                            col_c += kW;
                         }
-                        out_ptr[n*Cout*H_out*W_out + cout*H_out*W_out + h_out*W_out + w_out] = static_cast<float>(sum);
                     }
                 }
             }
+            
+            // Step 2: GEMM: out[n, cout, hw] = bias + sum_k weight[cout, k] * im2col[hw, k]
+            // weight: [Cout, K] 行主序, im2col: [HW_out, K] 行主序
+            // 内层 k 连续访问两个数组，缓存友好
+            float* out_n = out_ptr + n * Cout * HW_out;
+            
+            for(int64_t cout=0; cout<Cout; ++cout) {
+                const float* w_row = w_ptr + cout * K;
+                float* out_c = out_n + cout * HW_out;
+                float b = b_ptr ? b_ptr[cout] : 0.0f;
+                
+                for(int64_t hw=0; hw<HW_out; ++hw) {
+                    const float* col_row = im2col_buf.data() + hw * K;
+                    out_c[hw] = avx2_fma_dot(col_row, w_row, K, b);
+                }
+            }
         }
+        
         return out;
     }
 
@@ -1128,34 +1168,43 @@ namespace breptorch {
         const float* b_ptr = bias.defined() ? bias.storage_->dataf_.data() : nullptr;
         float* out_ptr = out.storage_->dataf_.data();
         
+        // D1: im2col + GEMM
+        int64_t K = Cin * kL;
+        std::vector<float> im2col_buf(L_out * K);
+        
         for(int64_t n=0; n<N; ++n) {
-            for(int64_t cout=0; cout<Cout; ++cout) {
-                for(int64_t l_out=0; l_out<L_out; ++l_out) {
-
-                    // 使用Kahan求和算法提高精度
-                    double sum = 0.0;
-                    double c_compensation = 0.0;
-
-                    if (b_ptr) {
-                        sum = static_cast<double>(b_ptr[cout]);
-                    }
-
-                    for(int64_t cin=0; cin<Cin; ++cin) {
-                        for(int64_t kl=0; kl<kL; ++kl) {
-                            int64_t l_in = l_out * sL - pL + kl * dL;
-
-                            if (l_in >= 0 && l_in < L) {
-                                double val = static_cast<double>(in_ptr[n*Cin*L + cin*L + l_in]);
-                                double w_val = static_cast<double>(w_ptr[cout*Cin*kL + cin*kL + kl]);
-                                double product = val * w_val;
-                                double y = product - c_compensation;
-                                double t = sum + y;
-                                c_compensation = (t - sum) - y;
-                                sum = t;
-                            }
+            const float* in_n = in_ptr + n * Cin * L;
+            
+            // Step 1: 构建 im2col [L_out, K]
+            std::fill(im2col_buf.begin(), im2col_buf.end(), 0.0f);
+            
+            for(int64_t l_out=0; l_out<L_out; ++l_out) {
+                float* col_row = im2col_buf.data() + l_out * K;
+                
+                for(int64_t cin=0; cin<Cin; ++cin) {
+                    const float* in_c = in_n + cin * L;
+                    float* col_c = col_row + cin * kL;
+                    
+                    for(int64_t kl=0; kl<kL; ++kl) {
+                        int64_t l_in = l_out * sL - pL + kl * dL;
+                        if(l_in >= 0 && l_in < L) {
+                            col_c[kl] = in_c[l_in];
                         }
                     }
-                    out_ptr[n*Cout*L_out + cout*L_out + l_out] = static_cast<float>(sum);
+                }
+            }
+            
+            // Step 2: GEMM: out[n, cout, l_out] = bias + sum_k weight[cout, k] * im2col[l_out, k]
+            float* out_n = out_ptr + n * Cout * L_out;
+            
+            for(int64_t cout=0; cout<Cout; ++cout) {
+                const float* w_row = w_ptr + cout * K;
+                float* out_c = out_n + cout * L_out;
+                float b = b_ptr ? b_ptr[cout] : 0.0f;
+                
+                for(int64_t l_out=0; l_out<L_out; ++l_out) {
+                    const float* col_row = im2col_buf.data() + l_out * K;
+                    out_c[l_out] = avx2_fma_dot(col_row, w_row, K, b);
                 }
             }
         }
@@ -1217,23 +1266,22 @@ namespace breptorch {
         int64_t M = input.numel() / in_features;
         Tensor x_flat = input.view({M, in_features});
         
-        // Matmul: [M, In] * [Out, In]^T -> [M, Out]
-        // Transposing weight [Out, In] -> [In, Out]
+        // 优化：跳过权重转置，直接 C[i,j] = sum_k A[i,k] * W[j,k]
+        // W 行主序存储: W[j][k] = wdata[j*in + k]，内层 k 顺序访问，缓存友好
+        Tensor out({M, out_features}, weight.dtype_);
         
-        Tensor w_t({in_features, out_features}, weight.dtype_);
-        for(int64_t i=0; i<out_features; ++i) {
-            for(int64_t j=0; j<in_features; ++j) {
-                if (weight.dtype_ == kFloat32) w_t.at({j, i}) = weight.at({i, j});
-            }
-        }
-        
-        Tensor out = matmul(x_flat, w_t);
-        
-        // Add bias
-        if (bias.defined()) {
+        if (weight.dtype_ == kFloat32) {
+            const float* adata = x_flat.storage_->dataf_.data();
+            const float* wdata = weight.storage_->dataf_.data();
+            float* cdata = out.storage_->dataf_.data();
+            
+            const float* bptr = bias.defined() ? bias.storage_->dataf_.data() : nullptr;
             for(int64_t i=0; i<M; ++i) {
+                const float* a_row = adata + i * in_features;
+                float* c_row = cdata + i * out_features;
                 for(int64_t j=0; j<out_features; ++j) {
-                    out.at({i, j}) += bias.at({j});
+                     const float* w_row = wdata + j * in_features;
+                     c_row[j] = avx2_fma_dot(a_row, w_row, in_features, bptr ? bptr[j] : 0.0f);
                 }
             }
         }
