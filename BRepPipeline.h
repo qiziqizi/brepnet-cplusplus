@@ -163,7 +163,7 @@ public:
 
     Tensor FaceGridsGlobal; // 存储提取的全局 Grid 数据 [N, 9, 40, 40]
     std::vector<std::vector<std::array<double, 3>>> face_grid_coords64_; // [N, 40*40] 每条 face 的 double 精度 xyz 坐标（仅用于 crop 搜索，与 Python float64 一致）
-    std::vector<std::array<float, 3>> coedge_origins_; // 每条 coedge 的中点坐标（退化边存 {-2000,-2000,-2000}）
+    std::vector<std::array<double, 3>> coedge_origins_; // 每条 coedge 的中点坐标（退化边存 {-2000,-2000,-2000}），double 精度与 Python float64 一致
 #if BREPNET_VERSION == 4
     std::vector<bool> bool_array_;
 #endif
@@ -598,7 +598,7 @@ private:
 
         // 检查曲线是否有效（退化边可能没有曲线）
         if (curve.IsNull()) {
-            coedge_origins_[coedge_idx] = {-2000.0f, -2000.0f, -2000.0f};
+            coedge_origins_[coedge_idx] = {-2000.0, -2000.0, -2000.0};
             Tensor lcs_inv = breptorch::eye(4);
             return lcs_inv;
         }
@@ -609,7 +609,7 @@ private:
         gp_Vec tangent;
 
         curve->D1(u_mid, p, tangent);
-        coedge_origins_[coedge_idx] = {(float)p.X(), (float)p.Y(), (float)p.Z()};
+        coedge_origins_[coedge_idx] = {p.X(), p.Y(), p.Z()};
 
         // 【步骤2】使用 pcurve + GeomLProp_SLProps 计算法线（与Python一致）
         gp_Vec normal;
@@ -950,7 +950,7 @@ private:
             if (mate_idx != -1) {
                 int mf_idx = coedges[mate_idx].face_idx;
                 if (FaceGridsGlobal.defined() && mf_idx < FaceGridsGlobal.size(0)) {
-                    bool is_degenerate_m = (coedge_origins_[mate_idx][0] <= -1000.0f);
+                    bool is_degenerate_m = (coedge_origins_[mate_idx][0] <= -1000.0);
                     bool is_valid = bool_array_.size() > (size_t)i ? bool_array_[i] : true;
                     if (!is_degenerate_m && is_valid) {
                         Tensor global_grid_m = get_slice(FaceGridsGlobal, mf_idx);  // [9, 20, 20]
@@ -981,11 +981,11 @@ private:
     // 使用 double 精度坐标（face_grid_coords64_）搜索，与 Python float64 行为一致。
     // 退化边（target_point[0] <= -1000）返回左上角 {0,20,0,20}。
     CropRange compute_crop_range(int face_idx,
-                                  const std::array<float, 3>& target_point)
+                                  const std::array<double, 3>& target_point)
     {
         const int grid_h = 40, grid_w = 40, samplesize = 20;
 
-        if (target_point[0] <= -1000.0f) {
+        if (target_point[0] <= -1000.0) {
             return {0, samplesize, 0, samplesize};
         }
 
@@ -996,9 +996,9 @@ private:
         for (int i = 0; i < grid_h; ++i) {
             for (int j = 0; j < grid_w; ++j) {
                 int idx = i * grid_w + j;
-                double dx = coords[idx][0] - (double)target_point[0];
-                double dy = coords[idx][1] - (double)target_point[1];
-                double dz = coords[idx][2] - (double)target_point[2];
+                double dx = coords[idx][0] - target_point[0];
+                double dy = coords[idx][1] - target_point[1];
+                double dz = coords[idx][2] - target_point[2];
                 double d2 = dx*dx + dy*dy + dz*dz;
                 // 复刻 np.argmin：严格小于（保留第一个出现的全局最小值）
                 if (d2 < min_dist_sq) { min_dist_sq = d2; best_row = i; best_col = j; }
@@ -1074,7 +1074,7 @@ private:
         }
         // 写一行裁剪调试记录。lcs_inv 为 inverse-LCS(global->local)，取其 3x3 旋转部分（实际施加的旋转）。
         auto write_crop_row = [&](std::ofstream& os, int ci, int slot,
-                                  const std::array<float, 3>& origin,
+                                  const std::array<double, 3>& origin,
                                   const CropRange& cr,
                                   Tensor& lcs_inv) {
             if (!os.is_open()) return;
@@ -1118,7 +1118,7 @@ private:
             // Left Face (parent face of coedge i)
             int f_idx = coedges[i].face_idx;
             if (FaceGridsGlobal.defined() && f_idx < FaceGridsGlobal.size(0)) {
-                bool is_degenerate = (coedge_origins_[i][0] <= -1000.0f);
+                bool is_degenerate = (coedge_origins_[i][0] <= -1000.0);
                 if (!is_degenerate) {
                     Tensor global_grid = get_slice(FaceGridsGlobal, f_idx);  // [9, 40, 40]
                     CropRange cr = compute_crop_range(f_idx, coedge_origins_[i]);
@@ -1133,7 +1133,7 @@ private:
             if (mate_idx != -1) {
                 int mf_idx = coedges[mate_idx].face_idx;
                 if (FaceGridsGlobal.defined() && mf_idx < FaceGridsGlobal.size(0)) {
-                    bool is_degenerate_m = (coedge_origins_[mate_idx][0] <= -1000.0f);
+                    bool is_degenerate_m = (coedge_origins_[mate_idx][0] <= -1000.0);
                     if (!is_degenerate_m) {
                         Tensor global_grid_m = get_slice(FaceGridsGlobal, mf_idx);
                         CropRange cr_m = compute_crop_range(mf_idx, coedge_origins_[mate_idx]);
