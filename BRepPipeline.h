@@ -8,6 +8,8 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <fstream>
+#include <filesystem>
 
 // LibTorch
 //#include <torch/torch.h>
@@ -160,6 +162,7 @@ public:
     }
 
     Tensor FaceGridsGlobal; // 存储提取的全局 Grid 数据 [N, 9, 40, 40]
+    std::vector<std::vector<std::array<double, 3>>> face_grid_coords64_; // [N, 40*40] 每条 face 的 double 精度 xyz 坐标（仅用于 crop 搜索，与 Python float64 一致）
     std::vector<std::array<float, 3>> coedge_origins_; // 每条 coedge 的中点坐标（退化边存 {-2000,-2000,-2000}）
 #if BREPNET_VERSION == 4
     std::vector<bool> bool_array_;
@@ -848,6 +851,8 @@ private:
 
         std::vector<Tensor> grids_list;
         int num_faces = unique_faces.Extent();
+        face_grid_coords64_.clear();
+        face_grid_coords64_.resize(num_faces);
 
         for (int i = 1; i <= num_faces; ++i) {
             const TopoDS_Face& face = TopoDS::Face(unique_faces.FindKey(i));
@@ -858,6 +863,46 @@ private:
         if (!grids_list.empty()) {
             this->FaceGridsGlobal = breptorch::stack(grids_list);
         }
+    }
+
+    // 生成每条 face 的 double 精度 xyz 坐标（[num_u*num_v, 3]），用于 crop 搜索
+    // 注意：必须与 generate_global_face_grid 中相同的采样顺序 (i,j) -> u,v
+    void generate_face_grid_coords64() {
+        if (unique_faces.Extent() == 0) return;
+        int num_faces = unique_faces.Extent();
+        face_grid_coords64_.clear();
+        face_grid_coords64_.resize(num_faces);
+
+        for (int i = 1; i <= num_faces; ++i) {
+            const TopoDS_Face& face = TopoDS::Face(unique_faces.FindKey(i));
+            face_grid_coords64_[i-1] = generate_face_grid_coords64_single(face);
+        }
+    }
+
+    std::vector<std::array<double, 3>> generate_face_grid_coords64_single(const TopoDS_Face& face) {
+        int num_u = 40, num_v = 40;
+        std::vector<std::array<double, 3>> coords;
+        coords.reserve(num_u * num_v);
+
+        Standard_Real umin, umax, vmin, vmax;
+        BRepTools::UVBounds(face, umin, umax, vmin, vmax);
+        BRepAdaptor_Surface surf(face);
+
+        bool is_reversed = (face.Orientation() == TopAbs_REVERSED);
+        bool u_reverse = is_reversed;
+        bool v_reverse = false;
+
+        for (int i = 0; i < num_u; ++i) {
+            for (int j = 0; j < num_v; ++j) {
+                double u = BRepUtils::GetParamStrict(i, num_u, umin, umax, u_reverse);
+                double v = BRepUtils::GetParamStrict(j, num_v, vmin, vmax, v_reverse);
+                gp_Pnt p;
+                gp_Vec d1u, d1v;
+                surf.D1(u, v, p, d1u, d1v);
+                coords.push_back({p.X(), p.Y(), p.Z()});
+            }
+        }
+        return coords;
     }
 
     // 计算所有Coedge的LCS变换矩阵
@@ -929,12 +974,13 @@ private:
     }
 
     // ---- Face Grid 裁剪辅助结构（与 Python new/ 版本对应）----
-    struct CropRange { int row_min, row_max, col_min, col_max; };
+    struct CropRange { int row_min, row_max, col_min, col_max; int best_row = 0, best_col = 0; };
 
     // 在 40×40 全局 face grid 中找离 target_point 最近的格点，
     // 以该点为中心计算 20×20 裁剪范围（精确复刻 Python new/ 逻辑）。
+    // 使用 double 精度坐标（face_grid_coords64_）搜索，与 Python float64 行为一致。
     // 退化边（target_point[0] <= -1000）返回左上角 {0,20,0,20}。
-    CropRange compute_crop_range(Tensor face_grid_global,
+    CropRange compute_crop_range(int face_idx,
                                   const std::array<float, 3>& target_point)
     {
         const int grid_h = 40, grid_w = 40, samplesize = 20;
@@ -943,17 +989,18 @@ private:
             return {0, samplesize, 0, samplesize};
         }
 
-        const float* data = face_grid_global.data_ptr<float>();
-        const int N = grid_h * grid_w;
-        float min_dist_sq = std::numeric_limits<float>::max();
+        // 从 double 精度坐标中搜索（行优先，与 Python points_flat 的 reshape 顺序一致）
+        const auto& coords = face_grid_coords64_[face_idx];
+        double min_dist_sq = std::numeric_limits<double>::max();
         int best_row = 0, best_col = 0;
         for (int i = 0; i < grid_h; ++i) {
             for (int j = 0; j < grid_w; ++j) {
                 int idx = i * grid_w + j;
-                float dx = data[0 * N + idx] - target_point[0];
-                float dy = data[1 * N + idx] - target_point[1];
-                float dz = data[2 * N + idx] - target_point[2];
-                float d2 = dx*dx + dy*dy + dz*dz;
+                double dx = coords[idx][0] - (double)target_point[0];
+                double dy = coords[idx][1] - (double)target_point[1];
+                double dz = coords[idx][2] - (double)target_point[2];
+                double d2 = dx*dx + dy*dy + dz*dz;
+                // 复刻 np.argmin：严格小于（保留第一个出现的全局最小值）
                 if (d2 < min_dist_sq) { min_dist_sq = d2; best_row = i; best_col = j; }
             }
         }
@@ -980,7 +1027,7 @@ private:
 
         auto [row_min, row_max] = calc_range(best_row, grid_h);
         auto [col_min, col_max] = calc_range(best_col, grid_w);
-        return {row_min, row_max, col_min, col_max};
+        return {row_min, row_max, col_min, col_max, best_row, best_col};
     }
 
     // 从 [9, 40, 40] tensor 中裁剪出 [9, 20, 20]
@@ -1011,6 +1058,35 @@ private:
         f_list.reserve(num_c);
 
         const int samplesize = 20;
+
+        // ---- 调试导出：裁剪窗口 + 原点 + LCS旋转矩阵（仅 --debug/--export 时开启）----
+        std::ofstream crop_debug;
+        if (EXPORT_ENABLED) {
+            std::filesystem::create_directories("cpp_facecrop_debug");
+            std::string fname = "cpp_facecrop_debug/" + DebugControl::instance().current_file + "_facecrop.txt";
+            crop_debug.open(fname);
+            if (crop_debug.is_open()) {
+                crop_debug << "\xEF\xBB\xBF";
+                crop_debug << std::scientific << std::setprecision(20);
+                crop_debug << "coedge_idx slot origin_x origin_y origin_z best_row best_col "
+                              "row_min row_max col_min col_max R00 R01 R02 R10 R11 R12 R20 R21 R22\n";
+            }
+        }
+        // 写一行裁剪调试记录。lcs_inv 为 inverse-LCS(global->local)，取其 3x3 旋转部分（实际施加的旋转）。
+        auto write_crop_row = [&](std::ofstream& os, int ci, int slot,
+                                  const std::array<float, 3>& origin,
+                                  const CropRange& cr,
+                                  Tensor& lcs_inv) {
+            if (!os.is_open()) return;
+            const float* m = lcs_inv.data_ptr<float>();
+            os << ci << " " << slot << " "
+               << origin[0] << " " << origin[1] << " " << origin[2] << " "
+               << cr.best_row << " " << cr.best_col << " "
+               << cr.row_min << " " << cr.row_max << " " << cr.col_min << " " << cr.col_max << " "
+               << m[0] << " " << m[1] << " " << m[2] << " "
+               << m[4] << " " << m[5] << " " << m[6] << " "
+               << m[8] << " " << m[9] << " " << m[10] << "\n";
+        };
 
         for (int i = 0; i < num_c; ++i) {
             Tensor pair = breptorch::zeros({ 2, 9, samplesize, samplesize }, breptorch::kFloat32);
@@ -1045,9 +1121,10 @@ private:
                 bool is_degenerate = (coedge_origins_[i][0] <= -1000.0f);
                 if (!is_degenerate) {
                     Tensor global_grid = get_slice(FaceGridsGlobal, f_idx);  // [9, 40, 40]
-                    CropRange cr = compute_crop_range(global_grid, coedge_origins_[i]);
+                    CropRange cr = compute_crop_range(f_idx, coedge_origins_[i]);
                     Tensor t = transform_grid_to_local(global_grid, lcs_invs[i], true);
                     set_slice(pair, 0, crop_face_grid(t, cr, samplesize));
+                    write_crop_row(crop_debug, i, 0, coedge_origins_[i], cr, lcs_invs[i]);
                 }
             }
 
@@ -1059,9 +1136,10 @@ private:
                     bool is_degenerate_m = (coedge_origins_[mate_idx][0] <= -1000.0f);
                     if (!is_degenerate_m) {
                         Tensor global_grid_m = get_slice(FaceGridsGlobal, mf_idx);
-                        CropRange cr_m = compute_crop_range(global_grid_m, coedge_origins_[mate_idx]);
+                        CropRange cr_m = compute_crop_range(mf_idx, coedge_origins_[mate_idx]);
                         Tensor tm = transform_grid_to_local(global_grid_m, lcs_invs[mate_idx], true);
                         set_slice(pair, 1, crop_face_grid(tm, cr_m, samplesize));
+                        write_crop_row(crop_debug, i, 1, coedge_origins_[mate_idx], cr_m, lcs_invs[mate_idx]);
                     }
                 }
             }
@@ -1070,6 +1148,7 @@ private:
             f_list.push_back(pair);
         }
 
+        if (crop_debug.is_open()) crop_debug.close();
         FaceGridsLocal = breptorch::stack(f_list);
     }
 
@@ -1079,6 +1158,8 @@ private:
 
         // 1. 生成全局Face网格
         generate_global_face_grids();
+        // 1.1 生成 double 精度坐标（用于 crop 搜索，与 Python float64 一致）
+        generate_face_grid_coords64();
 
         int num_c = coedges.size();
         if (num_c == 0) return;
