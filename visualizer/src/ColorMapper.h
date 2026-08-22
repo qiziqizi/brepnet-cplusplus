@@ -7,7 +7,7 @@
 #include <Quantity_Color.hxx>
 
 /**
- * 颜色映射器：管理27个面类别的颜色映射
+ * 颜色映射器：管理4个面类别的颜色映射（chamfer, round, hole, other）
  * 提供类别ID到OCCT颜色的转换功能
  */
 class ColorMapper {

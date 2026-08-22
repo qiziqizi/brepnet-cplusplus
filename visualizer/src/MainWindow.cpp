@@ -756,44 +756,28 @@ void MainWindow::onRunPrediction() {
     waitMsg->show();
     QApplication::processEvents();
 
-    // 运行预测 (返回 27 类结果)
-    auto predictions_27 = classifier_->predict(currentFilePath_.toStdString());
+    // 运行预测 (直接返回 4 类结果)
+    predictions_ = classifier_->predict(currentFilePath_.toStdString());
 
     // 关闭提示窗口
     waitMsg->close();
     delete waitMsg;
     QApplication::processEvents();
 
-    if (predictions_27.empty()) {
+    if (predictions_.empty()) {
         QMessageBox::critical(this, "错误", "预测失败");
         statusBar()->showMessage("预测失败");
         return;
     }
 
     // 验证结果数量
-    if (predictions_27.size() != static_cast<size_t>(loader_->getNumFaces())) {
+    if (predictions_.size() != static_cast<size_t>(loader_->getNumFaces())) {
         QMessageBox::critical(this, "错误",
             QString("预测结果数量(%1)与面数量(%2)不匹配")
-            .arg(predictions_27.size())
+            .arg(predictions_.size())
             .arg(loader_->getNumFaces()));
         statusBar()->showMessage("预测错误");
         return;
-    }
-
-    // 27 类 → 4 类映射
-    // 映射规则: 0=chamfer, 23=round, 1/12=hole, 其余=other(3)
-    predictions_.clear();
-    predictions_.reserve(predictions_27.size());
-    for (int cls27 : predictions_27) {
-        int cls4;
-        switch (cls27) {
-            case 0:  cls4 = 0; break;  // chamfer
-            case 23: cls4 = 1; break;  // round
-            case 1:
-            case 12: cls4 = 2; break;  // hole
-            default: cls4 = 3; break;  // other
-        }
-        predictions_.push_back(cls4);
     }
 
     // 更新颜色: other(3) 用暖色系区分每个面，其余用固定类颜色

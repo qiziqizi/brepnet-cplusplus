@@ -5,6 +5,8 @@
 #include <vector>
 #include <memory>
 
+#include "PrecisionUtils.h"
+
 // 前向声明，避免包含复杂的BRepNet头文件
 class BRepNetImpl;
 
@@ -21,7 +23,9 @@ public:
     ~FaceClassifier();
 
     // 加载模型权重
-    bool loadModel(const std::string& weightsPath);
+    // precision: 权重文件精度（FP32 / FP16 / BF16）
+    bool loadModel(const std::string& weightsPath,
+                   breptorch::WeightPrecision precision = breptorch::WeightPrecision::FP32);
 
     // 预测单个STEP文件
     // 返回：每个面的类别ID（索引i对应第i个面）

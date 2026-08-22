@@ -2,6 +2,7 @@
 #include "BRepNet.h"
 #include "BRepNetAdapter.h"
 #include "BRepPipeline.h"
+#include "PrecisionUtils.h"
 #include "cnpy.h"
 #include <iostream>
 
@@ -12,12 +13,17 @@ FaceClassifier::FaceClassifier()
 FaceClassifier::~FaceClassifier() {
 }
 
-bool FaceClassifier::loadModel(const std::string& weightsPath) {
+bool FaceClassifier::loadModel(const std::string& weightsPath,
+                               breptorch::WeightPrecision precision) {
     try {
         std::cout << "[FaceClassifier] 正在加载模型权重: " << weightsPath << std::endl;
+        std::string prec_str = "fp32";
+        if (precision == breptorch::WeightPrecision::FP16) prec_str = "fp16";
+        else if (precision == breptorch::WeightPrecision::BF16) prec_str = "bf16";
+        std::cout << "[FaceClassifier] 权重精度: " << prec_str << std::endl;
 
-        // 创建模型（27个类别）
-        model_ = std::make_shared<BRepNetImpl>(27);
+        // 创建模型（4个类别）
+        model_ = std::make_shared<BRepNetImpl>(4);
         
         // 检查 surf_enc 和 curve_enc 是否有效
         std::cout << "[FaceClassifier] surf_enc 有效: " << (model_->surf_enc ? "yes" : "NO!") << std::endl;
@@ -43,8 +49,11 @@ bool FaceClassifier::loadModel(const std::string& weightsPath) {
         for (auto& item : npz) {
             auto arr = item.second;
             std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
+            // 根据权重精度转换为 fp32
+            std::vector<float> fp32_data = breptorch::convert_weights_to_fp32(
+                arr.data<uint8_t>(), arr.num_vals, precision);
             breptorch::Tensor t = breptorch::from_blob(
-                arr.data<float>(), shape, breptorch::kFloat32).clone();
+                fp32_data.data(), shape, breptorch::kFloat32).clone();
 
             // V4: 必须区分 surface_encoder. 和 surface_encoder2.
             if (item.first.substr(0, 17) == "surface_encoder2.") {
@@ -85,8 +94,11 @@ bool FaceClassifier::loadModel(const std::string& weightsPath) {
             if (params.find(key) != params.end()) {
                 auto arr = item.second;
                 std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
+                // 根据权重精度转换为 fp32
+                std::vector<float> fp32_data = breptorch::convert_weights_to_fp32(
+                    arr.data<uint8_t>(), arr.num_vals, precision);
                 *params[key] = breptorch::from_blob(
-                    arr.data<float>(), shape, breptorch::kFloat32).clone();
+                    fp32_data.data(), shape, breptorch::kFloat32).clone();
                 loaded_count++;
             }
         }

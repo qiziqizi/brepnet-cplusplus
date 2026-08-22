@@ -7,6 +7,7 @@
 #include "BRepPipeline.h"
 #include "FeatureMapExporter.h"
 #include "OutputLogger.h"
+#include "PrecisionUtils.h"
 #include <iostream>
 #include <iomanip>
 #include <chrono>
@@ -23,6 +24,12 @@
 #include <atomic>
 
 namespace fs = std::filesystem;
+
+// 模型输出类别数（4类：chamfer, round, hole, other）
+constexpr int kNumClasses = 4;
+
+// 权重精度（默认 fp32，可通过 --precision 参数修改）
+breptorch::WeightPrecision g_weight_precision = breptorch::WeightPrecision::FP32;
 
 // 全局互斥锁：用于多线程模式下的控制台输出同步
 std::mutex g_console_mutex;
@@ -60,8 +67,9 @@ std::vector<std::string> get_step_files(const std::string& dir_path) {
 // 模型加载函数：从已加载的 NPZ 数据创建一个独立的模型实例
 // 每个线程调用此函数获得自己的模型副本，确保线程安全
 // ============================================================================
-std::shared_ptr<BRepNetImpl> load_model(const cnpy::npz_t& npz) {
-    auto model = std::make_shared<BRepNetImpl>(27);
+std::shared_ptr<BRepNetImpl> load_model(const cnpy::npz_t& npz,
+                                         breptorch::WeightPrecision precision) {
+    auto model = std::make_shared<BRepNetImpl>(kNumClasses);
 
     // 加载 UV-Net 权重
     std::map<std::string, breptorch::Tensor> surf_weights, curve_weights;
@@ -69,7 +77,11 @@ std::shared_ptr<BRepNetImpl> load_model(const cnpy::npz_t& npz) {
     for (auto& item : npz) {
         auto arr = item.second;
         std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
-        breptorch::Tensor t = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
+        // 根据权重精度转换为 fp32
+        std::vector<float> fp32_data = breptorch::convert_weights_to_fp32(
+            arr.data<uint8_t>(), arr.num_vals, precision);
+        breptorch::Tensor t = breptorch::from_blob(
+            fp32_data.data(), shape, breptorch::kFloat32).clone();
 
         // V4: Must distinguish surface_encoder. from surface_encoder2.
         if (item.first.substr(0, 17) == "surface_encoder2.") {
@@ -98,7 +110,11 @@ std::shared_ptr<BRepNetImpl> load_model(const cnpy::npz_t& npz) {
         if (params.find(key) != params.end()) {
             auto arr = item.second;
             std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
-            *params[key] = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
+            // 根据权重精度转换为 fp32
+            std::vector<float> fp32_data = breptorch::convert_weights_to_fp32(
+                arr.data<uint8_t>(), arr.num_vals, precision);
+            *params[key] = breptorch::from_blob(
+                fp32_data.data(), shape, breptorch::kFloat32).clone();
         }
     }
 
@@ -599,7 +615,7 @@ void run_inference_with_export(const std::string& step_file,
         float max_prob = -1e9f;
         int pred_class = 0;
 
-        for (int c = 0; c < 27; ++c) {
+        for (int c = 0; c < kNumClasses; ++c) {
             float p = probs.at({f, c});
             if (p > max_prob) {
                 max_prob = p;
@@ -638,8 +654,8 @@ void run_inference_with_export(const std::string& step_file,
     for (int inference_id = 0; inference_id < num_faces; ++inference_id) {
         int original_id = faces[inference_id].face_id;
 
-        std::vector<float> logit_row(27);
-        for (int c = 0; c < 27; ++c) {
+        std::vector<float> logit_row(kNumClasses);
+        for (int c = 0; c < kNumClasses; ++c) {
             logit_row[c] = logits.at({inference_id, c});
         }
 
@@ -652,7 +668,7 @@ void run_inference_with_export(const std::string& step_file,
     logits_file << std::scientific << std::setprecision(20);
 
     for (int original_id = 0; original_id < num_faces; ++original_id) {
-        for (int c = 0; c < 27; ++c) {
+        for (int c = 0; c < kNumClasses; ++c) {
             if (c > 0) logits_file << " ";
             logits_file << logits_original_order[original_id][c];
         }
@@ -679,11 +695,11 @@ void run_inference_with_export(const std::string& step_file,
         int original_id = faces[inference_id].face_id;
 
         // 获取该 Face 的概率和预测
-        std::vector<float> face_probs(27);
+        std::vector<float> face_probs(kNumClasses);
         float max_prob = -1e9f;
         int pred_class = 0;
 
-        for (int c = 0; c < 27; ++c) {
+        for (int c = 0; c < kNumClasses; ++c) {
             face_probs[c] = probs.at({inference_id, c});
             if (face_probs[c] > max_prob) {
                 max_prob = face_probs[c];
@@ -711,7 +727,7 @@ void run_inference_with_export(const std::string& step_file,
 
         // 找 Top 3
         std::vector<std::pair<int, float>> class_probs;
-        for (int c = 0; c < 27; ++c) {
+        for (int c = 0; c < kNumClasses; ++c) {
             class_probs.push_back({c, probs_original_order[original_id][c]});
         }
         std::sort(class_probs.begin(), class_probs.end(),
@@ -726,7 +742,7 @@ void run_inference_with_export(const std::string& step_file,
 
         // Top 3 类别
         results_file << std::scientific << std::setprecision(6);
-        for (int i = 0; i < 3 && i < 27; ++i) {
+        for (int i = 0; i < 3 && i < kNumClasses; ++i) {
             if (i > 0) results_file << " ";
             results_file << class_probs[i].first << ":"
                          << class_probs[i].second;
@@ -740,8 +756,7 @@ void run_inference_with_export(const std::string& step_file,
     // ========================================================================
     // 导出 .seg 分类结果到 cpp_results/ — 始终执行
     // 格式：每行一个整数（face 类别 id），从第一行开始，无注释
-    // 同时导出 4 类映射版本到 cpp_results_4class/
-    // 映射规则: 0=chamfer, 23=round, 1/12=hole, 其余=other(3)
+    // 模型直接输出 4 类：0=chamfer, 1=round, 2=hole, 3=other
     // ========================================================================
     std::string seg_path = "cpp_results/" + base_name + ".seg";
     std::ofstream seg_file(seg_path);
@@ -751,26 +766,6 @@ void run_inference_with_export(const std::string& step_file,
     seg_file.close();
 
     DBG_LOG << "  [Export] Seg saved to: " << seg_path << std::endl;
-
-    // 4 类映射版本
-    fs::create_directories("cpp_results_4class");
-    std::string seg4_path = "cpp_results_4class/" + base_name + ".seg";
-    std::ofstream seg4_file(seg4_path);
-    for (int original_id = 0; original_id < num_faces; ++original_id) {
-        int cls27 = predictions_original_order[original_id];
-        int cls4;
-        switch (cls27) {
-            case 0:  cls4 = 0; break;  // chamfer
-            case 23: cls4 = 1; break;  // round
-            case 1:
-            case 12: cls4 = 2; break;  // hole
-            default: cls4 = 3; break;  // other
-        }
-        seg4_file << cls4 << "\n";
-    }
-    seg4_file.close();
-
-    DBG_LOG << "  [Export] 4-class seg saved to: " << seg4_path << std::endl;
 
     auto file_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> file_elapsed = file_end - file_start;
@@ -879,6 +874,12 @@ int main(int argc, char* argv[]) {
 
     DBG_LOG << "\n[Model] Loading weights: " << weights_file << std::endl;
 
+    // 打印权重精度
+    std::string prec_str = "fp32";
+    if (g_weight_precision == breptorch::WeightPrecision::FP16) prec_str = "fp16";
+    else if (g_weight_precision == breptorch::WeightPrecision::BF16) prec_str = "bf16";
+    INFO_LOG << "[Model] Weight precision: " << prec_str << std::endl;
+
     // NPZ 只加载一次，然后为每个线程创建独立的模型副本
     cnpy::npz_t npz = cnpy::npz_load(weights_file);
     DBG_LOG << "[Model] NPZ loaded, " << npz.size() << " keys" << std::endl;
@@ -893,6 +894,15 @@ int main(int argc, char* argv[]) {
             if (num_threads < 1) num_threads = 1;
         } else if (arg == "--force") {
             g_force_overwrite = true;
+        } else if (arg == "--precision" && i + 1 < argc) {
+            std::string prec_str = argv[++i];
+            try {
+                g_weight_precision = breptorch::parse_precision(prec_str);
+            } catch (const std::exception& e) {
+                ERR_LOG << "[Error] Invalid precision: " << prec_str << std::endl;
+                ERR_LOG << "  Supported: fp32, fp16, bf16" << std::endl;
+                return -1;
+            }
         }
     }
 
@@ -918,7 +928,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::shared_ptr<BRepNetImpl>> models;
     models.reserve(effective_threads);
     for (int t = 0; t < effective_threads; ++t) {
-        models.push_back(load_model(npz));
+        models.push_back(load_model(npz, g_weight_precision));
     }
     INFO_LOG << "[Model] Loaded " << effective_threads << " model instances for "
              << effective_threads << " threads" << std::endl;

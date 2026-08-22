@@ -45,7 +45,7 @@ namespace breptorch {
         return result;
     }
 
-    enum DType { kFloat32, kInt, kLong };
+    enum DType { kFloat32, kFloat16, kBFloat16, kInt, kLong };
 
     struct Tensor;
     template<typename T, int N> struct Accessor;
