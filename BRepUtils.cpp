@@ -7,6 +7,7 @@
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 #include <BRepLProp_SLProps.hxx>
 #include <Geom_Surface.hxx>
+#include <TopLoc_Location.hxx>
 
 using namespace breptorch;
 
@@ -39,7 +40,15 @@ namespace BRepUtils {
         // 将 3D 点投影到 UV 空间 (对计算精确法线很重要)
         // 这里简化处理，对于任意面上，使用 GeomAPI_ProjectPointOnSurf
         // 为了性能，工业级实现通常利用 Edge 的 pcurve，这里用投影作为通用解法
-        GeomAPI_ProjectPointOnSurf proj(p, BRep_Tool::Surface(face));
+        // 注意：投影必须使用带 location 的表面，并将点变换到局部坐标系，
+        // 否则对带 location 的面会投影到错误的 (u,v)
+        TopLoc_Location loc;
+        Handle(Geom_Surface) geom_surf = BRep_Tool::Surface(face, loc);
+        gp_Pnt p_local = p;
+        if (!loc.IsIdentity()) {
+            p_local.Transform(loc.Transformation().Inverted());
+        }
+        GeomAPI_ProjectPointOnSurf proj(p_local, geom_surf);
         if (proj.NbPoints() > 0) {
             double u, v;
             proj.LowerDistanceParameters(u, v);

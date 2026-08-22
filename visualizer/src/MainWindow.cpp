@@ -1,5 +1,4 @@
 #include "MainWindow.h"
-#include "VersionConfig.h"
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QTextStream>
@@ -63,11 +62,8 @@ MainWindow::MainWindow(QWidget* parent)
         exeDir + "/../../../inference_data/state_dict.npz",
         exeDir + "/../../../../inference_data/state_dict.npz",
         exeDir + "/inference_data/state_dict_v4.npz",
-        exeDir + "/inference_data/state_dict_v123.npz",
         exeDir + "/../../../inference_data/state_dict_v4.npz",
-        exeDir + "/../../../inference_data/state_dict_v123.npz",
         exeDir + "/../../../../inference_data/state_dict_v4.npz",
-        exeDir + "/../../../../inference_data/state_dict_v123.npz",
     };
 
     for (const QString& path : possiblePaths) {
@@ -142,13 +138,7 @@ void MainWindow::refreshLegendLayout() {
 }
 
 void MainWindow::setupUI() {
-#if BREPNET_VERSION == 4
     setWindowTitle("BRepNet 可视化工具 - v4");
-#elif BREPNET_VERSION == 123
-    setWindowTitle("BRepNet 可视化工具 - v123");
-#else
-    setWindowTitle("BRepNet 可视化工具");
-#endif
     resize(1400, 900);
 
     // 创建中心部件

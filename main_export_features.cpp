@@ -2,7 +2,6 @@
 // 通过命令行参数控制，永远不需要注释/取消注释代码
 
 #include "DebugControl.h"
-#include "VersionConfig.h"
 #include "BRepNet.h"
 #include "BRepNetAdapter.h"
 #include "BRepPipeline.h"
@@ -66,20 +65,16 @@ std::shared_ptr<BRepNetImpl> load_model(const cnpy::npz_t& npz) {
 
     // 加载 UV-Net 权重
     std::map<std::string, breptorch::Tensor> surf_weights, curve_weights;
-#if BREPNET_VERSION == 4
     std::map<std::string, breptorch::Tensor> surf2_weights;
-#endif
     for (auto& item : npz) {
         auto arr = item.second;
         std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
         breptorch::Tensor t = breptorch::from_blob(arr.data<float>(), shape, breptorch::kFloat32).clone();
 
-#if BREPNET_VERSION == 4
         // V4: Must distinguish surface_encoder. from surface_encoder2.
         if (item.first.substr(0, 17) == "surface_encoder2.") {
             surf2_weights["surface_encoder." + item.first.substr(17)] = t;
         } else
-#endif
         if (item.first.find("surface_encoder.") != std::string::npos) {
             surf_weights[item.first] = t;
         }
@@ -89,9 +84,7 @@ std::shared_ptr<BRepNetImpl> load_model(const cnpy::npz_t& npz) {
     }
     model->surf_enc->load_weights(surf_weights);
     model->curve_enc->load_weights(curve_weights);
-#if BREPNET_VERSION == 4
     model->surf_enc2->load_weights(surf2_weights);
-#endif
 
     // 加载 BRepNet 权重
     auto params = model->named_parameters();
@@ -246,11 +239,7 @@ void run_inference_with_export(const std::string& step_file,
     // ========================================================================
     DBG_LOG << "[Feature Extraction] Running UVNet..." << std::endl;
 
-    #if BREPNET_VERSION == 4
     auto coedges = BRepNetAdapter::extract_coedges(pipeline, model->surf_enc, model->curve_enc, model->surf_enc2);
-#else
-    auto coedges = BRepNetAdapter::extract_coedges(pipeline, model->surf_enc, model->curve_enc);
-#endif
     auto faces = BRepNetAdapter::extract_faces(pipeline);
 
     // ========================================================================
@@ -259,22 +248,15 @@ void run_inference_with_export(const std::string& step_file,
     if (EXPORT_ENABLED) {
         DBG_LOG << "[UV Grid Export] Creating per-face UV grids..." << std::endl;
 
-        // 为每个Face收集其所有coedges的UV Grid并取平均/第一个
-        // 这里使用第一个coedge的parent_face grid作为该face的代表
+        // 直接导出全局Face网格（与Python extract_face_point_grids 一致）
         std::vector<std::vector<float>> face_uv_grids(num_faces);
 
-        for (const auto& coedge_info : pipeline.coedges) {
-            int face_id = coedge_info.face_idx;
-            int coedge_id = coedge_info.id;
-
-            if (face_id >= 0 && face_id < num_faces && face_uv_grids[face_id].empty()) {
-                // 该face还没有记录UV grid，使用这个coedge的parent_face
-                int row_idx = coedge_id * 2;  // parent_face行索引
-
+        if (pipeline.FaceGridsGlobal.defined() && pipeline.FaceGridsGlobal.size(0) >= num_faces) {
+            for (int f = 0; f < num_faces; ++f) {
                 for (int c = 0; c < 9; ++c) {
                     for (int i = 0; i < 20; ++i) {
                         for (int j = 0; j < 20; ++j) {
-                            face_uv_grids[face_id].push_back(all_face_grids.at({row_idx, c, i, j}));
+                            face_uv_grids[f].push_back(pipeline.FaceGridsGlobal.at({f, c, i, j}));
                         }
                     }
                 }
@@ -867,21 +849,12 @@ int main(int argc, char* argv[]) {
     // 2. 加载模型
     // ========================================================================
     // 权重文件搜索顺序：版本化文件名 → 通用文件名
-#if BREPNET_VERSION == 123
-    std::vector<std::string> weights_candidates = {
-        "inference_data/state_dict_v123.npz",
-        "inference_data/state_dict.npz",
-        "bin/inference_data/state_dict_v123.npz",
-        "bin/inference_data/state_dict.npz"
-    };
-#else
     std::vector<std::string> weights_candidates = {
         "inference_data/state_dict_v4.npz",
         "inference_data/state_dict.npz",
         "bin/inference_data/state_dict_v4.npz",
         "bin/inference_data/state_dict.npz"
     };
-#endif
     std::string weights_file;
     for (const auto& candidate : weights_candidates) {
         if (fs::exists(candidate)) {

@@ -2,7 +2,6 @@
 #include "BRepNet.h"
 #include "BRepNetAdapter.h"
 #include "BRepPipeline.h"
-#include "VersionConfig.h"
 #include "cnpy.h"
 #include <iostream>
 
@@ -40,22 +39,18 @@ bool FaceClassifier::loadModel(const std::string& weightsPath) {
         // 加载 UV-Net 权重（Surface Encoder + Curve Encoder + V4 surf_enc2）
         std::map<std::string, breptorch::Tensor> surf_weights;
         std::map<std::string, breptorch::Tensor> curve_weights;
-#if BREPNET_VERSION == 4
         std::map<std::string, breptorch::Tensor> surf2_weights;
-#endif
         for (auto& item : npz) {
             auto arr = item.second;
             std::vector<int64_t> shape(arr.shape.begin(), arr.shape.end());
             breptorch::Tensor t = breptorch::from_blob(
                 arr.data<float>(), shape, breptorch::kFloat32).clone();
 
-#if BREPNET_VERSION == 4
             // V4: 必须区分 surface_encoder. 和 surface_encoder2.
             if (item.first.substr(0, 17) == "surface_encoder2.") {
                 // 替换前缀: surface_encoder2. → surface_encoder.
                 surf2_weights["surface_encoder." + item.first.substr(17)] = t;
             } else
-#endif
             if (item.first.find("surface_encoder") != std::string::npos) {
                 surf_weights[item.first] = t;
             }
@@ -69,10 +64,8 @@ bool FaceClassifier::loadModel(const std::string& weightsPath) {
         std::cout << "[FaceClassifier] 加载 curve_encoder 权重: " << curve_weights.size() << std::endl;
         model_->curve_enc->load_weights(curve_weights);
 
-#if BREPNET_VERSION == 4
         std::cout << "[FaceClassifier] 加载 surface_encoder2 权重: " << surf2_weights.size() << std::endl;
         model_->surf_enc2->load_weights(surf2_weights);
-#endif
 
         // 加载 BRepNet 权重
         auto params = model_->named_parameters();
@@ -131,11 +124,7 @@ std::vector<int> FaceClassifier::predict(const std::string& stepFilePath) {
                   << " (" << num_faces << " 个面)" << std::endl;
 
         // 2. 转换数据格式
-        auto coedges = BRepNetAdapter::extract_coedges(pipeline, model_->surf_enc, model_->curve_enc
-#if BREPNET_VERSION == 4
-            , model_->surf_enc2
-#endif
-        );
+        auto coedges = BRepNetAdapter::extract_coedges(pipeline, model_->surf_enc, model_->curve_enc, model_->surf_enc2);
         auto faces = BRepNetAdapter::extract_faces(pipeline);
 
         // 3. 前向推理

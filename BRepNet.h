@@ -1,6 +1,5 @@
 ﻿#pragma once
 #include "DebugControl.h"
-#include "VersionConfig.h"
 #include "BRepTorch.h"
 #include "UVNet.h"
 #include "cnpy.h"
@@ -96,9 +95,7 @@ struct FaceData {
 struct BRepNetImpl : Module {
     UVNetSurfaceEncoder surf_enc;
     UVNetCurveEncoder curve_enc;
-#if BREPNET_VERSION == 4
     UVNetSurfaceEncoder surf_enc2;
-#endif
 
     // Layer 0 MLP (一阶邻居，MLP-G-surface/edge)
     BRepNetMLP layer0_mlp{ nullptr };
@@ -125,11 +122,9 @@ struct BRepNetImpl : Module {
         static_cast<std::shared_ptr<UVNetCurveEncoderImpl>&>(curve_enc) = curve_enc_ptr;
         modules_["surface_encoder"] = surf_enc_ptr;
         modules_["curve_encoder"] = curve_enc_ptr;
-#if BREPNET_VERSION == 4
         std::shared_ptr<UVNetSurfaceEncoderImpl> surf_enc2_ptr(new UVNetSurfaceEncoderImpl());
         static_cast<std::shared_ptr<UVNetSurfaceEncoderImpl>&>(surf_enc2) = surf_enc2_ptr;
         modules_["surface_encoder2"] = surf_enc2_ptr;
-#endif
 
         // Layer 0: input 192 -> output 60
         // Input: parent_face (64) + mate_face (64) + edge (64) = 192

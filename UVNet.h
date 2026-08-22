@@ -1,7 +1,6 @@
 ﻿#pragma once
 #include "BRepTorch.h"
 #include "DebugControl.h"
-#include "VersionConfig.h"
 #include <map>
 #include <vector>
 #include <string>
