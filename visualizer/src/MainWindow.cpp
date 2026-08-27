@@ -34,8 +34,9 @@
 #include <algorithm>
 #include <map>
 
-MainWindow::MainWindow(QWidget* parent)
+MainWindow::MainWindow(breptorch::WeightPrecision precision, QWidget* parent)
     : QMainWindow(parent)
+    , precision_(precision)
     , currentMode_(WorkMode::None)
     , modelLoaded_(false)
     , prevHoveredGlobalEdgeId_(-1) {
@@ -78,7 +79,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     if (!weightsPath.isEmpty()) {
         std::cout << "[MainWindow] 尝试加载模型: " << weightsPath.toStdString() << std::endl;
-        if (classifier_->loadModel(weightsPath.toStdString())) {
+        if (classifier_->loadModel(weightsPath.toStdString(), precision_)) {
             modelLoaded_ = true;
             std::cout << "[MainWindow] 模型加载成功" << std::endl;
         } else {
@@ -227,9 +228,12 @@ void MainWindow::setupUI() {
     btnRunPrediction_ = new QPushButton("运行预测", predGroup);
     btnRunPrediction_->setEnabled(false);
     predLayout->addWidget(btnRunPrediction_);
-    btnLoadPredictionLabels_ = new QPushButton("导入真实标签(对比)", predGroup);
-    btnLoadPredictionLabels_->setEnabled(false);
-    predLayout->addWidget(btnLoadPredictionLabels_);
+    btnLoadPredictionLabelsManual_ = new QPushButton("手动导入真实标签", predGroup);
+    btnLoadPredictionLabelsManual_->setEnabled(false);
+    predLayout->addWidget(btnLoadPredictionLabelsManual_);
+    btnLoadPredictionLabelsAuto_ = new QPushButton("自动导入真实标签", predGroup);
+    btnLoadPredictionLabelsAuto_->setEnabled(false);
+    predLayout->addWidget(btnLoadPredictionLabelsAuto_);
     lblPredictionAccuracy_ = new QLabel("准确率: --", predGroup);
     predLayout->addWidget(lblPredictionAccuracy_);
     topGrid->addWidget(predGroup, 1, 0, 1, 3);
@@ -438,7 +442,8 @@ void MainWindow::setupConnections() {
 
     // 预测操作
     connect(btnRunPrediction_, &QPushButton::clicked, this, &MainWindow::onRunPrediction);
-    connect(btnLoadPredictionLabels_, &QPushButton::clicked, this, &MainWindow::onLoadPredictionLabels);
+    connect(btnLoadPredictionLabelsManual_, &QPushButton::clicked, this, &MainWindow::onLoadPredictionLabelsManual);
+    connect(btnLoadPredictionLabelsAuto_, &QPushButton::clicked, this, &MainWindow::onLoadPredictionLabelsAuto);
 
     // 人工标注
     connect(btnLoadManualLabels_, &QPushButton::clicked, this, &MainWindow::onLoadManualLabels);
@@ -467,7 +472,8 @@ void MainWindow::setWorkMode(WorkMode mode) {
 
     // 预测操作区
     btnRunPrediction_->setEnabled(modelLoaded_ && hasFile);
-    btnLoadPredictionLabels_->setEnabled(hasFile && !predictions_.empty());
+    btnLoadPredictionLabelsManual_->setEnabled(hasFile && !predictions_.empty());
+    btnLoadPredictionLabelsAuto_->setEnabled(hasFile && !predictions_.empty());
 
     // 人工标注区 (随时可用)
     btnLoadManualLabels_->setEnabled(hasFile);
@@ -808,7 +814,7 @@ void MainWindow::onRunPrediction() {
     QMessageBox::information(this, "成功", "预测完成！模型已按类别着色。");
 }
 
-void MainWindow::onLoadPredictionLabels() {
+void MainWindow::onLoadPredictionLabelsManual() {
     QString fileName = QFileDialog::getOpenFileName(
         this,
         "导入真实标签文件(对比)",
@@ -819,16 +825,37 @@ void MainWindow::onLoadPredictionLabels() {
         return;
     }
 
+    applyGroundTruthLabels(fileName);
+}
+
+void MainWindow::onLoadPredictionLabelsAuto() {
+    if (currentFilePath_.isEmpty()) return;
+
+    QFileInfo stepInfo(currentFilePath_);
+    QString baseDir = stepInfo.absolutePath();
+    QString baseName = stepInfo.completeBaseName();
+    QString segPath = QString("%1/%2.seg").arg(baseDir, baseName);
+
+    if (!QFileInfo::exists(segPath)) {
+        QMessageBox::warning(this, "未找到标签文件",
+            QString("在STEP文件所在目录未找到同名的.seg文件:\n%1").arg(segPath));
+        return;
+    }
+
+    applyGroundTruthLabels(segPath);
+}
+
+void MainWindow::applyGroundTruthLabels(const QString& fileName, bool silent) {
     groundTruthLabels_ = loadLabelsFromFile(fileName);
 
     if (groundTruthLabels_.empty()) {
-        QMessageBox::critical(this, "错误", "无法解析标签文件");
+        if (!silent) QMessageBox::critical(this, "错误", "无法解析标签文件");
         return;
     }
 
     // 验证标签数量
     if (static_cast<int>(groundTruthLabels_.size()) != loader_->getNumFaces()) {
-        QMessageBox::warning(this, "警告",
+        if (!silent) QMessageBox::warning(this, "警告",
             QString("标签数量(%1)与面数量(%2)不匹配")
             .arg(groundTruthLabels_.size())
             .arg(loader_->getNumFaces()));
@@ -836,7 +863,12 @@ void MainWindow::onLoadPredictionLabels() {
         return;
     }
 
-    statusBar()->showMessage("标签已加载: " + fileName);
+    // 旧标签中的 4(unlabeled) → 3(other)，与人工标注保持一致
+    for (int& classId : groundTruthLabels_) {
+        if (classId == 4) classId = 3;
+    }
+
+    statusBar()->showMessage("真实标签已加载: " + fileName);
 
     // 自动进行对比
     updateComparisonResults();

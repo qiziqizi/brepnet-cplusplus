@@ -40,7 +40,8 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget* parent = nullptr);
+    explicit MainWindow(breptorch::WeightPrecision precision = breptorch::WeightPrecision::FP32,
+                        QWidget* parent = nullptr);
     ~MainWindow();
 
 private slots:
@@ -54,7 +55,8 @@ private slots:
 
     // 预测操作
     void onRunPrediction();
-    void onLoadPredictionLabels();
+    void onLoadPredictionLabelsManual();
+    void onLoadPredictionLabelsAuto();
 
     // 人工标注
     void onLoadManualLabels();
@@ -77,6 +79,7 @@ private:
     void setupConnections();
     void setWorkMode(WorkMode mode);
     void loadAndApplyLabels(const QString& fileName, bool silent = false);
+    void applyGroundTruthLabels(const QString& fileName, bool silent = false);
     void loadStepFile(const QString& fileName);    // 核心加载逻辑
     void refreshFileListSelection();                 // 同步侧边栏选中状态
     void updateModelInfo();
@@ -109,7 +112,8 @@ protected:
 
     // 预测操作区
     QPushButton* btnRunPrediction_;
-    QPushButton* btnLoadPredictionLabels_;
+    QPushButton* btnLoadPredictionLabelsManual_;
+    QPushButton* btnLoadPredictionLabelsAuto_;
     QLabel* lblPredictionAccuracy_;
 
     // 人工标注区
@@ -165,6 +169,7 @@ protected:
     std::unique_ptr<FaceClassifier> classifier_;
 
     // 当前状态
+    breptorch::WeightPrecision precision_;
     WorkMode currentMode_;
     QString currentFilePath_;
     std::vector<int> predictions_;

@@ -17,6 +17,7 @@ bool FaceClassifier::loadModel(const std::string& weightsPath,
                                breptorch::WeightPrecision precision) {
     try {
         std::cout << "[FaceClassifier] 正在加载模型权重: " << weightsPath << std::endl;
+
         std::string prec_str = "fp32";
         if (precision == breptorch::WeightPrecision::FP16) prec_str = "fp16";
         else if (precision == breptorch::WeightPrecision::BF16) prec_str = "bf16";
