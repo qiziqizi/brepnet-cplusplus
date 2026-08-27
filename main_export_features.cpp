@@ -831,9 +831,38 @@ int main(int argc, char* argv[]) {
     SetConsoleOutputCP(65001);
     SetConsoleCP(65001);
 
-    INFO_LOG << "=== BRepNet Inference Tool ===" << std::endl;
+    // 解析命令行参数（在打印 banner 之前，以便 banner 显示正确的精度）
+    int num_threads = (int)std::thread::hardware_concurrency();
+    if (num_threads == 0) num_threads = 1;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--threads" && i + 1 < argc) {
+            num_threads = std::atoi(argv[++i]);
+            if (num_threads < 1) num_threads = 1;
+        } else if (arg == "--force") {
+            g_force_overwrite = true;
+        } else if (arg == "--precision" && i + 1 < argc) {
+            std::string prec_arg = argv[++i];
+            try {
+                g_weight_precision = breptorch::parse_precision(prec_arg);
+            } catch (const std::exception& e) {
+                ERR_LOG << "[Error] Invalid precision: " << prec_arg << std::endl;
+                ERR_LOG << "  Supported: fp32, fp16, bf16" << std::endl;
+                return -1;
+            }
+        }
+    }
+
+    std::string prec_str = "fp32";
+    if (g_weight_precision == breptorch::WeightPrecision::FP16) prec_str = "fp16";
+    else if (g_weight_precision == breptorch::WeightPrecision::BF16) prec_str = "bf16";
+
+    INFO_LOG << "=== BRepNet Inference Tool (precision: " << prec_str << ") ===" << std::endl;
     DBG_LOG << "Purpose: Export intermediate layer outputs for comparison with Python" << std::endl;
     DBG_LOG << "Output directory: cpp_feature_maps/" << std::endl;
+    const bool c_avx2 = breptorch::cpu_supports_avx2_fma();
+    INFO_LOG << "[CPU] AVX2+FMA: " << (c_avx2 ? "supported (using AVX2+FMA path)"
+                                              : "not supported (using SSE2 fallback)") << std::endl;
 
     // ========================================================================
     // 1. 创建导出器
@@ -874,37 +903,9 @@ int main(int argc, char* argv[]) {
 
     DBG_LOG << "\n[Model] Loading weights: " << weights_file << std::endl;
 
-    // 打印权重精度
-    std::string prec_str = "fp32";
-    if (g_weight_precision == breptorch::WeightPrecision::FP16) prec_str = "fp16";
-    else if (g_weight_precision == breptorch::WeightPrecision::BF16) prec_str = "bf16";
-    INFO_LOG << "[Model] Weight precision: " << prec_str << std::endl;
-
     // NPZ 只加载一次，然后为每个线程创建独立的模型副本
     cnpy::npz_t npz = cnpy::npz_load(weights_file);
     DBG_LOG << "[Model] NPZ loaded, " << npz.size() << " keys" << std::endl;
-
-    // 解析线程数参数
-    int num_threads = (int)std::thread::hardware_concurrency();
-    if (num_threads == 0) num_threads = 1;
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if (arg == "--threads" && i + 1 < argc) {
-            num_threads = std::atoi(argv[++i]);
-            if (num_threads < 1) num_threads = 1;
-        } else if (arg == "--force") {
-            g_force_overwrite = true;
-        } else if (arg == "--precision" && i + 1 < argc) {
-            std::string prec_str = argv[++i];
-            try {
-                g_weight_precision = breptorch::parse_precision(prec_str);
-            } catch (const std::exception& e) {
-                ERR_LOG << "[Error] Invalid precision: " << prec_str << std::endl;
-                ERR_LOG << "  Supported: fp32, fp16, bf16" << std::endl;
-                return -1;
-            }
-        }
-    }
 
     // ========================================================================
     // 3. 获取所有 STEP 文件

@@ -18,11 +18,53 @@
 #include <utility>
 #include <limits>
 #include <immintrin.h>
+#include <intrin.h>
 
 namespace breptorch {
 
-    // AVX2 + FMA 点积：用2个累加器打破依赖链，处理8/16个float/迭代
+    // 运行时检测 CPU 是否支持 AVX2 + FMA3（Haswell 2013 之后才具备）。
+    // 项目只在此处用到 AVX2/FMA（其余代码按 SSE2 编译），故仅此函数需回退，
+    // 老 CPU（如仅 SSE4.2 的 Celeron N4505）执行 _mm256_fmadd_ps 会抛非法指令崩溃。
+    inline bool cpu_supports_avx2_fma() {
+        int cpuInfo[4] = {0};
+        __cpuid(cpuInfo, 0);
+        const int maxLeaf = cpuInfo[0];
+
+        __cpuid(cpuInfo, 1);
+        const bool osxsave = (cpuInfo[2] & (1 << 27)) != 0;
+        const bool fma3    = (cpuInfo[2] & (1 << 12)) != 0;
+        if (!osxsave || !fma3) return false;
+
+        const unsigned long long xcr0 = _xgetbv(0);
+        if ((xcr0 & 0x06) != 0x06) return false;  // 需要 OS 已开启 XMM + YMM 状态
+
+        if (maxLeaf < 7) return false;
+        __cpuidex(cpuInfo, 7, 0);
+        return (cpuInfo[1] & (1 << 5)) != 0;      // EBX bit5 = AVX2
+    }
+
+    // AVX2 + FMA 点积：用2个累加器打破依赖链，处理8/16个float/迭代。
+    // 不支持 AVX2/FMA 时自动回退到 SSE2（4-wide）路径，保证在任意 x64 CPU 上可运行。
     inline float avx2_fma_dot(const float* a, const float* b, int64_t n, float init = 0.0f) {
+        static const bool kAvx2Fma = cpu_supports_avx2_fma();
+
+        if (!kAvx2Fma) {
+            // SSE2 回退：4-wide 累加器 + 标量尾部，任何 x64 CPU 都支持。
+            __m128 acc0 = _mm_setzero_ps();
+            __m128 acc1 = _mm_setzero_ps();
+            int64_t i = 0;
+            for (; i + 8 <= n; i += 8) {
+                acc0 = _mm_add_ps(acc0, _mm_mul_ps(_mm_loadu_ps(a + i),     _mm_loadu_ps(b + i)));
+                acc1 = _mm_add_ps(acc1, _mm_mul_ps(_mm_loadu_ps(a + i + 4), _mm_loadu_ps(b + i + 4)));
+            }
+            __m128 acc = _mm_add_ps(acc0, acc1);
+            float tmp[4];
+            _mm_storeu_ps(tmp, acc);
+            float result = init + tmp[0] + tmp[1] + tmp[2] + tmp[3];
+            for (; i < n; ++i) result += a[i] * b[i];
+            return result;
+        }
+
         __m256 acc0 = _mm256_setzero_ps();
         __m256 acc1 = _mm256_setzero_ps();
         int64_t i = 0;
