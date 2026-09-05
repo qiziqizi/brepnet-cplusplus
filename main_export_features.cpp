@@ -26,8 +26,8 @@
 
 namespace fs = std::filesystem;
 
-// 模型输出类别数（4类：chamfer, round, hole, other）
-constexpr int kNumClasses = 4;
+// 模型输出类别数（与权重文件 classification_layer 维度一致）
+constexpr int kNumClasses = 27;
 
 // 权重精度（默认 fp32，可通过 --precision 参数修改）
 breptorch::WeightPrecision g_weight_precision = breptorch::WeightPrecision::FP32;
@@ -585,15 +585,12 @@ void run_inference_with_export(const std::string& step_file,
     }
 
     // Face MaxPooling（最终 embedding）
+    // 对齐 Python 9.5：输出层 forlogits=True，padding 用 -inf，负值不再截断（logits can be negative）
     std::vector<std::vector<float>> output_layer_face_embedding_data;
     for (size_t inference_id = 0; inference_id < faces.size(); ++inference_id) {
         auto& face = faces[inference_id];
 
-        // === 关键修复：Big faces vs Small faces 的初始化差异 ===
-        const int max_coedges_per_face = 30;
-        bool is_small_face = (int)face.coedge_ids.size() < max_coedges_per_face;
-        float init_value = is_small_face ? 0.0f : -1e9f;
-        face.output_state.assign(30, init_value);
+        face.output_state.assign(30, -1e9f);
 
         for (int coedge_id : face.coedge_ids) {
             if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
@@ -601,13 +598,6 @@ void run_inference_with_export(const std::string& step_file,
                 for (int i = 0; i < 30; ++i) {
                     face.output_state[i] = std::max(face.output_state[i], coedge_state[i]);
                 }
-            }
-        }
-
-        // 小面(coedges<30)初始化为0并应用ReLU，大面初始化为-1e9不应用ReLU
-        if (is_small_face) {
-            for (int i = 0; i < 30; ++i) {
-                face.output_state[i] = std::max(0.0f, face.output_state[i]);
             }
         }
 

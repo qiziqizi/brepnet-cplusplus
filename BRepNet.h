@@ -266,11 +266,9 @@ struct BRepNetImpl : Module {
         }
 
         // MaxPooling
+        // 对齐 Python 9.5：输出层 forlogits=True，padding 用 -inf，负值不再截断（logits can be negative）
         for (auto& face : faces) {
-            const int max_coedges_per_face = 30;
-            bool is_small_face = (int)face.coedge_ids.size() < max_coedges_per_face;
-            float init_value = is_small_face ? 0.0f : -1e9f;
-            face.output_state.assign(30, init_value);
+            face.output_state.assign(30, -1e9f);
 
             for (int coedge_id : face.coedge_ids) {
                 if (coedge_id >= 0 && coedge_id < (int)coedges.size()) {
@@ -278,12 +276,6 @@ struct BRepNetImpl : Module {
                     for (int i = 0; i < 30; ++i) {
                         face.output_state[i] = std::max(face.output_state[i], coedge_state[i]);
                     }
-                }
-            }
-
-            if (is_small_face) {
-                for (int i = 0; i < 30; ++i) {
-                    face.output_state[i] = std::max(0.0f, face.output_state[i]);
                 }
             }
         }
