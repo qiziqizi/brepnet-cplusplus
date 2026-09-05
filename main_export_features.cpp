@@ -13,6 +13,7 @@
 #include <chrono>
 #include <fstream>
 #include <Windows.h>
+#include <eh.h>
 #include <psapi.h>
 #include <filesystem>
 #include <vector>
@@ -36,6 +37,32 @@ std::mutex g_console_mutex;
 
 // 全局强制重新处理标志（--force 参数）
 bool g_force_overwrite = false;
+
+// ============================================================================
+// SEH 异常：把 Windows 结构化异常（如访问冲突 0xC0000005）翻译成可捕获的
+// C++ 异常，使批量推理能单文件跳过坏文件、继续处理剩余的。
+// 依赖工程里的 /EHa（ExceptionHandling=Async）；且翻译器需在每个线程内设置。
+// ============================================================================
+struct SehException {
+    unsigned code;
+    std::string label;
+};
+
+std::string seh_code_label(unsigned code) {
+    switch (code) {
+        case 0xC0000005: return "访问冲突(Access Violation)";
+        case 0xC000001D: return "非法指令(Illegal Instruction)";
+        case 0xC0000409: return "快速失败(stack buffer overrun)";
+        case 0xC00000FD: return "栈溢出(Stack Overflow)";
+        case 0xC0000094: return "整数除零";
+        case 0x80000003: return "断点(Breakpoint)";
+        default: return "未知SEH异常";
+    }
+}
+
+void se_translator(unsigned code, _EXCEPTION_POINTERS*) {
+    throw SehException{code, seh_code_label(code)};
+}
 
 /**
  * Feature Map 导出版本的推理脚本
@@ -942,16 +969,59 @@ int main(int argc, char* argv[]) {
 
     auto total_start = std::chrono::high_resolution_clock::now();
 
-    // 原子计数器：线程安全的任务分配
+    // 原子计数器：线程安全的任务分配 + 进度/成败统计
     std::atomic<size_t> file_index(0);
+    std::atomic<int> done_count(0);
+    std::atomic<int> ok_count(0);
+    std::atomic<int> fail_count(0);
 
     // 工作线程函数
     auto worker = [&](int thread_id) {
+        // SEH 翻译器按线程生效，必须在 worker 线程内也安装
+        _set_se_translator(se_translator);
+
         while (true) {
             size_t idx = file_index.fetch_add(1);
             if (idx >= step_files.size()) break;
 
-            run_inference_with_export(step_files[idx], models[thread_id], exporter);
+            const std::string& path = step_files[idx];
+            int n = done_count.fetch_add(1) + 1;   // 1-based 进度
+            auto t0 = std::chrono::high_resolution_clock::now();
+
+            try {
+                run_inference_with_export(path, models[thread_id], exporter);
+
+                auto dt = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - t0).count();
+                std::lock_guard<std::mutex> lock(g_console_mutex);
+                INFO_LOG << "[" << n << "/" << total_files << "] OK   "
+                         << fs::path(path).filename().string() << " (" << dt << "s)" << std::endl;
+                ++ok_count;
+            }
+            catch (const SehException& e) {
+                auto dt = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - t0).count();
+                std::lock_guard<std::mutex> lock(g_console_mutex);
+                INFO_LOG << "[" << n << "/" << total_files << "] FAIL "
+                         << fs::path(path).filename().string()
+                         << " (0x" << std::hex << e.code << std::dec << " " << e.label
+                         << ", " << dt << "s) -> 已跳过，继续处理" << std::endl;
+                ++fail_count;
+            }
+            catch (const std::exception& e) {
+                auto dt = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - t0).count();
+                std::lock_guard<std::mutex> lock(g_console_mutex);
+                INFO_LOG << "[" << n << "/" << total_files << "] FAIL "
+                         << fs::path(path).filename().string()
+                         << " (" << e.what() << ", " << dt << "s) -> 已跳过，继续处理" << std::endl;
+                ++fail_count;
+            }
+            catch (...) {
+                auto dt = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - t0).count();
+                std::lock_guard<std::mutex> lock(g_console_mutex);
+                INFO_LOG << "[" << n << "/" << total_files << "] FAIL "
+                         << fs::path(path).filename().string()
+                         << " (未知异常, " << dt << "s) -> 已跳过，继续处理" << std::endl;
+                ++fail_count;
+            }
         }
     };
 
@@ -976,6 +1046,7 @@ int main(int argc, char* argv[]) {
     INFO_LOG << "\n" << std::string(70, '=') << std::endl;
     INFO_LOG << "All " << total_files << " files completed!" << std::endl;
     INFO_LOG << "Threads: " << effective_threads << std::endl;
+    INFO_LOG << "OK: " << ok_count.load() << "  FAIL: " << fail_count.load() << std::endl;
     INFO_LOG << "Total time: " << total_duration.count() / 1000.0 << " seconds" << std::endl;
     INFO_LOG << "Average time per file: " << (total_duration.count() / total_files) << " ms" << std::endl;
     INFO_LOG << std::string(70, '=') << std::endl;
