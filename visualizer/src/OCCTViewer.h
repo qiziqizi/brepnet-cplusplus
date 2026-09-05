@@ -22,6 +22,8 @@
 #include <WNT_Window.hxx>
 #endif
 
+class QTimer;
+
 class OCCTViewer : public QWidget {
     Q_OBJECT
 
@@ -38,6 +40,7 @@ public:
     void clearErrorHighlights();
     void clearAll();
     void fitAll();
+    void zoomToFace(int faceIndex);
     int getNumFaces() const { return static_cast<int>(faceColors_.size()); }
     int getSelectedFaceIndex() const { return selectedFaceIndex_; }
     const QSet<int>& getMultiSelectedFaces() const { return multiSelectedFaces_; }
@@ -69,6 +72,8 @@ private:
     void setCustomFaceColor(int faceIndex, const Quantity_Color& color); // 仅设颜色，不更新 faceColors_
     void setFaceTransparency(int faceIndex, Standard_Real transparency); // 按面设置透明度（悬停用）
     void restoreHoveredFace();
+    void applyFocusTransparency(int faceIndex);           // 跳转时其余面半透明
+    void restoreFocusTransparency();                      // 0.5s后恢复全部不透明
     void updateMultiSelectHighlight();                   // 更新多选面边线高亮
     int pickFaceByRay(int mouseX, int mouseY);                           // 几何光线求交
     int pickFaceAtPos(int devX, int devY);                               // 综合拾取（选择器+光线），不改选中状态
@@ -87,6 +92,7 @@ private:
     TopoDS_Shape fullShape_;                         // 原始完整形状，用于子面遍历
     std::map<int, Quantity_Color> faceColors_;       // 每个面当前颜色
     std::map<int, Quantity_Color> savedFaceColors_;  // 高亮前保存的面颜色
+    QTimer* focusTimer_;                             // 跳转半透明恢复计时器 (0.5s)
 
     enum MouseMode { None, Rotate, Pan };
     MouseMode currentMode_;

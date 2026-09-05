@@ -13,6 +13,7 @@
 #include <QScrollArea>
 #include <QListWidget>
 #include <QCheckBox>
+#include <QSpinBox>
 #include <memory>
 
 #include "OCCTViewer.h"
@@ -57,6 +58,7 @@ private slots:
     void onRunPrediction();
     void onLoadPredictionLabelsManual();
     void onLoadPredictionLabelsAuto();
+    void onJumpToFace();
 
     // 人工标注
     void onLoadManualLabels();
@@ -115,6 +117,8 @@ protected:
     QPushButton* btnLoadPredictionLabelsManual_;
     QPushButton* btnLoadPredictionLabelsAuto_;
     QLabel* lblPredictionAccuracy_;
+    QSpinBox* spinJumpFace_;
+    QPushButton* btnJumpFace_;
 
     // 人工标注区
     QPushButton* btnLoadManualLabels_;

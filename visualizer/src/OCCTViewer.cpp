@@ -1,6 +1,7 @@
 #include "OCCTViewer.h"
 #include <QMouseEvent>
 #include <QWheelEvent>
+#include <QTimer>
 #include <iostream>
 
 #include <Aspect_DisplayConnection.hxx>
@@ -16,6 +17,10 @@
 #include <BRep_Builder.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Edge.hxx>
+#include <TopoDS_Face.hxx>
+#include <Bnd_Box.hxx>
+#include <BRepBndLib.hxx>
+#include <Graphic3d_Camera.hxx>
 
 OCCTViewer::OCCTViewer(QWidget* parent)
     : QWidget(parent)
@@ -33,6 +38,10 @@ OCCTViewer::OCCTViewer(QWidget* parent)
 
     winId();  // Force native window creation
     initOCCT();
+
+    focusTimer_ = new QTimer(this);
+    focusTimer_->setSingleShot(true);
+    connect(focusTimer_, &QTimer::timeout, this, &OCCTViewer::restoreFocusTransparency);
 }
 
 OCCTViewer::~OCCTViewer() {
@@ -177,8 +186,8 @@ void OCCTViewer::highlightErrorFaces(const std::vector<int>& errorIndices, bool 
     if (context_.IsNull() || coloredShape_.IsNull() || fullShape_.IsNull()) return;
 
     if (highlight) {
-        // 保存原色并设为淡红
-        Quantity_Color errorColor(1.0, 0.6, 0.6, Quantity_TOC_RGB);
+        // 保存原色并设为醒目红
+        Quantity_Color errorColor(1.0, 0.0, 0.0, Quantity_TOC_RGB);
         for (int idx : errorIndices) {
             auto it = faceColors_.find(idx);
             if (it != faceColors_.end()) {
@@ -243,6 +252,64 @@ void OCCTViewer::fitAll() {
     view_->FitAll();
     view_->ZFitAll();
     view_->Redraw();
+}
+
+void OCCTViewer::zoomToFace(int faceIndex) {
+    if (view_.IsNull() || fullShape_.IsNull()) return;
+    if (faceIndex < 0 || faceIndex >= getNumFaces()) return;
+
+    TopExp_Explorer exp(fullShape_, TopAbs_FACE);
+    int idx = 0;
+    for (; exp.More(); exp.Next(), ++idx) {
+        if (idx == faceIndex) break;
+    }
+    if (!exp.More()) return;
+    const TopoDS_Face& face = TopoDS::Face(exp.Current());
+
+    Bnd_Box box;
+    BRepBndLib::Add(face, box);
+    if (box.IsVoid()) return;
+
+    // 计算目标面的几何中心
+    gp_Pnt faceCenter(
+        0.5 * (box.CornerMin().X() + box.CornerMax().X()),
+        0.5 * (box.CornerMin().Y() + box.CornerMax().Y()),
+        0.5 * (box.CornerMin().Z() + box.CornerMax().Z()));
+
+    // 保持当前缩放比例，仅将视线平移使目标面中心居中（不缩放）
+    Handle(Graphic3d_Camera) cam = view_->Camera();
+    gp_Pnt target = cam->Center();
+    gp_XYZ delta = faceCenter.XYZ() - target.XYZ();
+    cam->SetEyeAndCenter(cam->Eye().Translated(delta), target.Translated(delta));
+    view_->Redraw();
+
+    // 除目标面外其余面半透明 0.5s，突出目标面位置
+    applyFocusTransparency(faceIndex);
+}
+
+void OCCTViewer::applyFocusTransparency(int faceIndex) {
+    if (coloredShape_.IsNull() || fullShape_.IsNull()) return;
+
+    TopExp_Explorer exp(fullShape_, TopAbs_FACE);
+    int idx = 0;
+    for (; exp.More(); exp.Next(), ++idx) {
+        if (idx != faceIndex) {
+            coloredShape_->SetCustomTransparency(exp.Current(), 1.0);
+        }
+    }
+    context_->UpdateCurrentViewer();
+
+    focusTimer_->start(500);
+}
+
+void OCCTViewer::restoreFocusTransparency() {
+    if (coloredShape_.IsNull() || fullShape_.IsNull()) return;
+
+    TopExp_Explorer exp(fullShape_, TopAbs_FACE);
+    for (; exp.More(); exp.Next()) {
+        coloredShape_->SetCustomTransparency(exp.Current(), 0.0);
+    }
+    context_->UpdateCurrentViewer();
 }
 
 void OCCTViewer::mousePressEvent(QMouseEvent* event) {

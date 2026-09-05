@@ -19,6 +19,10 @@
 #include <QDialogButtonBox>
 #include <QFileInfo>
 #include <QStringList>
+#include <QSpinBox>
+#include <QHBoxLayout>
+#include <QPushButton>
+#include <QLabel>
 #include <Quantity_Color.hxx>
 #include <gp_Pnt.hxx>
 #include <TopExp_Explorer.hxx>
@@ -236,6 +240,15 @@ void MainWindow::setupUI() {
     predLayout->addWidget(btnLoadPredictionLabelsAuto_);
     lblPredictionAccuracy_ = new QLabel("准确率: --", predGroup);
     predLayout->addWidget(lblPredictionAccuracy_);
+
+    predLayout->addWidget(new QLabel("跳到面", predGroup));
+    spinJumpFace_ = new QSpinBox(predGroup);
+    spinJumpFace_->setRange(0, 99999);
+    spinJumpFace_->setFixedWidth(70);
+    predLayout->addWidget(spinJumpFace_);
+    btnJumpFace_ = new QPushButton("跳转", predGroup);
+    btnJumpFace_->setEnabled(false);
+    predLayout->addWidget(btnJumpFace_);
     topGrid->addWidget(predGroup, 1, 0, 1, 3);
 
     // 第2行：人工标注（跨3列）
@@ -444,6 +457,8 @@ void MainWindow::setupConnections() {
     connect(btnRunPrediction_, &QPushButton::clicked, this, &MainWindow::onRunPrediction);
     connect(btnLoadPredictionLabelsManual_, &QPushButton::clicked, this, &MainWindow::onLoadPredictionLabelsManual);
     connect(btnLoadPredictionLabelsAuto_, &QPushButton::clicked, this, &MainWindow::onLoadPredictionLabelsAuto);
+    connect(btnJumpFace_, &QPushButton::clicked, this, &MainWindow::onJumpToFace);
+    connect(spinJumpFace_, &QSpinBox::editingFinished, this, &MainWindow::onJumpToFace);
 
     // 人工标注
     connect(btnLoadManualLabels_, &QPushButton::clicked, this, &MainWindow::onLoadManualLabels);
@@ -474,6 +489,8 @@ void MainWindow::setWorkMode(WorkMode mode) {
     btnRunPrediction_->setEnabled(modelLoaded_ && hasFile);
     btnLoadPredictionLabelsManual_->setEnabled(hasFile && !predictions_.empty());
     btnLoadPredictionLabelsAuto_->setEnabled(hasFile && !predictions_.empty());
+    spinJumpFace_->setEnabled(hasFile);
+    btnJumpFace_->setEnabled(hasFile);
 
     // 人工标注区 (随时可用)
     btnLoadManualLabels_->setEnabled(hasFile);
@@ -809,6 +826,16 @@ void MainWindow::onRunPrediction() {
     // 更新统计信息
     updateStatistics();
 
+    // 预测后自动查找同名 .seg 并加载对比（存在时静默对比，红色标出错误面）
+    if (!currentFilePath_.isEmpty()) {
+        QFileInfo stepInfo(currentFilePath_);
+        QString segPath = QString("%1/%2.seg")
+            .arg(stepInfo.absolutePath(), stepInfo.completeBaseName());
+        if (QFileInfo::exists(segPath)) {
+            applyGroundTruthLabels(segPath, true);
+        }
+    }
+
     statusBar()->showMessage("预测完成");
     QApplication::processEvents();
     QMessageBox::information(this, "成功", "预测完成！模型已按类别着色。");
@@ -872,6 +899,18 @@ void MainWindow::applyGroundTruthLabels(const QString& fileName, bool silent) {
 
     // 自动进行对比
     updateComparisonResults();
+}
+
+void MainWindow::onJumpToFace() {
+    if (currentFilePath_.isEmpty()) return;
+    int numFaces = loader_->getNumFaces();
+    int idx = spinJumpFace_->value();
+    if (idx < numFaces) {
+        viewer_->zoomToFace(idx);
+    } else {
+        QMessageBox::warning(this, "超出范围",
+            QString("面索引 %1 超出范围，当前模型共有 %2 个面").arg(idx).arg(numFaces));
+    }
 }
 
 void MainWindow::onExportResults() {
